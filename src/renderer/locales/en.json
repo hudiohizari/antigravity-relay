@@ -1,0 +1,125 @@
+{
+  "app": {
+    "title": "Antigravity Relay",
+    "subtitle": "Desktop Orchestration & Account Vault",
+    "version": "v1.0.0",
+    "trafficLights": {
+      "close": "Close window",
+      "minimize": "Minimize window",
+      "maximize": "Maximize window"
+    },
+    "connection": {
+      "online": "Online",
+      "offline": "Offline"
+    }
+  },
+  "nav": {
+    "accounts": "Accounts",
+    "remoteControl": "Remote Tethering",
+    "settings": "Settings"
+  },
+  "accounts": {
+    "headerTitle": "Google Accounts",
+    "headerSubtitle": "Manage authenticated Google identities for Antigravity sessions",
+    "countBadge": "{count} saved",
+    "addAccount": "Add Account via Google",
+    "addAccountLoading": "Waiting for browser authorization...",
+    "cancelAuth": "Cancel authorization",
+    "emptyTitle": "No accounts connected",
+    "emptyDescription": "Connect your Google account to enable persistent session relay and quota rotation.",
+    "emptyAction": "Connect First Account",
+    "card": {
+      "active": "Active",
+      "rateLimited": "Rate Limited",
+      "expired": "Expired",
+      "disabled": "Disabled",
+      "setActive": "Set as Active",
+      "isActive": "Current Active Account",
+      "lastUsed": "Last used",
+      "neverUsed": "Never used",
+      "expiresIn": "Expires in {time}",
+      "expiredAgo": "Expired {time} ago",
+      "refreshToken": "Refresh Token",
+      "refreshing": "Refreshing token...",
+      "removeAccount": "Remove Account",
+      "removeConfirmTitle": "Remove Google Account",
+      "removeConfirmMessage": "Are you sure you want to remove {email} from the local encrypted vault?",
+      "removeConfirmButton": "Confirm Remove",
+      "cancelButton": "Cancel",
+      "copyEmail": "Copy email address",
+      "copiedEmail": "Email copied to clipboard"
+    }
+  },
+  "services": {
+    "bar": {
+      "title": "Service Status",
+      "runningCount": "{count} of {total} services running",
+      "allRunning": "All services operational",
+      "partialRunning": "Services degraded",
+      "noneRunning": "Services stopped",
+      "expandDetails": "Show service details",
+      "collapseDetails": "Hide service details"
+    },
+    "popover": {
+      "title": "Background Services",
+      "subtitle": "Independent process supervisor for local Antigravity components"
+    },
+    "daemon": {
+      "title": "Antigravity Daemon",
+      "description": "Language server and background agent daemon (agy)"
+    },
+    "ide": {
+      "title": "Antigravity IDE",
+      "description": "VS Code editor desktop interface"
+    },
+    "status": {
+      "running": "Running",
+      "stopped": "Stopped",
+      "starting": "Starting...",
+      "stopping": "Stopping...",
+      "error": "Error"
+    },
+    "pid": "PID: {pid}",
+    "pidNone": "PID: --",
+    "uptime": "Uptime: {uptime}",
+    "action": {
+      "start": "Start",
+      "stop": "Stop",
+      "starting": "Starting...",
+      "stopping": "Stopping...",
+      "restart": "Restart"
+    }
+  },
+  "toasts": {
+    "accountAdded": "Account {email} successfully connected",
+    "accountRemoved": "Account {email} removed from vault",
+    "tokenRefreshed": "Access token refreshed for {email}",
+    "refreshFailed": "Failed to refresh token: {error}",
+    "oauthCancelled": "Authentication flow cancelled",
+    "oauthFailed": "Authentication failed: {error}",
+    "serviceStarted": "{service} started successfully",
+    "serviceStopped": "{service} stopped",
+    "serviceFailed": "Failed to control {service}: {error}"
+  },
+  "common": {
+    "actions": {
+      "close": "Close",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "retry": "Retry",
+      "copy": "Copy"
+    },
+    "status": {
+      "loading": "Loading...",
+      "error": "Error",
+      "success": "Success"
+    }
+  },
+  "accessibility": {
+    "skipToContent": "Skip to main content",
+    "statusLiveRegion": "System status updates",
+    "accountList": "Connected accounts list",
+    "serviceControls": "Service supervisor controls",
+    "closeDialog": "Close dialog"
+  }
+}

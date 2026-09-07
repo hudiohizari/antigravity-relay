@@ -1,0 +1,166 @@
+/* Antigravity Relay Design Tokens */
+/* Standard: Design Tokens Community Group (DTCG) */
+
+:root {
+  /* Primitive Palette: Neutrals */
+  --primitive-color-neutral-950: #090d16;
+  --primitive-color-neutral-900: #111827;
+  --primitive-color-neutral-800: #1f2937;
+  --primitive-color-neutral-700: #27272a;
+  --primitive-color-neutral-600: #3f3f46;
+  --primitive-color-neutral-500: #52525b;
+  --primitive-color-neutral-400: #71717a;
+  --primitive-color-neutral-300: #9ca3af;
+  --primitive-color-neutral-200: #d1d5db;
+  --primitive-color-neutral-100: #f3f4f6;
+  --primitive-color-neutral-50: #f9fafb;
+
+  /* Primitive Palette: Interactive Brand (Blue) */
+  --primitive-color-blue-500: #3b82f6;
+  --primitive-color-blue-600: #2563eb;
+  --primitive-color-blue-700: #1d4ed8;
+  --primitive-color-blue-800: #1e40af;
+  --primitive-color-blue-900: #1e3a8a;
+
+  /* Primitive Palette: Operational Feedback */
+  --primitive-color-emerald-400: #34d399;
+  --primitive-color-emerald-500: #10b981;
+  --primitive-color-emerald-600: #059669;
+  --primitive-color-amber-400: #fbbf24;
+  --primitive-color-amber-500: #f59e0b;
+  --primitive-color-amber-600: #d97706;
+  --primitive-color-red-400: #f87171;
+  --primitive-color-red-500: #ef4444;
+  --primitive-color-red-600: #dc2626;
+
+  /* Primitive Spacing (8pt Grid System) */
+  --primitive-space-0: 0px;
+  --primitive-space-1: 4px;
+  --primitive-space-2: 8px;
+  --primitive-space-3: 12px;
+  --primitive-space-4: 16px;
+  --primitive-space-5: 20px;
+  --primitive-space-6: 24px;
+  --primitive-space-8: 32px;
+  --primitive-space-10: 40px;
+  --primitive-space-12: 48px;
+
+  /* Primitive Radii */
+  --primitive-radius-none: 0px;
+  --primitive-radius-sm: 4px;
+  --primitive-radius-md: 6px;
+  --primitive-radius-lg: 8px;
+  --primitive-radius-xl: 12px;
+  --primitive-radius-full: 9999px;
+
+  /* Primitive Typography Families */
+  --primitive-font-sans:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --primitive-font-mono:
+    "JetBrains Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+
+  /* Primitive Fluid Typography Scale (320px to 1280px Viewport) */
+  --primitive-font-size-xs: clamp(0.6875rem, 0.65rem + 0.2vw, 0.75rem);
+  --primitive-font-size-sm: clamp(0.8125rem, 0.77rem + 0.25vw, 0.875rem);
+  --primitive-font-size-base: clamp(0.875rem, 0.82rem + 0.3vw, 1rem);
+  --primitive-font-size-lg: clamp(1rem, 0.95rem + 0.35vw, 1.125rem);
+  --primitive-font-size-xl: clamp(1.125rem, 1.05rem + 0.4vw, 1.25rem);
+  --primitive-font-size-2xl: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
+
+  /* Semantic Canvas & Surfaces */
+  --bg-canvas: var(--primitive-color-neutral-950);
+  --bg-surface: var(--primitive-color-neutral-900);
+  --bg-surface-elevated: var(--primitive-color-neutral-800);
+  --bg-subtle: var(--primitive-color-neutral-700);
+  --bg-overlay: rgba(9, 13, 22, 0.85);
+
+  /* Semantic Borders & Dividers */
+  --border-subtle: var(--primitive-color-neutral-800);
+  --border-default: var(--primitive-color-neutral-600);
+  --border-hover: var(--primitive-color-neutral-500);
+  --border-strong: var(--primitive-color-neutral-400);
+  --border-focus: var(--primitive-color-emerald-500);
+
+  /* Semantic Typography & Foreground */
+  --text-primary: var(--primitive-color-neutral-50);
+  --text-secondary: var(--primitive-color-neutral-300);
+  --text-muted: var(--primitive-color-neutral-400);
+  --text-inverse: var(--primitive-color-neutral-950);
+
+  /* Semantic Brand / Interactive */
+  --brand-primary: var(--primitive-color-blue-500);
+  --brand-hover: var(--primitive-color-blue-600);
+  --brand-active: var(--primitive-color-blue-700);
+  --brand-ring: rgba(59, 130, 246, 0.4);
+
+  /* Semantic Operational Status: Running / Operational / Active */
+  --status-running: var(--primitive-color-emerald-500);
+  --status-running-bg: rgba(16, 185, 129, 0.12);
+  --status-running-border: rgba(16, 185, 129, 0.3);
+  --status-running-text: var(--primitive-color-emerald-400);
+
+  /* Semantic Operational Status: Pending / Transitional / Rate Limited */
+  --status-pending: var(--primitive-color-amber-500);
+  --status-pending-bg: rgba(245, 158, 11, 0.12);
+  --status-pending-border: rgba(245, 158, 11, 0.3);
+  --status-pending-text: var(--primitive-color-amber-400);
+
+  /* Semantic Operational Status: Stopped / Inactive */
+  --status-stopped: var(--primitive-color-neutral-400);
+  --status-stopped-bg: rgba(113, 113, 122, 0.12);
+  --status-stopped-border: rgba(113, 113, 122, 0.3);
+  --status-stopped-text: var(--primitive-color-neutral-300);
+
+  /* Semantic Operational Status: Error / Expired */
+  --status-error: var(--primitive-color-red-500);
+  --status-error-bg: rgba(239, 68, 68, 0.12);
+  --status-error-border: rgba(239, 68, 68, 0.3);
+  --status-error-text: var(--primitive-color-red-400);
+
+  /* Accessibility Target Constraints */
+  --target-min-width: 44px;
+  --target-min-height: 44px;
+  --target-clearance: 8px;
+  --outline-focus-width: 2px;
+  --outline-focus-offset: 2px;
+
+  /* Component: TitleBar */
+  --comp-titlebar-height: 44px;
+  --comp-titlebar-padding-left: 76px;
+  --comp-titlebar-bg: var(--bg-canvas);
+  --comp-titlebar-border: var(--border-subtle);
+
+  /* Component: Navigation Tabs */
+  --comp-nav-height: 48px;
+  --comp-nav-item-min-width: 110px;
+  --comp-nav-item-padding: 8px 16px;
+  --comp-nav-active-indicator-height: 2px;
+
+  /* Component: Card */
+  --comp-card-bg: var(--bg-surface);
+  --comp-card-border: var(--border-default);
+  --comp-card-border-active: var(--status-running-border);
+  --comp-card-radius: var(--primitive-radius-lg);
+  --comp-card-padding: var(--primitive-space-4);
+
+  /* Component: Dual Service Status Bar */
+  --comp-statusbar-height: 44px;
+  --comp-statusbar-bg: var(--bg-surface);
+  --comp-statusbar-border: var(--border-subtle);
+  --comp-statusbar-pill-height: 32px;
+
+  /* Component: Popover Supervisor Drawer */
+  --comp-popover-bg: var(--bg-surface-elevated);
+  --comp-popover-border: var(--border-default);
+  --comp-popover-radius: var(--primitive-radius-xl);
+  --comp-popover-shadow: 0 16px 32px rgba(0, 0, 0, 0.45);
+  --comp-popover-row-height: 56px;
+
+  /* Component: Buttons */
+  --comp-btn-height: 44px;
+  --comp-btn-height-compact: 36px;
+  --comp-btn-radius: var(--primitive-radius-md);
+  --comp-btn-padding-x: var(--primitive-space-4);
+  --comp-btn-font-size: var(--primitive-font-size-sm);
+  --comp-btn-font-weight: 500;
+}

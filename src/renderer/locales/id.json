@@ -1,0 +1,125 @@
+{
+  "app": {
+    "title": "Antigravity Relay",
+    "subtitle": "Orkestrasi Desktop & Vault Akun",
+    "version": "v1.0.0",
+    "trafficLights": {
+      "close": "Tutup jendela",
+      "minimize": "Minimalkan jendela",
+      "maximize": "Maksimalkan jendela"
+    },
+    "connection": {
+      "online": "Terhubung",
+      "offline": "Terputus"
+    }
+  },
+  "nav": {
+    "accounts": "Akun",
+    "remoteControl": "Koneksi Jarak Jauh",
+    "settings": "Pengaturan"
+  },
+  "accounts": {
+    "headerTitle": "Akun Google",
+    "headerSubtitle": "Kelola identitas Google terautentikasi untuk sesi Antigravity",
+    "countBadge": "{count} tersimpan",
+    "addAccount": "Tambah Akun via Google",
+    "addAccountLoading": "Menunggu otorisasi peramban...",
+    "cancelAuth": "Batalkan otorisasi",
+    "emptyTitle": "Belum ada akun terhubung",
+    "emptyDescription": "Hubungkan akun Google Anda untuk mengaktifkan relay sesi dan rotasi kuota.",
+    "emptyAction": "Hubungkan Akun Pertama",
+    "card": {
+      "active": "Aktif",
+      "rateLimited": "Limit Tercapai",
+      "expired": "Kedaluwarsa",
+      "disabled": "Nonaktif",
+      "setActive": "Jadikan Aktif",
+      "isActive": "Akun Aktif Saat Ini",
+      "lastUsed": "Terakhir digunakan",
+      "neverUsed": "Belum pernah digunakan",
+      "expiresIn": "Kedaluwarsa dalam {time}",
+      "expiredAgo": "Kedaluwarsa {time} yang lalu",
+      "refreshToken": "Segarkan Token",
+      "refreshing": "Menyegarkan token...",
+      "removeAccount": "Hapus Akun",
+      "removeConfirmTitle": "Hapus Akun Google",
+      "removeConfirmMessage": "Apakah Anda yakin ingin menghapus {email} dari vault terenkripsi lokal?",
+      "removeConfirmButton": "Konfirmasi Hapus",
+      "cancelButton": "Batal",
+      "copyEmail": "Salin alamat email",
+      "copiedEmail": "Email disalin ke papan klip"
+    }
+  },
+  "services": {
+    "bar": {
+      "title": "Status Layanan",
+      "runningCount": "{count} dari {total} layanan berjalan",
+      "allRunning": "Semua layanan beroperasi",
+      "partialRunning": "Layanan terdegradasi",
+      "noneRunning": "Semua layanan terhenti",
+      "expandDetails": "Tampilkan detail layanan",
+      "collapseDetails": "Sembunyikan detail layanan"
+    },
+    "popover": {
+      "title": "Layanan Latar Belakang",
+      "subtitle": "Pengawas proses independen untuk komponen Antigravity lokal"
+    },
+    "daemon": {
+      "title": "Daemon Antigravity",
+      "description": "Server bahasa dan daemon agen latar belakang (agy)"
+    },
+    "ide": {
+      "title": "IDE Antigravity",
+      "description": "Antarmuka desktop editor VS Code"
+    },
+    "status": {
+      "running": "Berjalan",
+      "stopped": "Terhenti",
+      "starting": "Memulai...",
+      "stopping": "Menghentikan...",
+      "error": "Galat"
+    },
+    "pid": "PID: {pid}",
+    "pidNone": "PID: --",
+    "uptime": "Waktu aktif: {uptime}",
+    "action": {
+      "start": "Mulai",
+      "stop": "Hentikan",
+      "starting": "Memulai...",
+      "stopping": "Menghentikan...",
+      "restart": "Mulai Ulang"
+    }
+  },
+  "toasts": {
+    "accountAdded": "Akun {email} berhasil dihubungkan",
+    "accountRemoved": "Akun {email} dihapus dari vault",
+    "tokenRefreshed": "Token akses diperbarui untuk {email}",
+    "refreshFailed": "Gagal menyegarkan token: {error}",
+    "oauthCancelled": "Alur otentikasi dibatalkan",
+    "oauthFailed": "Otentikasi gagal: {error}",
+    "serviceStarted": "{service} berhasil dimulai",
+    "serviceStopped": "{service} dihentikan",
+    "serviceFailed": "Gagal mengontrol {service}: {error}"
+  },
+  "common": {
+    "actions": {
+      "close": "Tutup",
+      "cancel": "Batal",
+      "confirm": "Konfirmasi",
+      "retry": "Coba Lagi",
+      "copy": "Salin"
+    },
+    "status": {
+      "loading": "Memuat...",
+      "error": "Galat",
+      "success": "Sukses"
+    }
+  },
+  "accessibility": {
+    "skipToContent": "Lompat ke konten utama",
+    "statusLiveRegion": "Pembaruan status sistem",
+    "accountList": "Daftar akun terhubung",
+    "serviceControls": "Kontrol pengawas layanan",
+    "closeDialog": "Tutup dialog"
+  }
+}

@@ -1,0 +1,58 @@
+@import "tailwindcss";
+@import "./styles/tokens.css";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--primitive-font-sans);
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Universal high-contrast accessible focus ring */
+  :focus-visible {
+    outline: var(--outline-focus-width) solid var(--border-focus);
+    outline-offset: var(--outline-focus-offset);
+  }
+}
+
+/* Electron Window Drag Utilities */
+.window-drag-region {
+  -webkit-app-region: drag;
+}
+
+.window-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Fluid responsive typography utilities */
+.text-fluid-xs {
+  font-size: var(--primitive-font-size-xs);
+}
+
+.text-fluid-sm {
+  font-size: var(--primitive-font-size-sm);
+}
+
+.text-fluid-base {
+  font-size: var(--primitive-font-size-base);
+}
+
+.text-fluid-lg {
+  font-size: var(--primitive-font-size-lg);
+}
+
+.text-fluid-xl {
+  font-size: var(--primitive-font-size-xl);
+}
+
+.text-fluid-2xl {
+  font-size: var(--primitive-font-size-2xl);
+}
