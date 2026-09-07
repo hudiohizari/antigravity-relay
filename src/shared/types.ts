@@ -21,6 +21,19 @@ export enum IpcChannels {
   SNAPSHOTS_CREATE = "snapshots:create",
   SNAPSHOTS_RESTORE = "snapshots:restore",
   SNAPSHOTS_DELETE = "snapshots:delete",
+  RELAY_GET_STATUS = "relay:get-status",
+  RELAY_START = "relay:start",
+  RELAY_STOP = "relay:stop",
+  RELAY_STATUS_UPDATED = "relay:status-updated",
+  RELAY_GET_SESSIONS = "relay:get-sessions",
+  RELAY_REVOKE_SESSION = "relay:revoke-session",
+  TUNNEL_GET_STATUS = "tunnel:get-status",
+  TUNNEL_START = "tunnel:start",
+  TUNNEL_STOP = "tunnel:stop",
+  TUNNEL_STATUS_UPDATED = "tunnel:status-updated",
+  TUNNEL_GET_URL = "tunnel:get-url",
+  SESSIONS_GET_ACTIVE = "sessions:get-active",
+  SESSIONS_REVOKE = "sessions:revoke",
 }
 
 export type AccountStatus = "active" | "rate_limited" | "expired" | "disabled";
@@ -220,4 +233,125 @@ export interface SnapshotStoreData {
   snapshots: Record<string, AccountSnapshot>;
   lastRestoredSnapshotId?: string;
   updatedAt: number;
+}
+
+// Relay Server Configurations & Status
+export interface RelayConfig {
+  port: number;
+  host: string;
+  corsOrigins: string[];
+  maxBufferedCommands: number;
+  bufferTtlMs: number;
+  heartbeatIntervalMs: number;
+  staticDir?: string;
+}
+
+export type RelayServerConfig = RelayConfig;
+
+export type UpstreamBridgeState =
+  "disconnected" | "connecting" | "connected" | "reconnecting" | "error";
+
+export interface UpstreamBridgeStatus {
+  state: UpstreamBridgeState;
+  targetHost: string;
+  targetPort: number;
+  lastHeartbeatAt?: number;
+  reconnectAttempts: number;
+  bufferedCommandCount: number;
+  flushedCommandCount: number;
+  lastError?: string;
+}
+
+export type UpstreamStatus = UpstreamBridgeStatus;
+
+export interface RelayServerStatus {
+  isRunning: boolean;
+  port: number;
+  host: string;
+  activeSessions: number;
+  isBuffering: boolean;
+  upstream: UpstreamBridgeStatus;
+  startedAt?: number;
+}
+
+// Remote Session Management
+export type SessionSocketState = "connected" | "disconnected" | "buffered";
+
+export interface Session {
+  sessionId: string;
+  token: string;
+  clientIp: string;
+  userAgent: string;
+  connectedAt: number;
+  lastActiveAt: number;
+  authenticated: boolean;
+  socketState: SessionSocketState;
+}
+
+export type RelaySession = Session;
+
+export type CommandStatus = "queued" | "forwarded" | "expired" | "rejected";
+
+export interface BufferedMessage {
+  id: string;
+  sessionId: string;
+  commandType: string;
+  payload: Record<string, unknown>;
+  queuedAt: number;
+  expiresAt: number;
+  status: CommandStatus;
+}
+
+export type BufferedCommand = BufferedMessage;
+
+// Cloudflare Tunnel Subprocess Management
+export type TunnelState =
+  "stopped" | "starting" | "connected" | "reconnecting" | "error";
+
+export interface TunnelConfig {
+  binaryPath?: string;
+  targetPort: number;
+  namedTunnelToken?: string;
+  customDomain?: string;
+  autoRestart: boolean;
+  maxRetries: number;
+  retryBackoffMs: number;
+}
+
+export interface TunnelStatus {
+  state: TunnelState;
+  publicUrl: string | null;
+  pid: number | null;
+  startedAt: number | null;
+  reconnectAttempts: number;
+  lastError?: string;
+  protocol?: string;
+}
+
+// Remote Command & Event Protocol
+export type RemoteCommandType =
+  "PROMPT" | "APPROVE_ACTION" | "REJECT_ACTION" | "INTERRUPT" | "PING";
+
+export interface RemoteCommand {
+  id: string;
+  type: RemoteCommandType | string;
+  payload: Record<string, unknown>;
+  token?: string;
+  timestamp?: number;
+}
+
+export type RemoteEventType =
+  | "AGENT_STATE"
+  | "AGENT_OUTPUT"
+  | "ACTION_PROPOSAL"
+  | "BUFFERING_ALERT"
+  | "SWAP_RESUMED"
+  | "SESSION_REVOKED"
+  | "BUFFERED_ACK"
+  | "ERROR";
+
+export interface RemoteEvent {
+  type: RemoteEventType | string;
+  payload: Record<string, unknown>;
+  timestamp: number;
 }

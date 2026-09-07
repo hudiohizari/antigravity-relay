@@ -29,6 +29,9 @@ export class SwitchFlow {
 
   private isSwitching = false;
   private listeners: Set<(result: SwitchResult) => void> = new Set();
+  private startListeners: Set<
+    (info: { targetAccountId: string; reason: SwitchReason }) => void
+  > = new Set();
 
   constructor(options: SwitchFlowOptions) {
     this.accountStore = options.accountStore;
@@ -50,6 +53,15 @@ export class SwitchFlow {
     return this.isSwitching;
   }
 
+  public onSwitchStart(
+    callback: (info: { targetAccountId: string; reason: SwitchReason }) => void,
+  ): () => void {
+    this.startListeners.add(callback);
+    return () => {
+      this.startListeners.delete(callback);
+    };
+  }
+
   public onSwitchEvent(callback: (result: SwitchResult) => void): () => void {
     this.listeners.add(callback);
     return () => {
@@ -61,6 +73,19 @@ export class SwitchFlow {
     for (const listener of this.listeners) {
       try {
         listener(result);
+      } catch {
+        // Suppress listener error
+      }
+    }
+  }
+
+  private notifyStartListeners(info: {
+    targetAccountId: string;
+    reason: SwitchReason;
+  }): void {
+    for (const listener of this.startListeners) {
+      try {
+        listener(info);
       } catch {
         // Suppress listener error
       }
@@ -81,6 +106,7 @@ export class SwitchFlow {
     const startTime = Date.now();
     let previousAccountId: string | null = null;
     const restartedProcesses: ServiceTarget[] = [];
+    this.notifyStartListeners({ targetAccountId, reason });
 
     try {
       const currentActive = await this.accountStore.getActive();

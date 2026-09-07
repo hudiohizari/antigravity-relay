@@ -20,6 +20,9 @@ import { RateLimitTracker } from "../src/main/switcher/rate-limit-tracker";
 import { SwitchFlow } from "../src/main/switcher/switch-flow";
 import { AutoSwitchService } from "../src/main/switcher/auto-switch.service";
 import { SnapshotStore } from "../src/main/snapshots/snapshot-store";
+import { RelayServer } from "../src/main/relay/relay-server";
+import { TunnelManager } from "../src/main/tunnel/tunnel-manager";
+import { EventEmitter } from "node:events";
 
 // Mock Electron ipcMain and shell
 const registeredHandlers = new Map<
@@ -71,6 +74,8 @@ describe("IPC Boundary and Handler Verification", () => {
   let switchFlow: SwitchFlow;
   let autoSwitchService: AutoSwitchService;
   let snapshotStore: SnapshotStore;
+  let relayServer: RelayServer;
+  let tunnelManager: TunnelManager;
   let mockWin: any;
 
   const mockOAuthConfig: OAuthConfig = {
@@ -107,6 +112,31 @@ describe("IPC Boundary and Handler Verification", () => {
       autoSwitchService,
     });
 
+    relayServer = new RelayServer({
+      config: { port: 4899 },
+    });
+
+    tunnelManager = new TunnelManager({
+      connectionTimeoutMs: 500,
+      spawnFn: () => {
+        const proc = new EventEmitter() as any;
+        proc.pid = 9999;
+        proc.stdout = new EventEmitter();
+        proc.stderr = new EventEmitter();
+        proc.kill = vi.fn((sig) => {
+          setTimeout(() => proc.emit("exit", 0, sig), 5);
+          return true;
+        });
+        setTimeout(() => {
+          proc.stderr.emit(
+            "data",
+            Buffer.from("https://quick-tunnel-ipc.trycloudflare.com\n"),
+          );
+        }, 5);
+        return proc;
+      },
+    });
+
     mockWin = {
       isDestroyed: vi.fn().mockReturnValue(false),
       webContents: {
@@ -123,11 +153,16 @@ describe("IPC Boundary and Handler Verification", () => {
       switchFlow,
       autoSwitchService,
       snapshotStore,
+      relayServer,
+      tunnelManager,
       getMainWindow: () => mockWin,
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await relayServer.stop();
+    relayServer.dispose();
+    await tunnelManager.stop();
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
     } catch {
@@ -919,6 +954,169 @@ describe("IPC Boundary and Handler Verification", () => {
       (autoSwitchService as any).notifyPoolExhausted("Depleted");
       (processController as any).notifyListeners({});
       mockWin.isDestroyed.mockReturnValue(false);
+    });
+  });
+
+  describe("relay and tunnel IPC channels", () => {
+    it("should query relay server status via relay:get-status", async () => {
+      const handler = registeredHandlers.get(IpcChannels.RELAY_GET_STATUS)!;
+      const status = await handler({});
+      expect(status.isRunning).toBe(false);
+      expect(status.port).toBe(4899);
+      expect(status.activeSessions).toBe(0);
+    });
+
+    it("should start and stop relay server via relay:start and relay:stop", async () => {
+      const startHandler = registeredHandlers.get(IpcChannels.RELAY_START)!;
+      const startRes = await startHandler({}, { port: 4901 });
+      expect(startRes.success).toBe(true);
+      expect(startRes.data.isRunning).toBe(true);
+      expect(startRes.data.port).toBe(4901);
+
+      const stopHandler = registeredHandlers.get(IpcChannels.RELAY_STOP)!;
+      const stopRes = await stopHandler({});
+      expect(stopRes.success).toBe(true);
+
+      const statusHandler = registeredHandlers.get(
+        IpcChannels.RELAY_GET_STATUS,
+      )!;
+      const currentStatus = await statusHandler({});
+      expect(currentStatus.isRunning).toBe(false);
+    });
+
+    it("should reject invalid port in relay:start", async () => {
+      const startHandler = registeredHandlers.get(IpcChannels.RELAY_START)!;
+      const res = await startHandler({}, { port: -5 });
+      expect(res.success).toBe(false);
+      expect(res.error).toBeDefined();
+    });
+
+    it("should handle error during relay:start", async () => {
+      vi.spyOn(relayServer, "start").mockRejectedValueOnce(
+        new Error("Port already in use"),
+      );
+      const startHandler = registeredHandlers.get(IpcChannels.RELAY_START)!;
+      const res = await startHandler({}, { port: 4902 });
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Port already in use");
+    });
+
+    it("should handle error during relay:stop", async () => {
+      vi.spyOn(relayServer, "stop").mockRejectedValueOnce(
+        new Error("Stop relay failed"),
+      );
+      const stopHandler = registeredHandlers.get(IpcChannels.RELAY_STOP)!;
+      const res = await stopHandler({});
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Stop relay failed");
+    });
+
+    it("should retrieve sessions via relay:get-sessions and sessions:get-active", async () => {
+      relayServer.getSessionManager().createSession({ clientIp: "10.0.0.99" });
+
+      const handler1 = registeredHandlers.get(IpcChannels.RELAY_GET_SESSIONS)!;
+      const sessions1 = await handler1({});
+      expect(sessions1).toHaveLength(1);
+      expect(sessions1[0].clientIp).toBe("10.0.0.99");
+
+      const handler2 = registeredHandlers.get(IpcChannels.SESSIONS_GET_ACTIVE)!;
+      const sessions2 = await handler2({});
+      expect(sessions2).toHaveLength(1);
+    });
+
+    it("should revoke session via relay:revoke-session and sessions:revoke", async () => {
+      const session = relayServer.getSessionManager().createSession();
+
+      const revokeHandler = registeredHandlers.get(
+        IpcChannels.RELAY_REVOKE_SESSION,
+      )!;
+      const res = await revokeHandler({}, { sessionId: session.sessionId });
+      expect(res.success).toBe(true);
+      expect(
+        relayServer.getSessionManager().getSession(session.sessionId),
+      ).toBeUndefined();
+
+      // Validation failure on missing sessionId
+      const invalidRes = await revokeHandler({}, {});
+      expect(invalidRes.success).toBe(false);
+      expect(invalidRes.error).toBeDefined();
+    });
+
+    it("should query tunnel status via tunnel:get-status and tunnel:get-url", async () => {
+      const statusHandler = registeredHandlers.get(
+        IpcChannels.TUNNEL_GET_STATUS,
+      )!;
+      const status = await statusHandler({});
+      expect(status.state).toBe("stopped");
+
+      const urlHandler = registeredHandlers.get(IpcChannels.TUNNEL_GET_URL)!;
+      const urlRes = await urlHandler({});
+      expect(urlRes.publicUrl).toBeNull();
+    });
+
+    it("should start and stop tunnel via tunnel:start and tunnel:stop", async () => {
+      const startHandler = registeredHandlers.get(IpcChannels.TUNNEL_START)!;
+      const startRes = await startHandler({}, {});
+      expect(startRes.success).toBe(true);
+      expect(startRes.data.state).toBeDefined();
+
+      const stopHandler = registeredHandlers.get(IpcChannels.TUNNEL_STOP)!;
+      const stopRes = await stopHandler({});
+      expect(stopRes.success).toBe(true);
+    });
+
+    it("should handle error during tunnel:start and tunnel:stop", async () => {
+      vi.spyOn(tunnelManager, "start").mockRejectedValueOnce(
+        new Error("Binary not found"),
+      );
+      const startHandler = registeredHandlers.get(IpcChannels.TUNNEL_START)!;
+      const startRes = await startHandler({}, {});
+      expect(startRes.success).toBe(false);
+      expect(startRes.error).toBe("Binary not found");
+
+      vi.spyOn(tunnelManager, "stop").mockRejectedValueOnce(
+        new Error("Process termination failed"),
+      );
+      const stopHandler = registeredHandlers.get(IpcChannels.TUNNEL_STOP)!;
+      const stopRes = await stopHandler({});
+      expect(stopRes.success).toBe(false);
+      expect(stopRes.error).toBe("Process termination failed");
+    });
+
+    it("should handle error when relay:revoke-session throws", async () => {
+      vi.spyOn(
+        relayServer.getSessionManager(),
+        "revokeSession",
+      ).mockImplementationOnce(() => {
+        throw new Error("Revoke failed");
+      });
+      const revokeHandler = registeredHandlers.get(
+        IpcChannels.RELAY_REVOKE_SESSION,
+      )!;
+      const res = await revokeHandler({}, { sessionId: "valid-id" });
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Revoke failed");
+    });
+
+    it("should reject invalid payload schema in tunnel:start", async () => {
+      const startHandler = registeredHandlers.get(IpcChannels.TUNNEL_START)!;
+      const res = await startHandler({}, "invalid-string-payload");
+      expect(res.success).toBe(false);
+      expect(res.error).toBeDefined();
+    });
+
+    it("should forward relay and tunnel status updates to renderer window", () => {
+      (relayServer as any).notifyStatusUpdated();
+      expect(mockWin.webContents.send).toHaveBeenCalledWith(
+        IpcChannels.RELAY_STATUS_UPDATED,
+        expect.any(Object),
+      );
+
+      (tunnelManager as any).transitionState("connected");
+      expect(mockWin.webContents.send).toHaveBeenCalledWith(
+        IpcChannels.TUNNEL_STATUS_UPDATED,
+        expect.any(Object),
+      );
     });
   });
 });

@@ -212,4 +212,104 @@
   --comp-modal-overlay-bg: rgba(9, 13, 22, 0.82);
   --comp-modal-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
   --comp-modal-radius: var(--primitive-radius-xl);
+
+  /* Component: QR Pairing Code Display */
+  --comp-qr-container-size: 212px;
+  --comp-qr-size: 180px;
+  --comp-qr-quiet-zone: 16px;
+  --comp-qr-bg: #ffffff;
+  --comp-qr-fg: #090d16;
+  --comp-qr-border: var(--primitive-color-neutral-300);
+  --comp-qr-radius: var(--primitive-radius-md);
+
+  /* Component: Tunnel URL Card */
+  --comp-tunnel-card-bg: var(--bg-surface);
+  --comp-tunnel-code-bg: var(--primitive-color-neutral-950);
+  --comp-tunnel-code-border: var(--border-subtle);
+  --comp-tunnel-code-text: var(--primitive-color-emerald-400);
+  --comp-tunnel-copy-btn-bg: var(--primitive-color-neutral-800);
+  --comp-tunnel-copy-btn-hover: var(--primitive-color-neutral-700);
+
+  /* Semantic Upstream Daemon Health */
+  --status-upstream-connected: var(--primitive-color-emerald-500);
+  --status-upstream-connected-bg: rgba(16, 185, 129, 0.12);
+  --status-upstream-connected-border: rgba(16, 185, 129, 0.3);
+  --status-upstream-connected-text: var(--primitive-color-emerald-400);
+
+  --status-upstream-reconnecting: var(--primitive-color-amber-500);
+  --status-upstream-reconnecting-bg: rgba(245, 158, 11, 0.12);
+  --status-upstream-reconnecting-border: rgba(245, 158, 11, 0.3);
+  --status-upstream-reconnecting-text: var(--primitive-color-amber-400);
+
+  --status-upstream-buffering: var(--primitive-color-purple-500);
+  --status-upstream-buffering-bg: rgba(168, 85, 247, 0.12);
+  --status-upstream-buffering-border: rgba(168, 85, 247, 0.3);
+  --status-upstream-buffering-text: var(--primitive-color-purple-400);
+
+  /* Component: Connected Sessions Table */
+  --comp-table-header-bg: var(--primitive-color-neutral-950);
+  --comp-table-row-height: 48px;
+  --comp-table-row-hover: var(--primitive-color-neutral-800);
+  --comp-table-border: var(--border-subtle);
+  --comp-table-text-secondary: var(--primitive-color-neutral-300);
+  --comp-table-badge-active-bg: rgba(16, 185, 129, 0.12);
+  --comp-table-badge-active-text: var(--primitive-color-emerald-400);
+  --comp-table-revoke-btn-hover: rgba(239, 68, 68, 0.15);
+  --comp-table-revoke-btn-text: var(--primitive-color-red-400);
+
+  /* Mobile Ergonomics & Safe Area Constraints */
+  --target-mobile-min-size: 48px;
+  --target-mobile-clearance: 8px;
+  --mobile-safe-top: env(safe-area-inset-top, 0px);
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-safe-left: env(safe-area-inset-left, 0px);
+  --mobile-safe-right: env(safe-area-inset-right, 0px);
+
+  /* Component: Mobile Phone PWA Interface */
+  --comp-mobile-header-height: 56px;
+  --comp-mobile-status-pill-height: 32px;
+  --status-mobile-connected: var(--primitive-color-emerald-500);
+  --status-mobile-connected-bg: rgba(16, 185, 129, 0.15);
+  --status-mobile-connected-text: var(--primitive-color-emerald-400);
+
+  --status-mobile-buffering: var(--primitive-color-amber-500);
+  --status-mobile-buffering-bg: rgba(245, 158, 11, 0.15);
+  --status-mobile-buffering-text: var(--primitive-color-amber-400);
+
+  --status-mobile-disconnected: var(--primitive-color-red-500);
+  --status-mobile-disconnected-bg: rgba(239, 68, 68, 0.15);
+  --status-mobile-disconnected-text: var(--primitive-color-red-400);
+
+  /* Component: Account Swap Buffering Banner */
+  --comp-buffering-banner-bg: rgba(245, 158, 11, 0.12);
+  --comp-buffering-banner-border: rgba(245, 158, 11, 0.35);
+  --comp-buffering-banner-text: var(--primitive-color-amber-300);
+  --comp-buffering-banner-icon: var(--primitive-color-amber-400);
+
+  /* Component: Mobile Agent Console & Chat */
+  --comp-mobile-bubble-agent-bg: var(--primitive-color-neutral-900);
+  --comp-mobile-bubble-agent-border: var(--primitive-color-neutral-800);
+  --comp-mobile-bubble-agent-text: var(--primitive-color-neutral-50);
+  --comp-mobile-bubble-user-bg: var(--primitive-color-blue-900);
+  --comp-mobile-bubble-user-border: var(--primitive-color-blue-700);
+  --comp-mobile-bubble-user-text: var(--primitive-color-neutral-50);
+
+  /* Component: Action Proposal Card */
+  --comp-action-card-bg: var(--primitive-color-neutral-900);
+  --comp-action-card-border: var(--primitive-color-amber-500);
+  --comp-action-btn-approve-bg: var(--primitive-color-emerald-600);
+  --comp-action-btn-approve-hover: var(--primitive-color-emerald-500);
+  --comp-action-btn-approve-text: #ffffff;
+  --comp-action-btn-reject-bg: var(--primitive-color-neutral-800);
+  --comp-action-btn-reject-hover: var(--primitive-color-neutral-700);
+  --comp-action-btn-reject-text: var(--primitive-color-red-400);
+  --comp-action-btn-reject-border: var(--primitive-color-red-500);
+
+  /* Component: Floating Prompt Dock */
+  --comp-prompt-dock-bg: rgba(17, 24, 39, 0.95);
+  --comp-prompt-dock-border: var(--border-default);
+  --comp-prompt-input-bg: var(--primitive-color-neutral-950);
+  --comp-prompt-input-border: var(--border-default);
+  --comp-prompt-input-focus: var(--primitive-color-emerald-500);
+  --comp-prompt-send-btn-size: 48px;
 }

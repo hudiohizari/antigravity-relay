@@ -9,6 +9,8 @@ import { QuotaMonitor } from "./quota/quota-monitor";
 import { SwitchFlow } from "./switcher/switch-flow";
 import { AutoSwitchService } from "./switcher/auto-switch.service";
 import { SnapshotStore } from "./snapshots/snapshot-store";
+import { RelayServer } from "./relay/relay-server";
+import { TunnelManager } from "./tunnel/tunnel-manager";
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -16,6 +18,8 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 let mainWindow: BrowserWindow | null = null;
 let processController: ProcessController | null = null;
 let quotaMonitor: QuotaMonitor | null = null;
+let relayServer: RelayServer | null = null;
+let tunnelManager: TunnelManager | null = null;
 
 const createWindow = (): void => {
   mainWindow = new BrowserWindow({
@@ -85,6 +89,9 @@ app.whenReady().then(() => {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   };
 
+  relayServer = new RelayServer();
+  tunnelManager = new TunnelManager();
+
   registerIpcHandlers({
     accountStore,
     processController,
@@ -94,6 +101,8 @@ app.whenReady().then(() => {
     switchFlow,
     autoSwitchService,
     snapshotStore,
+    relayServer,
+    tunnelManager,
     getMainWindow: () => mainWindow,
   });
 
@@ -118,5 +127,11 @@ app.on("before-quit", () => {
   }
   if (quotaMonitor) {
     quotaMonitor.stop();
+  }
+  if (relayServer) {
+    relayServer.stop().catch(() => {});
+  }
+  if (tunnelManager) {
+    tunnelManager.stop().catch(() => {});
   }
 });

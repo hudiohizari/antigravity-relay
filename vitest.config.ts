@@ -15,8 +15,10 @@ export default defineConfig({
         "src/main/oauth/**",
         "src/main/process/**",
         "src/main/quota/**",
+        "src/main/relay/**",
         "src/main/switcher/**",
         "src/main/snapshots/**",
+        "src/main/tunnel/**",
       ],
       thresholds: {
         lines: 100,

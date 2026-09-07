@@ -1,0 +1,43 @@
+{
+  "app": {
+    "title": "Antigravity Remote",
+    "status": {
+      "live": "Live",
+      "buffering": "Buffering (swapping accounts...)",
+      "disconnected": "Disconnected",
+      "connecting": "Connecting..."
+    },
+    "account": {
+      "active": "Active Account",
+      "none": "No active account"
+    }
+  },
+  "stream": {
+    "title": "Conversation Stream",
+    "empty": "No activity yet. Stand by for autonomous agent updates.",
+    "assistant": "Assistant",
+    "system": "System"
+  },
+  "actions": {
+    "proposalTitle": "Action Authorization Required",
+    "commandExecution": "Terminal Command Execution",
+    "approve": "Approve",
+    "reject": "Reject",
+    "approved": "Action approved",
+    "rejected": "Action rejected"
+  },
+  "prompt": {
+    "placeholder": "Type instruction or prompt...",
+    "send": "Send",
+    "pause": "Pause Agent",
+    "resume": "Resume Agent",
+    "refresh": "Refresh State",
+    "buffered": "Action queued during account swap..."
+  },
+  "errors": {
+    "unauthorized": "Invalid or expired session token. Please re-pair your device.",
+    "bufferFull": "Relay buffer is full. Please wait for previous actions to flush.",
+    "rateLimited": "Too many failed authentication attempts. Please wait before retrying.",
+    "connectionLost": "Connection to relay server was lost. Reconnecting..."
+  }
+}

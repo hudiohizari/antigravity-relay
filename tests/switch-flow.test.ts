@@ -389,4 +389,28 @@ describe("Switch Flow Process Coordinator", () => {
       switchFlow.executeSwitch(sampleAccountB.id, "manual_request"),
     ).rejects.toThrow();
   });
+
+  it("should notify onSwitchStart listeners, support unsubscription, and suppress listener errors", async () => {
+    const switchFlow = new SwitchFlow({
+      accountStore,
+      processController,
+    });
+
+    const received: any[] = [];
+    const unsub = switchFlow.onSwitchStart((info) => {
+      received.push(info);
+    });
+
+    switchFlow.onSwitchStart(() => {
+      throw new Error("Exploding start listener");
+    });
+
+    await switchFlow.executeSwitch(sampleAccountB.id, "manual_request");
+    expect(received).toHaveLength(1);
+    expect(received[0].targetAccountId).toBe(sampleAccountB.id);
+
+    unsub();
+    await switchFlow.executeSwitch(sampleAccountA.id, "manual_request");
+    expect(received).toHaveLength(1);
+  });
 });

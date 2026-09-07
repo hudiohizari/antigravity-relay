@@ -1,0 +1,46 @@
+import {
+  RelayConfig,
+  RelayServerConfig,
+  SessionSocketState,
+  Session,
+  RelaySession,
+  CommandStatus,
+  BufferedMessage,
+  BufferedCommand,
+  UpstreamBridgeState,
+  UpstreamBridgeStatus,
+  UpstreamStatus,
+  RelayServerStatus,
+  RemoteCommandType,
+  RemoteCommand,
+  RemoteEventType,
+  RemoteEvent,
+} from "../../shared/types";
+
+export type {
+  RelayConfig,
+  RelayServerConfig,
+  SessionSocketState,
+  Session,
+  RelaySession,
+  CommandStatus,
+  BufferedMessage,
+  BufferedCommand,
+  UpstreamBridgeState,
+  UpstreamBridgeStatus,
+  UpstreamStatus,
+  RelayServerStatus,
+  RemoteCommandType,
+  RemoteCommand,
+  RemoteEventType,
+  RemoteEvent,
+};
+
+export const DEFAULT_RELAY_CONFIG: RelayConfig = {
+  port: 4040,
+  host: "127.0.0.1",
+  corsOrigins: ["*"],
+  maxBufferedCommands: 100,
+  bufferTtlMs: 60000,
+  heartbeatIntervalMs: 15000,
+};

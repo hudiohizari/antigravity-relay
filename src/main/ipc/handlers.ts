@@ -11,6 +11,8 @@ import { RateLimitTracker } from "../switcher/rate-limit-tracker";
 import { AutoSwitchService } from "../switcher/auto-switch.service";
 import { SwitchFlow } from "../switcher/switch-flow";
 import { SnapshotStore } from "../snapshots/snapshot-store";
+import { RelayServer } from "../relay/relay-server";
+import { TunnelManager } from "../tunnel/tunnel-manager";
 
 const AccountIdPayloadSchema = z.object({
   id: z.string().min(1, "Account identifier is required"),
@@ -46,6 +48,23 @@ const SnapshotIdPayloadSchema = z.object({
   id: z.string().min(1, "Snapshot ID is required"),
 });
 
+const RelayStartPayloadSchema = z
+  .object({
+    port: z.number().int().min(1).max(65535).optional(),
+    host: z.string().optional(),
+  })
+  .optional();
+
+const SessionIdPayloadSchema = z.object({
+  sessionId: z.string().min(1, "Session ID is required"),
+});
+
+const TunnelStartPayloadSchema = z
+  .object({
+    config: z.record(z.unknown()).optional(),
+  })
+  .optional();
+
 export interface RegisterIpcHandlersDependencies {
   accountStore: AccountStore;
   processController: ProcessController;
@@ -55,6 +74,8 @@ export interface RegisterIpcHandlersDependencies {
   autoSwitchService?: AutoSwitchService;
   switchFlow?: SwitchFlow;
   snapshotStore?: SnapshotStore;
+  relayServer?: RelayServer;
+  tunnelManager?: TunnelManager;
   getMainWindow?: () => BrowserWindow | null;
 }
 
@@ -80,6 +101,12 @@ export function registerIpcHandlers(
       accountStore,
       autoSwitchService,
     });
+  const relayServer = deps.relayServer || new RelayServer();
+  const tunnelManager = deps.tunnelManager || new TunnelManager();
+
+  // Wire SwitchFlow hook to UpstreamBridge
+  relayServer.getUpstreamBridge().hookSwitchFlow(switchFlow);
+
   let activeOAuthServer: OAuthLoopbackServer | null = null;
 
   // 1. accounts:get-all
@@ -510,6 +537,134 @@ export function registerIpcHandlers(
         type: "pool_exhausted",
         ...info,
       });
+    }
+  });
+
+  // --- Relay Server IPC Channels ---
+
+  // 20. relay:get-status
+  ipcMain.handle(IpcChannels.RELAY_GET_STATUS, async () => {
+    return relayServer.getStatus();
+  });
+
+  // 21. relay:start
+  ipcMain.handle(
+    IpcChannels.RELAY_START,
+    async (_event, rawPayload: unknown) => {
+      const parseResult = RelayStartPayloadSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        return {
+          success: false,
+          error: parseResult.error.errors.map((e) => e.message).join(", "),
+        };
+      }
+
+      try {
+        const status = await relayServer.start(parseResult.data);
+        return { success: true, data: status };
+      } catch (err) {
+        return { success: false, error: (err as Error).message };
+      }
+    },
+  );
+
+  // 22. relay:stop
+  ipcMain.handle(IpcChannels.RELAY_STOP, async () => {
+    try {
+      await relayServer.stop();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // 23. relay:get-sessions & sessions:get-active
+  const handleGetSessions = async () => {
+    return relayServer.getSessionManager().getActiveSessions();
+  };
+  ipcMain.handle(IpcChannels.RELAY_GET_SESSIONS, handleGetSessions);
+  ipcMain.handle(IpcChannels.SESSIONS_GET_ACTIVE, handleGetSessions);
+
+  // 24. relay:revoke-session & sessions:revoke
+  const handleRevokeSession = async (_event: unknown, rawPayload: unknown) => {
+    const parseResult = SessionIdPayloadSchema.safeParse(rawPayload);
+    if (!parseResult.success) {
+      return {
+        success: false,
+        error: parseResult.error.errors.map((e) => e.message).join(", "),
+      };
+    }
+
+    try {
+      const revoked = relayServer
+        .getSessionManager()
+        .revokeSession(parseResult.data.sessionId);
+      return { success: revoked };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  };
+  ipcMain.handle(IpcChannels.RELAY_REVOKE_SESSION, handleRevokeSession);
+  ipcMain.handle(IpcChannels.SESSIONS_REVOKE, handleRevokeSession);
+
+  // --- Cloudflare Tunnel IPC Channels ---
+
+  // 25. tunnel:get-status
+  ipcMain.handle(IpcChannels.TUNNEL_GET_STATUS, async () => {
+    return tunnelManager.getStatus();
+  });
+
+  // 26. tunnel:start
+  ipcMain.handle(
+    IpcChannels.TUNNEL_START,
+    async (_event, rawPayload: unknown) => {
+      const parseResult = TunnelStartPayloadSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        return {
+          success: false,
+          error: parseResult.error.errors.map((e) => e.message).join(", "),
+        };
+      }
+
+      try {
+        const status = await tunnelManager.start(
+          parseResult.data?.config as any,
+        );
+        return { success: true, data: status };
+      } catch (err) {
+        return { success: false, error: (err as Error).message };
+      }
+    },
+  );
+
+  // 27. tunnel:stop
+  ipcMain.handle(IpcChannels.TUNNEL_STOP, async () => {
+    try {
+      await tunnelManager.stop();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // 28. tunnel:get-url
+  ipcMain.handle(IpcChannels.TUNNEL_GET_URL, async () => {
+    return { publicUrl: tunnelManager.getPublicUrl() };
+  });
+
+  // Listen to relay server status updates and forward to renderer
+  relayServer.onStatusUpdated((status) => {
+    const win = deps.getMainWindow ? deps.getMainWindow() : null;
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IpcChannels.RELAY_STATUS_UPDATED, status);
+    }
+  });
+
+  // Listen to tunnel status updates and forward to renderer
+  tunnelManager.onStatusUpdated((status) => {
+    const win = deps.getMainWindow ? deps.getMainWindow() : null;
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IpcChannels.TUNNEL_STATUS_UPDATED, status);
     }
   });
 }

@@ -12,6 +12,10 @@ import {
   SwitchResult,
   RateLimitState,
   SnapshotMetadata,
+  RelayServerStatus,
+  Session,
+  TunnelStatus,
+  TunnelConfig,
 } from "../shared/types";
 
 export interface ElectronAPI {
@@ -80,6 +84,32 @@ export interface ElectronAPI {
     id: string,
   ) => Promise<{ success: boolean; accountCount?: number; error?: string }>;
   deleteSnapshot: (id: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Relay Server
+  getRelayStatus: () => Promise<RelayServerStatus>;
+  startRelay: (config?: {
+    port?: number;
+    host?: string;
+  }) => Promise<{ success: boolean; data?: RelayServerStatus; error?: string }>;
+  stopRelay: () => Promise<{ success: boolean; error?: string }>;
+  getRelaySessions: () => Promise<Session[]>;
+  revokeRelaySession: (
+    sessionId: string,
+  ) => Promise<{ success: boolean; error?: string }>;
+  onRelayStatusUpdated: (
+    callback: (status: RelayServerStatus) => void,
+  ) => () => void;
+
+  // Cloudflare Tunnel
+  getTunnelStatus: () => Promise<TunnelStatus>;
+  startTunnel: (
+    config?: Partial<TunnelConfig>,
+  ) => Promise<{ success: boolean; data?: TunnelStatus; error?: string }>;
+  stopTunnel: () => Promise<{ success: boolean; error?: string }>;
+  getTunnelUrl: () => Promise<{ publicUrl: string | null }>;
+  onTunnelStatusUpdated: (
+    callback: (status: TunnelStatus) => void,
+  ) => () => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -157,6 +187,49 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke(IpcChannels.SNAPSHOTS_RESTORE, { id }),
   deleteSnapshot: (id: string) =>
     ipcRenderer.invoke(IpcChannels.SNAPSHOTS_DELETE, { id }),
+
+  // Relay Server
+  getRelayStatus: () => ipcRenderer.invoke(IpcChannels.RELAY_GET_STATUS),
+  startRelay: (config?: { port?: number; host?: string }) =>
+    ipcRenderer.invoke(IpcChannels.RELAY_START, config),
+  stopRelay: () => ipcRenderer.invoke(IpcChannels.RELAY_STOP),
+  getRelaySessions: () => ipcRenderer.invoke(IpcChannels.RELAY_GET_SESSIONS),
+  revokeRelaySession: (sessionId: string) =>
+    ipcRenderer.invoke(IpcChannels.RELAY_REVOKE_SESSION, { sessionId }),
+  onRelayStatusUpdated: (callback: (status: RelayServerStatus) => void) => {
+    const subscription = (
+      _event: IpcRendererEvent,
+      status: RelayServerStatus,
+    ) => {
+      callback(status);
+    };
+    ipcRenderer.on(IpcChannels.RELAY_STATUS_UPDATED, subscription);
+    return () => {
+      ipcRenderer.removeListener(
+        IpcChannels.RELAY_STATUS_UPDATED,
+        subscription,
+      );
+    };
+  },
+
+  // Cloudflare Tunnel
+  getTunnelStatus: () => ipcRenderer.invoke(IpcChannels.TUNNEL_GET_STATUS),
+  startTunnel: (config?: Partial<TunnelConfig>) =>
+    ipcRenderer.invoke(IpcChannels.TUNNEL_START, config ? { config } : {}),
+  stopTunnel: () => ipcRenderer.invoke(IpcChannels.TUNNEL_STOP),
+  getTunnelUrl: () => ipcRenderer.invoke(IpcChannels.TUNNEL_GET_URL),
+  onTunnelStatusUpdated: (callback: (status: TunnelStatus) => void) => {
+    const subscription = (_event: IpcRendererEvent, status: TunnelStatus) => {
+      callback(status);
+    };
+    ipcRenderer.on(IpcChannels.TUNNEL_STATUS_UPDATED, subscription);
+    return () => {
+      ipcRenderer.removeListener(
+        IpcChannels.TUNNEL_STATUS_UPDATED,
+        subscription,
+      );
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

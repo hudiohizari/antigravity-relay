@@ -7,6 +7,7 @@ import { useQuota } from "./hooks/useQuota";
 import { useSnapshots } from "./hooks/useSnapshots";
 import { useRateLimits } from "./hooks/useRateLimits";
 import { AccountList } from "./pages/AccountList";
+import { RemoteControl } from "./pages/RemoteControl";
 import { AutoSwitchSettings } from "./components/AutoSwitchSettings";
 import { SnapshotModal } from "./components/SnapshotModal";
 import { StatusBar } from "./components/StatusBar";
@@ -252,21 +253,7 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === "remote" && (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--text-muted)]">
-            <Radio
-              className="w-10 h-10 mb-3 text-[var(--text-secondary)]"
-              aria-hidden="true"
-            />
-            <h2 className="text-base font-semibold text-[var(--text-primary)]">
-              {t("nav.remoteControl")}
-            </h2>
-            <p className="text-xs sm:text-sm mt-1 max-w-sm">
-              Remote tethering controls will be configured in subsequent
-              milestone modules.
-            </p>
-          </div>
-        )}
+        {activeTab === "remote" && <RemoteControl />}
 
         {activeTab === "settings" && (
           <div className="flex-1 p-4 sm:p-6 overflow-y-auto">

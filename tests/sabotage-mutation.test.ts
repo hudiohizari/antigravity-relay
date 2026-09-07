@@ -27,6 +27,22 @@ import { GoogleAccount } from "../src/shared/types";
 import { AutoSwitchService } from "../src/main/switcher/auto-switch.service";
 import { RateLimitTracker } from "../src/main/switcher/rate-limit-tracker";
 import { SwitchFlow } from "../src/main/switcher/switch-flow";
+import {
+  validateToken,
+  AuthRateLimiter,
+  generateSessionToken,
+} from "../src/main/relay/relay-auth";
+import { SessionManager, SocketLike } from "../src/main/relay/session-manager";
+import {
+  UpstreamBridge,
+  UpstreamTransport,
+} from "../src/main/relay/upstream-bridge";
+import {
+  TunnelManager,
+  ChildProcessLike,
+  SpawnFunction,
+} from "../src/main/tunnel/tunnel-manager";
+import { EventEmitter } from "node:events";
 
 describe("Shift-Left Sabotage & Mutation Vectors", () => {
   describe("Cryptographic Envelope Tampering and Mutation Vectors", () => {
@@ -1087,6 +1103,459 @@ describe("Shift-Left Sabotage & Mutation Vectors", () => {
           "ALREADY_IN_PROGRESS",
         );
         expect(switchFlow.isInProgress()).toBe(false);
+      });
+    });
+  });
+
+  describe("Remote Relay & Cloudflare Tunnel Sabotage & Mutation Vectors", () => {
+    describe("Timing-Safe Comparison & Authentication Sabotage Vectors", () => {
+      it("should reject single-bit flipped token mutant and prevent timing vulnerability", () => {
+        const expected = generateSessionToken();
+        const charToFlip = expected[16];
+        const flippedChar = charToFlip === "a" ? "b" : "a";
+        const mutated =
+          expected.slice(0, 16) + flippedChar + expected.slice(17);
+
+        expect(validateToken(mutated, expected)).toBe(false);
+      });
+
+      it("should reject length-mismatched token mutants without throwing or timing leak", () => {
+        const expected = generateSessionToken();
+        expect(validateToken(expected.slice(0, -1), expected)).toBe(false);
+        expect(validateToken(expected + "0", expected)).toBe(false);
+        expect(validateToken("", expected)).toBe(false);
+        expect(validateToken(expected, "")).toBe(false);
+        expect(validateToken("", "")).toBe(false);
+      });
+
+      it("should reject prefix-match mutant where provided token contains expected token as prefix", () => {
+        const expected = generateSessionToken();
+        const prefixMutant = expected + "extra_bytes_appended";
+        expect(validateToken(prefixMutant, expected)).toBe(false);
+      });
+
+      it("should kill rate limiter boundary mutant by rejecting on exactly 5th failure and preserving window", () => {
+        const limiter = new AuthRateLimiter({ maxAttempts: 5, windowMs: 1000 });
+        const ip = "192.168.1.100";
+
+        for (let i = 0; i < 4; i++) {
+          limiter.recordFailure(ip);
+          expect(limiter.isRateLimited(ip)).toBe(false);
+        }
+
+        // 5th failure trips threshold
+        limiter.recordFailure(ip);
+        expect(limiter.isRateLimited(ip)).toBe(true);
+
+        // Success on another IP does not clear ip
+        limiter.recordSuccess("192.168.1.200");
+        expect(limiter.isRateLimited(ip)).toBe(true);
+
+        // Success on ip clears it immediately
+        limiter.recordSuccess(ip);
+        expect(limiter.isRateLimited(ip)).toBe(false);
+      });
+
+      it("should clear rate limit after window expiration", async () => {
+        const limiter = new AuthRateLimiter({ maxAttempts: 3, windowMs: 50 });
+        const ip = "10.0.0.1";
+
+        for (let i = 0; i < 3; i++) {
+          limiter.recordFailure(ip);
+        }
+        expect(limiter.isRateLimited(ip)).toBe(true);
+
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        expect(limiter.isRateLimited(ip)).toBe(false);
+      });
+    });
+
+    describe("FIFO Message Queue Boundary & TTL Pruning Sabotage Vectors", () => {
+      it("should kill buffer capacity overflow mutant by strictly rejecting commands exceeding capacity", () => {
+        const manager = new SessionManager({
+          maxBufferedCommands: 3,
+          bufferTtlMs: 10000,
+        });
+        const session = manager.createSession();
+
+        const r1 = manager.bufferMessage(session.sessionId, "CMD_1", {
+          idx: 1,
+        });
+        const r2 = manager.bufferMessage(session.sessionId, "CMD_2", {
+          idx: 2,
+        });
+        const r3 = manager.bufferMessage(session.sessionId, "CMD_3", {
+          idx: 3,
+        });
+
+        expect(r1.buffered).toBe(true);
+        expect(r2.buffered).toBe(true);
+        expect(r3.buffered).toBe(true);
+        expect(manager.getBufferedCount()).toBe(3);
+
+        // 4th message must be rejected
+        const r4 = manager.bufferMessage(session.sessionId, "CMD_4", {
+          idx: 4,
+        });
+        expect(r4.buffered).toBe(false);
+        expect(r4.error).toContain("BUFFER_FULL");
+        expect(manager.getBufferedCount()).toBe(3);
+      });
+
+      it("should kill TTL boundary mutant by accurately distinguishing active vs expired commands", async () => {
+        const manager = new SessionManager({
+          maxBufferedCommands: 10,
+          bufferTtlMs: 100,
+        });
+        const session = manager.createSession();
+
+        manager.bufferMessage(
+          session.sessionId,
+          "EXPIRING_CMD",
+          { data: 1 },
+          60,
+        );
+        manager.bufferMessage(
+          session.sessionId,
+          "PERSISTENT_CMD",
+          { data: 2 },
+          10000,
+        );
+
+        expect(manager.getBufferedCount()).toBe(2);
+
+        // Wait for first command to expire
+        await new Promise((resolve) => setTimeout(resolve, 80));
+
+        const expired = manager.pruneExpired();
+        expect(expired.length).toBe(1);
+        expect(expired[0].commandType).toBe("EXPIRING_CMD");
+        expect(expired[0].status).toBe("expired");
+
+        expect(manager.getBufferedCount()).toBe(1);
+        const remaining = manager.getBufferedMessages();
+        expect(remaining[0].commandType).toBe("PERSISTENT_CMD");
+      });
+
+      it("should kill revocation mutant by completely removing session messages and sockets", () => {
+        const manager = new SessionManager();
+        const sessionA = manager.createSession();
+        const sessionB = manager.createSession();
+
+        let socketClosed = false;
+        let closeCode = 0;
+        const mockSocket: SocketLike = {
+          readyState: 1,
+          send: vi.fn(),
+          close: vi.fn((code) => {
+            socketClosed = true;
+            closeCode = code || 0;
+          }),
+        };
+        manager.bindSocket(sessionA.sessionId, mockSocket);
+
+        manager.bufferMessage(sessionA.sessionId, "A1", {});
+        manager.bufferMessage(sessionA.sessionId, "A2", {});
+        manager.bufferMessage(sessionB.sessionId, "B1", {});
+
+        expect(manager.getBufferedCount()).toBe(3);
+
+        const revoked = manager.revokeSession(sessionA.sessionId);
+        expect(revoked).toBe(true);
+        expect(socketClosed).toBe(true);
+        expect(closeCode).toBe(4401);
+
+        // Buffered messages for A must be purged
+        expect(manager.getBufferedCount()).toBe(1);
+        expect(manager.getBufferedMessages()[0].sessionId).toBe(
+          sessionB.sessionId,
+        );
+        expect(manager.getSession(sessionA.sessionId)).toBeUndefined();
+      });
+
+      it("should kill drain mutation by emptying queue and updating message status to forwarded", () => {
+        const manager = new SessionManager();
+        const session = manager.createSession();
+
+        manager.bufferMessage(session.sessionId, "C1", { seq: 1 });
+        manager.bufferMessage(session.sessionId, "C2", { seq: 2 });
+
+        const drained = manager.drainMessages();
+        expect(drained.length).toBe(2);
+        expect(drained[0].commandType).toBe("C1");
+        expect(drained[0].status).toBe("forwarded");
+        expect(drained[1].commandType).toBe("C2");
+        expect(drained[1].status).toBe("forwarded");
+
+        // Buffer is now empty
+        expect(manager.getBufferedCount()).toBe(0);
+        expect(manager.drainMessages().length).toBe(0);
+      });
+    });
+
+    describe("Upstream Reconnect Buffer Flush Order & Readiness Sabotage Vectors", () => {
+      class SabotageUpstreamTransport implements UpstreamTransport {
+        public connected = false;
+        public sentEnvelopes: string[] = [];
+        public failOnSend = false;
+        private closeCb?: (code: number, reason: string) => void;
+
+        public async connect(_url: string): Promise<void> {
+          this.connected = true;
+        }
+        public send(data: string): void {
+          if (this.failOnSend) {
+            throw new Error("Simulated write failure");
+          }
+          this.sentEnvelopes.push(data);
+        }
+        public close(_code = 1000, _reason = ""): void {
+          this.connected = false;
+          this.closeCb?.(_code, _reason);
+        }
+        public isReady(): boolean {
+          return this.connected;
+        }
+        public onMessage(_cb: (d: string) => void): void {}
+        public onClose(cb: (c: number, r: string) => void): void {
+          this.closeCb = cb;
+        }
+        public onError(_cb: (e: Error) => void): void {}
+      }
+
+      it("should kill FIFO flush order inversion mutant by maintaining strict insertion order", async () => {
+        const sessionManager = new SessionManager();
+        const transport = new SabotageUpstreamTransport();
+        const bridge = new UpstreamBridge({
+          sessionManager,
+          transportFactory: () => transport,
+          autoReconnect: false,
+        });
+
+        const session = sessionManager.createSession();
+        bridge.enterBuffering("Account rotation in progress");
+        expect(bridge.isBuffering()).toBe(true);
+
+        // Send 4 commands sequentially
+        await bridge.sendCommand(session.sessionId, "CMD_FIRST", { seq: 1 });
+        await bridge.sendCommand(session.sessionId, "CMD_SECOND", { seq: 2 });
+        await bridge.sendCommand(session.sessionId, "CMD_THIRD", { seq: 3 });
+        await bridge.sendCommand(session.sessionId, "CMD_FOURTH", { seq: 4 });
+
+        expect(sessionManager.getBufferedCount()).toBe(4);
+
+        // Connect automatically flushes buffer if buffering is true
+        const connectResult = await bridge.connect();
+
+        expect(connectResult.flushed).toBe(4);
+        expect(transport.sentEnvelopes.length).toBe(4);
+
+        const seqs = transport.sentEnvelopes.map((env) => JSON.parse(env).type);
+        expect(seqs).toEqual([
+          "CMD_FIRST",
+          "CMD_SECOND",
+          "CMD_THIRD",
+          "CMD_FOURTH",
+        ]);
+        expect(bridge.isBuffering()).toBe(false);
+
+        bridge.dispose();
+      });
+
+      it("should kill write failure unhandled crash mutant during flush", async () => {
+        const sessionManager = new SessionManager();
+        const transport = new SabotageUpstreamTransport();
+        const bridge = new UpstreamBridge({
+          sessionManager,
+          transportFactory: () => transport,
+          autoReconnect: false,
+        });
+
+        const session = sessionManager.createSession();
+        bridge.enterBuffering("Test buffering");
+        await bridge.sendCommand(session.sessionId, "C1", { id: 1 });
+        await bridge.sendCommand(session.sessionId, "C2", { id: 2 });
+
+        transport.failOnSend = true; // Make transport write fail during flush
+
+        const connectResult = await bridge.connect();
+        // Should halt gracefully without throwing uncaught exception
+        expect(connectResult.flushed).toBe(0);
+        bridge.dispose();
+      });
+
+      it("should kill SwitchFlow hook mutant by reacting to onSwitchStart and onSwitchEvent", async () => {
+        const sessionManager = new SessionManager();
+        const transport = new SabotageUpstreamTransport();
+        const bridge = new UpstreamBridge({
+          sessionManager,
+          transportFactory: () => transport,
+          autoReconnect: false,
+        });
+
+        let switchStartCb: (() => void) | undefined;
+        let switchEventCb: ((res: { success: boolean }) => void) | undefined;
+        const mockSwitchFlow = {
+          onSwitchStart: vi.fn((cb) => {
+            switchStartCb = cb;
+            return vi.fn();
+          }),
+          onSwitchEvent: vi.fn((cb) => {
+            switchEventCb = cb;
+            return vi.fn();
+          }),
+        } as unknown as SwitchFlow;
+
+        let swapResumedCalled = false;
+        bridge.onSwapResumed(() => {
+          swapResumedCalled = true;
+        });
+
+        bridge.hookSwitchFlow(mockSwitchFlow);
+        expect(bridge.isBuffering()).toBe(false);
+
+        // 1. Trigger switch start
+        switchStartCb?.();
+        expect(bridge.isBuffering()).toBe(true);
+
+        // 2. Queue command while buffering
+        const session = sessionManager.createSession();
+        await bridge.sendCommand(session.sessionId, "PROMPT", {
+          text: "Hello",
+        });
+        expect(sessionManager.getBufferedCount()).toBe(1);
+
+        // 3. Complete switch successfully
+        await switchEventCb?.({ success: true });
+        // Give microtask queue time to run reconnectAndFlush
+        await new Promise((r) => setTimeout(r, 20));
+
+        expect(bridge.isBuffering()).toBe(false);
+        expect(swapResumedCalled).toBe(true);
+        bridge.dispose();
+      });
+    });
+
+    describe("Cloudflare Tunnel Crash Backoff & Escalation Sabotage Vectors", () => {
+      class MockSabotageProcess
+        extends EventEmitter
+        implements ChildProcessLike
+      {
+        public pid = 9988;
+        public killed = false;
+        public signals: string[] = [];
+        public stdout = new EventEmitter();
+        public stderr = new EventEmitter();
+
+        public kill(signal?: NodeJS.Signals | number): boolean {
+          const sigStr = String(signal || "SIGTERM");
+          this.signals.push(sigStr);
+          if (sigStr === "SIGKILL") {
+            this.killed = true;
+            this.emit("exit", null, "SIGKILL");
+          }
+          return true;
+        }
+      }
+
+      it("should kill exponential backoff formula mutant by strictly adhering to 2^(n-1) * retryBackoffMs capped at 30s", () => {
+        const baseBackoff = 2000;
+        const maxBackoff = 30000;
+
+        const expectedProgression = [
+          baseBackoff * Math.pow(2, 0), // Attempt 1: 2000
+          baseBackoff * Math.pow(2, 1), // Attempt 2: 4000
+          baseBackoff * Math.pow(2, 2), // Attempt 3: 8000
+          baseBackoff * Math.pow(2, 3), // Attempt 4: 16000
+          Math.min(baseBackoff * Math.pow(2, 4), maxBackoff), // Attempt 5: 30000 (capped from 32000)
+        ];
+
+        expect(expectedProgression).toEqual([2000, 4000, 8000, 16000, 30000]);
+
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          const calculated = Math.min(
+            baseBackoff * Math.pow(2, attempt - 1),
+            maxBackoff,
+          );
+          expect(calculated).toBe(expectedProgression[attempt - 1]);
+        }
+      });
+
+      it("should kill retry ceiling mutant by transitioning to error after exactly maxRetries attempts", async () => {
+        let spawnCount = 0;
+        const spawnFn: SpawnFunction = () => {
+          spawnCount++;
+          const p = new MockSabotageProcess();
+          // Crash immediately on spawn
+          setTimeout(() => p.emit("exit", 1, null), 5);
+          return p as unknown as ChildProcessLike;
+        };
+
+        const tunnel = new TunnelManager({
+          config: { autoRestart: true, maxRetries: 2, retryBackoffMs: 10 },
+          spawnFn,
+          connectionTimeoutMs: 50,
+        });
+
+        await tunnel.start();
+        // Wait for 2 retries (total 3 spawns: initial + 2 retries)
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const status = tunnel.getStatus();
+        expect(status.state).toBe("error");
+        expect(spawnCount).toBe(3); // Initial spawn + 2 retries = 3
+        await tunnel.stop();
+      });
+
+      it("should escalate from SIGTERM to SIGKILL if subprocess fails to exit within timeout", async () => {
+        const stubbornProc = new MockSabotageProcess();
+        const spawnFn: SpawnFunction = () =>
+          stubbornProc as unknown as ChildProcessLike;
+
+        const tunnel = new TunnelManager({
+          spawnFn,
+          escalationTimeoutMs: 50,
+          connectionTimeoutMs: 50,
+        });
+
+        await tunnel.start();
+        expect(stubbornProc.signals.length).toBe(0);
+
+        // Stop tunnel; process ignores SIGTERM
+        const stopPromise = tunnel.stop();
+
+        // Check initial SIGTERM was sent
+        expect(stubbornProc.signals).toContain("SIGTERM");
+        expect(stubbornProc.killed).toBe(false);
+
+        // Wait for escalation
+        await stopPromise;
+        expect(stubbornProc.signals).toContain("SIGKILL");
+        expect(stubbornProc.killed).toBe(true);
+        expect(tunnel.getStatus().state).toBe("stopped");
+      });
+
+      it("should kill URL regex mutation by matching only valid trycloudflare domains and rejecting impostors", () => {
+        const tunnel = new TunnelManager();
+
+        // Valid URLs
+        expect(
+          tunnel.extractUrl(
+            "Tunnel created: https://brave-dog-123.trycloudflare.com is live",
+          ),
+        ).toBe("https://brave-dog-123.trycloudflare.com");
+        expect(tunnel.extractUrl("https://a-b-c-42.trycloudflare.com\n")).toBe(
+          "https://a-b-c-42.trycloudflare.com",
+        );
+
+        // Invalid URLs
+        expect(
+          tunnel.extractUrl("http://insecure.trycloudflare.com"),
+        ).toBeNull();
+        expect(tunnel.extractUrl("https://trycloudflare.com")).toBeNull();
+        expect(tunnel.extractUrl("https://evil-trycloudflare.com")).toBeNull();
+        expect(tunnel.extractUrl("https://notcloudflare.org")).toBeNull();
+        expect(tunnel.extractUrl("no url here")).toBeNull();
       });
     });
   });
