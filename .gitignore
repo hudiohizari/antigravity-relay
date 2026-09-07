@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.vite/
+/workflow/
+.env
+.env.local
+*.log
+.DS_Store
+
