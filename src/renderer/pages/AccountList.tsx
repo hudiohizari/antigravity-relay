@@ -1,20 +1,36 @@
 import React, { useState, useRef, useEffect } from "react";
-import { GoogleAccount } from "../../shared/types";
+import { GoogleAccount, RateLimitState } from "../../shared/types";
 import { useTranslation } from "../locales/i18n";
 import { AccountCard } from "../components/AccountCard";
-import { Plus, Loader2, Shield, AlertCircle, X, UserCheck } from "lucide-react";
+import {
+  Plus,
+  Loader2,
+  Shield,
+  AlertCircle,
+  X,
+  UserCheck,
+  Camera,
+} from "lucide-react";
 
-interface AccountListProps {
+export interface AccountListProps {
   accounts: GoogleAccount[];
   isLoading: boolean;
   isAuthenticating: boolean;
   refreshingAccountId: string | null;
   deletingAccountId: string | null;
+  isSwitching?: boolean;
+  switchingAccountId?: string | null;
+  refreshingQuotaAccountId?: string | null;
+  rateLimits?: Record<string, RateLimitState>;
+  snapshotCount?: number;
   error: string | null;
   onAddAccount: () => Promise<unknown>;
   onRemoveAccount: (id: string) => Promise<boolean>;
   onRefreshToken: (id: string) => Promise<boolean>;
   onSetActive: (id: string) => Promise<boolean>;
+  onSwitchAccount?: (id: string) => Promise<boolean>;
+  onRefreshQuota?: (id: string) => Promise<void>;
+  onOpenSnapshots?: () => void;
   onClearError: () => void;
 }
 
@@ -24,11 +40,19 @@ export const AccountList: React.FC<AccountListProps> = ({
   isAuthenticating,
   refreshingAccountId,
   deletingAccountId,
+  isSwitching = false,
+  switchingAccountId = null,
+  refreshingQuotaAccountId = null,
+  rateLimits = {},
+  snapshotCount = 0,
   error,
   onAddAccount,
   onRemoveAccount,
   onRefreshToken,
   onSetActive,
+  onSwitchAccount,
+  onRefreshQuota,
+  onOpenSnapshots,
   onClearError,
 }) => {
   const { t } = useTranslation();
@@ -65,7 +89,7 @@ export const AccountList: React.FC<AccountListProps> = ({
       aria-label={t("accessibility.accountList")}
       className="flex-1 flex flex-col max-w-4xl w-full mx-auto p-4 sm:p-6 min-w-0"
     >
-      {/* Header with Title, Count Badge and Add CTA */}
+      {/* Header with Title, Count Badge, Snapshots CTA and Add CTA */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 min-w-0">
         <div className="min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
@@ -81,13 +105,29 @@ export const AccountList: React.FC<AccountListProps> = ({
           </p>
         </div>
 
-        <div className="shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          {onOpenSnapshots && (
+            <button
+              type="button"
+              onClick={onOpenSnapshots}
+              className="min-h-[44px] px-3.5 py-2 rounded-md border border-[var(--border-default)] bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-elevated)] text-[var(--text-primary)] text-xs sm:text-sm font-medium active:scale-[0.98] transition-colors flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] shadow-xs"
+            >
+              <Camera className="w-4 h-4 text-[var(--primitive-color-emerald-400)]" aria-hidden="true" />
+              <span>{t("snapshots.title")}</span>
+              {snapshotCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded font-mono text-[11px] bg-[var(--bg-surface-elevated)] text-[var(--text-muted)]">
+                  {snapshotCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onAddAccount}
             disabled={isAuthenticating}
             aria-busy={isAuthenticating}
-            className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-[var(--primitive-color-blue-600)] hover:bg-[var(--primitive-color-blue-500)] text-white text-sm font-medium rounded-md active:scale-[0.98] transition-colors duration-150 flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-canvas)] disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            className="min-h-[44px] px-4 py-2.5 bg-[var(--primitive-color-blue-600)] hover:bg-[var(--primitive-color-blue-500)] text-white text-xs sm:text-sm font-medium rounded-md active:scale-[0.98] transition-colors duration-150 flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-canvas)] disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
           >
             {isAuthenticating ? (
               <>
@@ -134,7 +174,7 @@ export const AccountList: React.FC<AccountListProps> = ({
           {[1, 2].map((i) => (
             <div
               key={i}
-              className="h-44 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] animate-pulse p-4"
+              className="h-56 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] animate-pulse p-4"
             />
           ))}
         </div>
@@ -177,8 +217,14 @@ export const AccountList: React.FC<AccountListProps> = ({
               isActive={acc.status === "active"}
               isRefreshing={refreshingAccountId === acc.id}
               isDeleting={deletingAccountId === acc.id}
+              isSwitching={isSwitching}
+              isSwitchingThis={switchingAccountId === acc.id}
+              isRefreshingQuota={refreshingQuotaAccountId === acc.id}
+              rateLimitState={rateLimits[acc.id]}
               onSetActive={onSetActive}
+              onSwitchAccount={onSwitchAccount || onSetActive}
               onRefreshToken={onRefreshToken}
+              onRefreshQuota={onRefreshQuota}
               onRemoveRequest={(target) => setAccountToRemove(target)}
             />
           ))}

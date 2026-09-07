@@ -1,8 +1,21 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import en from "../src/renderer/locales/en.json";
 import id from "../src/renderer/locales/id.json";
+import { I18nProvider } from "../src/renderer/locales/i18n";
+import { QuotaBar } from "../src/renderer/components/QuotaBar";
+import { AccountCard } from "../src/renderer/components/AccountCard";
+import { AutoSwitchSettings } from "../src/renderer/components/AutoSwitchSettings";
+import { SnapshotModal } from "../src/renderer/components/SnapshotModal";
+import type {
+  GoogleAccount,
+  QuotaData,
+  AutoSwitchConfig,
+  SnapshotMetadata,
+} from "../src/shared/types";
 
 describe("Frontend Copy Catalogs & Token Architecture", () => {
   describe("i18n Catalog Symmetry and Parity", () => {
@@ -166,6 +179,264 @@ describe("Frontend Copy Catalogs & Token Architecture", () => {
           `Component ${path.relative(rendererDir, file)} contains banned inline style="..."`,
         ).toBeNull();
       }
+    });
+  });
+
+  describe("Desktop UI Component Architecture & Verification", () => {
+    function renderWithI18n(element: React.ReactElement): string {
+      return renderToStaticMarkup(
+        React.createElement(I18nProvider, {
+          defaultLocale: "en",
+          children: element,
+        }),
+      );
+    }
+
+    it("should render QuotaBar with color-coded model progress meters and ARIA progressbar roles", () => {
+      const mockQuota: QuotaData = {
+        models: {
+          "gemini-2.0-flash": {
+            percentage: 82,
+            remainingQueries: 4100,
+            totalQueries: 5000,
+            resetTime: new Date(Date.now() + 19320000).toISOString(),
+          },
+          "gemini-1.5-pro": {
+            percentage: 34,
+            remainingQueries: 340,
+            totalQueries: 1000,
+            resetTime: new Date(Date.now() + 3900000).toISOString(),
+          },
+          "claude-3-5-sonnet-vertex": {
+            percentage: 9,
+            remainingQueries: 45,
+            totalQueries: 500,
+            resetTime: new Date(Date.now() + 2880000).toISOString(),
+          },
+        },
+        source: "api",
+      };
+
+      const html = renderWithI18n(
+        React.createElement(QuotaBar, { quota: mockQuota }),
+      );
+
+      // Model labels
+      expect(html).toContain("Gemini 2.0 Flash");
+      expect(html).toContain("Gemini 1.5 Pro");
+      expect(html).toContain("Claude 3.5 Sonnet (Vertex)");
+
+      // ARIA semantics
+      expect(html).toContain('role="progressbar"');
+      expect(html).toContain('aria-valuenow="82"');
+      expect(html).toContain('aria-valuenow="34"');
+      expect(html).toContain('aria-valuenow="9"');
+
+      // DTCG Status Token Fills
+      expect(html).toContain("fill-[var(--status-quota-healthy)]");
+      expect(html).toContain("fill-[var(--status-quota-warning)]");
+      expect(html).toContain("fill-[var(--status-quota-exhausted)]");
+    });
+
+    it("should render QuotaBar with purple cooldown fill and cached telemetry indicator", () => {
+      const cachedQuota: QuotaData = {
+        models: {
+          "gemini-2.0-flash": {
+            percentage: 0,
+            resetTime: new Date(Date.now() + 900000).toISOString(),
+          },
+        },
+        source: "cached",
+      };
+
+      const html = renderWithI18n(
+        React.createElement(QuotaBar, {
+          quota: cachedQuota,
+          isRateLimited: true,
+        }),
+      );
+
+      expect(html).toContain("Cached Data");
+      expect(html).toContain("fill-[var(--status-quota-cooldown)]");
+      expect(html).toContain("animate-pulse");
+    });
+
+    it("should render AccountCard with integrated QuotaBar, cooldown badge, and manual switch CTA", () => {
+      const healthyAccount: GoogleAccount = {
+        id: "acc-healthy-1",
+        email: "bot.runner@gmail.com",
+        status: "disabled",
+        tokens: {
+          access_token: "tok",
+          refresh_token: "ref",
+          expires_in: 3600,
+          expiry_timestamp: Date.now() + 3600000,
+          token_type: "Bearer",
+        },
+        quota: {
+          models: {
+            "gemini-2.0-flash": {
+              percentage: 75,
+              resetTime: new Date(Date.now() + 3600000).toISOString(),
+            },
+          },
+          source: "api",
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const htmlHealthy = renderWithI18n(
+        React.createElement(AccountCard, {
+          account: healthyAccount,
+          isActive: false,
+          isRefreshing: false,
+          isDeleting: false,
+          onRefreshToken: async () => true,
+          onRemoveRequest: () => {},
+        }),
+      );
+
+      expect(htmlHealthy).toContain("bot.runner@gmail.com");
+      expect(htmlHealthy).toContain("Switch Now");
+      expect(htmlHealthy).toContain("Gemini 2.0 Flash");
+
+      // Rate-limited account with cooldown badge
+      const rateLimitedAccount: GoogleAccount = {
+        ...healthyAccount,
+        status: "rate_limited",
+      };
+
+      const htmlCooldown = renderWithI18n(
+        React.createElement(AccountCard, {
+          account: rateLimitedAccount,
+          isActive: false,
+          isRefreshing: false,
+          isDeleting: false,
+          rateLimitState: {
+            accountId: rateLimitedAccount.id,
+            isRateLimited: true,
+            cooldownUntil: Date.now() + 824000,
+            retryCount: 1,
+          },
+          onRefreshToken: async () => true,
+          onRemoveRequest: () => {},
+        }),
+      );
+
+      expect(htmlCooldown).toContain('role="timer"');
+      expect(htmlCooldown).toContain("Cooldown:");
+      expect(htmlCooldown).toContain("In Cooldown");
+    });
+
+    it("should render AutoSwitchSettings with threshold slider, evaluation interval, and manual switch action", () => {
+      const mockConfig: AutoSwitchConfig = {
+        enabled: true,
+        minQuotaThresholdPercent: 15,
+        pollIntervalMs: 300000,
+        rateLimitCooldownMs: 900000,
+        autoRelaunchProcesses: true,
+        preferredModels: ["gemini-2.0-flash", "gemini-1.5-pro"],
+      };
+
+      const mockAccounts: GoogleAccount[] = [
+        {
+          id: "acc-1",
+          email: "alex.dev@gmail.com",
+          status: "active",
+          tokens: {
+            access_token: "t",
+            refresh_token: "r",
+            expires_in: 3600,
+            expiry_timestamp: Date.now() + 3600000,
+            token_type: "Bearer",
+          },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+
+      const html = renderWithI18n(
+        React.createElement(AutoSwitchSettings, {
+          config: mockConfig,
+          accounts: mockAccounts,
+          isSaving: false,
+          isSwitching: false,
+          switchingAccountId: null,
+          lastSwitchResult: null,
+          poolExhaustedReason: null,
+          onSaveConfig: async () => true,
+          onManualSwitch: async () => true,
+        }),
+      );
+
+      expect(html).toContain("Auto-Switching Engine");
+      expect(html).toContain('role="switch"');
+      expect(html).toContain('type="range"');
+      expect(html).toContain("Minimum Quota Threshold");
+      expect(html).toContain("Evaluation Polling Interval");
+      expect(html).toContain("Rate-Limit Cooldown Duration");
+      expect(html).toContain("Auto-Relaunch Services");
+      expect(html).toContain("80% remaining quota + 20% least-recently-used");
+      expect(html).toContain("Save Switcher Settings");
+      expect(html).toContain("Restore Defaults");
+    });
+
+    it("should render SnapshotModal with encrypted snapshots listing, AES-256-GCM descriptors, and actions", () => {
+      const mockSnapshots: SnapshotMetadata[] = [
+        {
+          id: "snap-pre-refactor",
+          name: "Pre-Refactor Pool",
+          description: "Stable baseline before test suite",
+          createdAt: Date.now() - 3600000,
+          accountCount: 4,
+          activeAccountEmail: "alex.dev@gmail.com",
+          sizeBytes: 4300,
+        },
+      ];
+
+      const html = renderWithI18n(
+        React.createElement(SnapshotModal, {
+          isOpen: true,
+          onClose: () => {},
+          snapshots: mockSnapshots,
+          isLoading: false,
+          isCreating: false,
+          restoringId: null,
+          deletingId: null,
+          onCreateSnapshot: async () => true,
+          onRestoreSnapshot: async () => true,
+          onDeleteSnapshot: async () => true,
+        }),
+      );
+
+      expect(html).toContain("Account Snapshots");
+      expect(html).toContain("Pre-Refactor Pool");
+      expect(html).toContain("AES-256-GCM");
+      expect(html).toContain("4 accounts saved");
+      expect(html).toContain("alex.dev@gmail.com");
+      expect(html).toContain("Restore");
+      expect(html).toContain("Create Snapshot");
+    });
+
+    it("should render empty state in SnapshotModal when no snapshots exist", () => {
+      const html = renderWithI18n(
+        React.createElement(SnapshotModal, {
+          isOpen: true,
+          onClose: () => {},
+          snapshots: [],
+          isLoading: false,
+          isCreating: false,
+          restoringId: null,
+          deletingId: null,
+          onCreateSnapshot: async () => true,
+          onRestoreSnapshot: async () => true,
+          onDeleteSnapshot: async () => true,
+        }),
+      );
+
+      expect(html).toContain("No snapshots found");
+      expect(html).toContain("Save an encrypted snapshot");
     });
   });
 });

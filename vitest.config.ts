@@ -14,6 +14,9 @@ export default defineConfig({
         "src/main/ipc/**",
         "src/main/oauth/**",
         "src/main/process/**",
+        "src/main/quota/**",
+        "src/main/switcher/**",
+        "src/main/snapshots/**",
       ],
       thresholds: {
         lines: 100,

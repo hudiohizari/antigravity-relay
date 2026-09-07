@@ -29,5 +29,6 @@
     "vite.renderer.config.ts",
     "vitest.config.ts",
     "forge.config.ts"
-  ]
+  ],
+  "exclude": ["tests/e2e"]
 }

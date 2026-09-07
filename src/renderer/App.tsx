@@ -1,16 +1,24 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { useTranslation } from "./locales/i18n";
 import { useAccounts } from "./hooks/useAccounts";
 import { useServiceStatus } from "./hooks/useServiceStatus";
+import { useSwitcher } from "./hooks/useSwitcher";
+import { useQuota } from "./hooks/useQuota";
+import { useSnapshots } from "./hooks/useSnapshots";
+import { useRateLimits } from "./hooks/useRateLimits";
 import { AccountList } from "./pages/AccountList";
+import { AutoSwitchSettings } from "./components/AutoSwitchSettings";
+import { SnapshotModal } from "./components/SnapshotModal";
 import { StatusBar } from "./components/StatusBar";
-import { Globe, Radio, Settings, Users } from "lucide-react";
+import { Globe, Radio, Settings, Users, Camera } from "lucide-react";
 
 export const App: React.FC = () => {
   const { t, locale, setLocale } = useTranslation();
   const [activeTab, setActiveTab] = useState<
     "accounts" | "remote" | "settings"
   >("accounts");
+  const [isSnapshotModalOpen, setIsSnapshotModalOpen] = useState(false);
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
 
   const {
     accounts,
@@ -19,6 +27,7 @@ export const App: React.FC = () => {
     refreshingAccountId,
     deletingAccountId,
     error: accountError,
+    fetchAccounts,
     addAccount,
     removeAccount,
     refreshAccountToken,
@@ -32,12 +41,87 @@ export const App: React.FC = () => {
     toggleService,
   } = useServiceStatus();
 
+  const handleSwitchComplete = useCallback(
+    (result: { newAccountEmail: string }) => {
+      fetchAccounts();
+      setLiveAnnouncement(
+        t("switcher.switchSuccess", { email: result.newAccountEmail }),
+      );
+    },
+    [fetchAccounts, t],
+  );
+
+  const {
+    config: switcherConfig,
+    isSavingConfig,
+    isSwitching,
+    switchingAccountId,
+    lastSwitchResult,
+    poolExhaustedReason,
+    fetchConfig,
+    updateConfig,
+    manualSwitch,
+  } = useSwitcher(handleSwitchComplete);
+
+  const handleQuotaUpdated = useCallback(() => {
+    fetchAccounts();
+  }, [fetchAccounts]);
+
+  const { pollAccount, pollingAccountIds } = useQuota(handleQuotaUpdated);
+
+  const handleRestoreSuccess = useCallback(async () => {
+    await fetchAccounts();
+    await fetchConfig();
+    setLiveAnnouncement(t("snapshots.restoredToast", { name: "Snapshot" }));
+  }, [fetchAccounts, fetchConfig, t]);
+
+  const {
+    snapshots,
+    isLoading: isSnapshotsLoading,
+    isCreating: isSnapshotCreating,
+    restoringId: restoringSnapshotId,
+    deletingId: deletingSnapshotId,
+    createSnapshot,
+    restoreSnapshot,
+    deleteSnapshot,
+  } = useSnapshots(handleRestoreSuccess);
+
+  const { rateLimits, fetchRateLimits } = useRateLimits();
+
   const handleLanguageToggle = () => {
     setLocale(locale === "en" ? "id" : "en");
   };
 
+  const handleRefreshQuota = async (accountId: string) => {
+    await pollAccount(accountId);
+    await fetchAccounts();
+    await fetchRateLimits();
+  };
+
+  const handleManualSwitch = async (accountId: string) => {
+    const success = await manualSwitch(accountId);
+    if (success) {
+      await fetchAccounts();
+      await fetchRateLimits();
+    }
+    return success;
+  };
+
+  const activeRefreshingQuotaId =
+    Object.keys(pollingAccountIds).find((k) => pollingAccountIds[k]) || null;
+
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)] select-none">
+      {/* Screen Reader Live Region for Autonomous Switch Updates */}
+      <div
+        role="status"
+        aria-live="assertive"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {liveAnnouncement}
+      </div>
+
       {/* Skip to Main Content Link for Keyboard Accessibility */}
       <a
         href="#main-content"
@@ -58,6 +142,20 @@ export const App: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 window-no-drag">
+          {/* Quick Snapshot Modal Trigger */}
+          <button
+            type="button"
+            onClick={() => setIsSnapshotModalOpen(true)}
+            aria-label={t("snapshots.title")}
+            title={t("snapshots.title")}
+            className="min-h-[44px] min-w-[44px] p-2 flex items-center justify-center rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] border border-[var(--border-default)] bg-[var(--bg-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] transition-colors"
+          >
+            <Camera
+              className="w-4 h-4 text-[var(--primitive-color-emerald-400)]"
+              aria-hidden="true"
+            />
+          </button>
+
           {/* Locale Switcher Button */}
           <button
             type="button"
@@ -137,11 +235,19 @@ export const App: React.FC = () => {
             isAuthenticating={isAuthenticating}
             refreshingAccountId={refreshingAccountId}
             deletingAccountId={deletingAccountId}
+            isSwitching={isSwitching}
+            switchingAccountId={switchingAccountId}
+            refreshingQuotaAccountId={activeRefreshingQuotaId}
+            rateLimits={rateLimits}
+            snapshotCount={snapshots.length}
             error={accountError}
             onAddAccount={addAccount}
             onRemoveAccount={removeAccount}
             onRefreshToken={refreshAccountToken}
             onSetActive={selectActiveAccount}
+            onSwitchAccount={handleManualSwitch}
+            onRefreshQuota={handleRefreshQuota}
+            onOpenSnapshots={() => setIsSnapshotModalOpen(true)}
             onClearError={clearAccountError}
           />
         )}
@@ -163,17 +269,24 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === "settings" && (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--text-muted)]">
-            <Settings
-              className="w-10 h-10 mb-3 text-[var(--text-secondary)]"
-              aria-hidden="true"
-            />
-            <h2 className="text-base font-semibold text-[var(--text-primary)]">
-              {t("nav.settings")}
-            </h2>
-            <p className="text-xs sm:text-sm mt-1 max-w-sm">
-              Relay configuration, telemetry, and security preferences.
-            </p>
+          <div className="flex-1 p-4 sm:p-6 overflow-y-auto">
+            {switcherConfig ? (
+              <AutoSwitchSettings
+                config={switcherConfig}
+                accounts={accounts}
+                isSaving={isSavingConfig}
+                isSwitching={isSwitching}
+                switchingAccountId={switchingAccountId}
+                lastSwitchResult={lastSwitchResult}
+                poolExhaustedReason={poolExhaustedReason}
+                onSaveConfig={updateConfig}
+                onManualSwitch={handleManualSwitch}
+              />
+            ) : (
+              <div className="p-8 text-center text-xs text-[var(--text-muted)]">
+                {t("common.status.loading")}
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -183,6 +296,20 @@ export const App: React.FC = () => {
         status={serviceStatus}
         transitionalStates={transitionalStates}
         onToggleService={toggleService}
+      />
+
+      {/* Snapshot Manager Modal */}
+      <SnapshotModal
+        isOpen={isSnapshotModalOpen}
+        onClose={() => setIsSnapshotModalOpen(false)}
+        snapshots={snapshots}
+        isLoading={isSnapshotsLoading}
+        isCreating={isSnapshotCreating}
+        restoringId={restoringSnapshotId}
+        deletingId={deletingSnapshotId}
+        onCreateSnapshot={createSnapshot}
+        onRestoreSnapshot={restoreSnapshot}
+        onDeleteSnapshot={deleteSnapshot}
       />
     </div>
   );

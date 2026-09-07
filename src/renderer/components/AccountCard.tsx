@@ -1,26 +1,33 @@
 import React, { useState, useEffect } from "react";
-import { GoogleAccount } from "../../shared/types";
+import { GoogleAccount, RateLimitState } from "../../shared/types";
 import { useTranslation } from "../locales/i18n";
+import { QuotaBar } from "./QuotaBar";
 import {
   RefreshCw,
   Trash2,
   CheckCircle2,
-  Circle,
   Copy,
   Check,
   Clock,
   AlertTriangle,
   XCircle,
   Loader2,
+  ArrowLeftRight,
 } from "lucide-react";
 
-interface AccountCardProps {
+export interface AccountCardProps {
   account: GoogleAccount;
   isActive: boolean;
   isRefreshing: boolean;
   isDeleting: boolean;
-  onSetActive: (id: string) => Promise<boolean>;
+  isSwitching?: boolean;
+  isSwitchingThis?: boolean;
+  isRefreshingQuota?: boolean;
+  rateLimitState?: RateLimitState;
+  onSetActive?: (id: string) => Promise<boolean>;
+  onSwitchAccount?: (id: string) => Promise<boolean>;
   onRefreshToken: (id: string) => Promise<boolean>;
+  onRefreshQuota?: (id: string) => Promise<void>;
   onRemoveRequest: (account: GoogleAccount) => void;
 }
 
@@ -29,11 +36,18 @@ function formatDuration(seconds: number): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
+  const remSec = seconds % 60;
 
   if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m`;
-  return `${seconds % 60}s`;
+  if (hours > 0) {
+    const formattedMinutes = minutes < 10 ? `0${minutes}` : `${minutes}`;
+    return `${hours}h ${formattedMinutes}m`;
+  }
+  if (minutes > 0) {
+    const formattedSeconds = remSec < 10 ? `0${remSec}` : `${remSec}`;
+    return `${minutes}m ${formattedSeconds}s`;
+  }
+  return `${remSec}s`;
 }
 
 function formatLastUsed(timestamp?: number): string | null {
@@ -53,19 +67,25 @@ export const AccountCard: React.FC<AccountCardProps> = ({
   isActive,
   isRefreshing,
   isDeleting,
+  isSwitching = false,
+  isSwitchingThis = false,
+  isRefreshingQuota = false,
+  rateLimitState,
   onSetActive,
+  onSwitchAccount,
   onRefreshToken,
+  onRefreshQuota,
   onRemoveRequest,
 }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(Date.now());
 
-  // Tick expiry countdown every 30 seconds
+  // Tick timers every second for live countdowns
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
-    }, 30000);
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -99,8 +119,14 @@ export const AccountCard: React.FC<AccountCardProps> = ({
     (account.tokens.expiry_timestamp
       ? account.tokens.expiry_timestamp <= now
       : false);
-  const isRateLimited = account.status === "rate_limited";
+  const isRateLimited =
+    account.status === "rate_limited" || Boolean(rateLimitState?.isRateLimited);
   const isBusy = isRefreshing || isDeleting;
+
+  const cooldownSecondsRemaining =
+    rateLimitState?.cooldownUntil && rateLimitState.cooldownUntil > now
+      ? Math.floor((rateLimitState.cooldownUntil - now) / 1000)
+      : 0;
 
   const getStatusBadge = () => {
     if (isActive) {
@@ -112,10 +138,23 @@ export const AccountCard: React.FC<AccountCardProps> = ({
       );
     }
     if (isRateLimited) {
+      const label =
+        cooldownSecondsRemaining > 0
+          ? t("quota.cooldownBadge", {
+              time: formatDuration(cooldownSecondsRemaining),
+            })
+          : t("accounts.card.rateLimited");
+
       return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium text-[var(--primitive-color-amber-400)] bg-[var(--status-pending-bg)] border border-[var(--status-pending-border)]">
-          <AlertTriangle className="w-3 h-3" aria-hidden="true" />
-          {t("accounts.card.rateLimited")}
+        <span
+          role="timer"
+          aria-live="polite"
+          aria-atomic="true"
+          title={t("quota.cooldownTooltip")}
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium text-[var(--status-quota-cooldown-text)] bg-[var(--status-quota-cooldown-bg)] border border-[var(--status-quota-cooldown-border)] animate-pulse"
+        >
+          <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" />
+          <span>{label}</span>
         </span>
       );
     }
@@ -135,6 +174,14 @@ export const AccountCard: React.FC<AccountCardProps> = ({
   };
 
   const lastUsedFormatted = formatLastUsed(account.lastUsedAt);
+
+  const handleSwitchAction = () => {
+    if (onSwitchAccount) {
+      onSwitchAccount(account.id);
+    } else if (onSetActive) {
+      onSetActive(account.id);
+    }
+  };
 
   return (
     <article
@@ -209,6 +256,19 @@ export const AccountCard: React.FC<AccountCardProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Model Quota Telemetry Section */}
+        <div className="mt-3.5">
+          <QuotaBar
+            quota={account.quota}
+            isRateLimited={isRateLimited}
+            rateLimitUntil={rateLimitState?.cooldownUntil}
+            onRefresh={
+              onRefreshQuota ? () => onRefreshQuota(account.id) : undefined
+            }
+            isRefreshing={isRefreshingQuota}
+          />
+        </div>
       </div>
 
       {/* Action Buttons (WCAG 2.2 AA Min 44px Hitboxes & 8px Gap) */}
@@ -216,21 +276,38 @@ export const AccountCard: React.FC<AccountCardProps> = ({
         <div className="flex items-center gap-2">
           {isActive ? (
             <div className="min-h-[44px] px-3 flex items-center gap-1.5 text-xs font-medium text-[var(--primitive-color-emerald-400)] select-none">
-              <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+              <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
               <span>{t("accounts.card.isActive")}</span>
             </div>
+          ) : isSwitchingThis ? (
+            <button
+              type="button"
+              disabled
+              aria-busy="true"
+              className="min-h-[44px] px-3.5 rounded-md text-xs font-medium border border-[var(--primitive-color-blue-700)] bg-[var(--primitive-color-blue-800)] text-white flex items-center gap-2 opacity-90 cursor-wait"
+            >
+              <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+              <span>{t("switcher.switchingInProgress")}</span>
+            </button>
+          ) : isRateLimited ? (
+            <button
+              type="button"
+              disabled
+              title={t("quota.cooldownTooltip")}
+              className="min-h-[44px] px-3.5 rounded-md text-xs font-medium border border-[var(--border-default)] bg-[var(--bg-surface-elevated)] text-[var(--text-muted)] flex items-center gap-1.5 opacity-50 cursor-not-allowed"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>{t("quota.status.cooldown")}</span>
+            </button>
           ) : (
             <button
               type="button"
-              onClick={() => onSetActive(account.id)}
-              disabled={isBusy}
-              className="min-h-[44px] px-3 rounded-md text-xs font-medium border border-[var(--border-default)] bg-[var(--bg-surface-elevated)] hover:bg-[var(--bg-subtle)] text-[var(--text-primary)] active:scale-[0.98] transition-colors duration-150 flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-canvas)] disabled:opacity-50"
+              onClick={handleSwitchAction}
+              disabled={isBusy || isSwitching}
+              className="min-h-[44px] px-3.5 rounded-md text-xs font-medium bg-[var(--primitive-color-blue-600)] hover:bg-[var(--primitive-color-blue-500)] active:bg-[var(--primitive-color-blue-700)] text-white active:scale-[0.98] transition-colors duration-150 flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-canvas)] disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
             >
-              <Circle
-                className="w-3.5 h-3.5 text-[var(--text-muted)]"
-                aria-hidden="true"
-              />
-              <span>{t("accounts.card.setActive")}</span>
+              <ArrowLeftRight className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>{t("switcher.manualSwitch")}</span>
             </button>
           )}
         </div>
@@ -239,7 +316,7 @@ export const AccountCard: React.FC<AccountCardProps> = ({
           <button
             type="button"
             onClick={() => onRefreshToken(account.id)}
-            disabled={isBusy}
+            disabled={isBusy || isSwitching}
             aria-label={t("accounts.card.refreshToken")}
             title={t("accounts.card.refreshToken")}
             className="min-h-[44px] min-w-[44px] p-2 rounded-md border border-[var(--border-default)] bg-[var(--bg-surface-elevated)] hover:bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:scale-[0.98] transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] disabled:opacity-50"
@@ -254,7 +331,7 @@ export const AccountCard: React.FC<AccountCardProps> = ({
           <button
             type="button"
             onClick={() => onRemoveRequest(account)}
-            disabled={isBusy}
+            disabled={isBusy || isSwitching}
             aria-label={t("accounts.card.removeAccount")}
             title={t("accounts.card.removeAccount")}
             className="min-h-[44px] min-w-[44px] p-2 rounded-md border border-[var(--status-error-border)] bg-[var(--status-error-bg)] text-[var(--primitive-color-red-400)] hover:bg-[var(--primitive-color-red-500)]/20 active:scale-[0.98] transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] disabled:opacity-50"

@@ -6,6 +6,8 @@ import {
   GoogleAccount,
   TokenData,
   EncryptedStoreEnvelope,
+  AccountStatus,
+  QuotaData,
 } from "../../shared/types";
 import { StoreTamperException } from "./types";
 import { deriveMasterKey, generateSalt } from "./master-key";
@@ -281,5 +283,52 @@ export class AccountStore {
 
     await this.save(data);
     return true;
+  }
+
+  public async updateQuota(id: string, quota: QuotaData): Promise<boolean> {
+    const data = await this.ensureLoaded();
+    const account = data.accounts[id];
+    if (!account) {
+      return false;
+    }
+
+    account.quota = quota;
+    account.updatedAt = Date.now();
+
+    await this.save(data);
+    return true;
+  }
+
+  public async updateStatus(
+    id: string,
+    status: AccountStatus,
+  ): Promise<boolean> {
+    const data = await this.ensureLoaded();
+    const account = data.accounts[id];
+    if (!account) {
+      return false;
+    }
+
+    account.status = status;
+    account.updatedAt = Date.now();
+
+    await this.save(data);
+    return true;
+  }
+
+  public async restoreAccounts(
+    accounts: Record<string, GoogleAccount>,
+    activeAccountId: string | null,
+  ): Promise<void> {
+    const data = await this.ensureLoaded();
+    data.accounts = { ...accounts };
+    data.activeAccountId = activeAccountId;
+    data.lastSwappedAt = Date.now();
+
+    await this.save(data);
+  }
+
+  public async getStoreData(): Promise<AccountStoreData> {
+    return this.ensureLoaded();
   }
 }

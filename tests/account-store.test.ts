@@ -501,4 +501,27 @@ describe("Account Store Persistence and Integrity", () => {
     const saved = await store.get("no-created-id");
     expect(saved?.createdAt).toBeGreaterThan(0);
   });
+
+  it("should handle updateQuota and updateStatus for non-existent accounts and expose getStoreData", async () => {
+    const quotaRes = await store.updateQuota("non-existent", {
+      models: {},
+      last_polled_at: Date.now(),
+      source: "api",
+    });
+    expect(quotaRes).toBe(false);
+
+    const statusRes = await store.updateStatus("non-existent", "active");
+    expect(statusRes).toBe(false);
+
+    const data = await store.getStoreData();
+    expect(data.version).toBe(1);
+    expect(data.accounts).toBeDefined();
+
+    await store.restoreAccounts(
+      { [mockAccount.id]: mockAccount },
+      mockAccount.id,
+    );
+    expect((await store.getAll()).length).toBe(1);
+    expect((await store.getActive())?.id).toBe(mockAccount.id);
+  });
 });

@@ -15,6 +15,11 @@ import { registerIpcHandlers } from "../src/main/ipc/handlers";
 import { IpcChannels } from "../src/main/ipc/channels";
 import { GoogleAccount, DualServiceStatus } from "../src/shared/types";
 import * as tokenRefreshModule from "../src/main/oauth/token-refresh";
+import { QuotaMonitor } from "../src/main/quota/quota-monitor";
+import { RateLimitTracker } from "../src/main/switcher/rate-limit-tracker";
+import { SwitchFlow } from "../src/main/switcher/switch-flow";
+import { AutoSwitchService } from "../src/main/switcher/auto-switch.service";
+import { SnapshotStore } from "../src/main/snapshots/snapshot-store";
 
 // Mock Electron ipcMain and shell
 const registeredHandlers = new Map<
@@ -61,6 +66,11 @@ describe("IPC Boundary and Handler Verification", () => {
   let storeFile: string;
   let accountStore: AccountStore;
   let processController: ProcessController;
+  let rateLimitTracker: RateLimitTracker;
+  let quotaMonitor: QuotaMonitor;
+  let switchFlow: SwitchFlow;
+  let autoSwitchService: AutoSwitchService;
+  let snapshotStore: SnapshotStore;
   let mockWin: any;
 
   const mockOAuthConfig: OAuthConfig = {
@@ -83,6 +93,20 @@ describe("IPC Boundary and Handler Verification", () => {
       killTimeoutMs: 100,
     });
 
+    rateLimitTracker = new RateLimitTracker();
+    quotaMonitor = new QuotaMonitor({ accountStore, rateLimitTracker });
+    switchFlow = new SwitchFlow({ accountStore, processController });
+    autoSwitchService = new AutoSwitchService({
+      accountStore,
+      rateLimitTracker,
+      switchFlow,
+    });
+    snapshotStore = new SnapshotStore({
+      snapshotsDir: path.join(tempDir, "snapshots"),
+      accountStore,
+      autoSwitchService,
+    });
+
     mockWin = {
       isDestroyed: vi.fn().mockReturnValue(false),
       webContents: {
@@ -94,6 +118,11 @@ describe("IPC Boundary and Handler Verification", () => {
       accountStore,
       processController,
       oauthConfig: mockOAuthConfig,
+      quotaMonitor,
+      rateLimitTracker,
+      switchFlow,
+      autoSwitchService,
+      snapshotStore,
       getMainWindow: () => mockWin,
     });
   });
@@ -558,6 +587,338 @@ describe("IPC Boundary and Handler Verification", () => {
         IpcChannels.SERVICES_STATUS_UPDATED,
         testStatus,
       );
+    });
+  });
+
+  describe("Quota and Switcher IPC Channels Verification", () => {
+    const sampleAccount: GoogleAccount = {
+      id: "ipc-account-1",
+      email: "ipc@example.com",
+      status: "active",
+      tokens: {
+        access_token: "mock-access",
+        refresh_token: "mock-refresh",
+        expires_in: 3600,
+        expiry_timestamp: Date.now() + 3600000,
+        token_type: "Bearer",
+      },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    beforeEach(async () => {
+      await accountStore.saveAccount(sampleAccount);
+    });
+
+    it("should handle quota:poll-all successfully", async () => {
+      const handler = registeredHandlers.get(IpcChannels.QUOTA_POLL_ALL)!;
+      expect(handler).toBeDefined();
+      const result = await handler({});
+      expect(result.success).toBe(true);
+      expect(Array.isArray(result.data)).toBe(true);
+    });
+
+    it("should validate and handle quota:poll-account", async () => {
+      const handler = registeredHandlers.get(IpcChannels.QUOTA_POLL_ACCOUNT)!;
+      expect(handler).toBeDefined();
+
+      const invalidRes = await handler({}, { accountId: "" });
+      expect(invalidRes.success).toBe(false);
+
+      const validRes = await handler({}, { accountId: sampleAccount.id });
+      expect(validRes.data).toBeDefined();
+    });
+
+    it("should handle switcher:get-config", async () => {
+      const handler = registeredHandlers.get(IpcChannels.SWITCHER_GET_CONFIG)!;
+      expect(handler).toBeDefined();
+
+      const result = await handler({});
+      expect(result.success).toBe(true);
+      expect(result.data.enabled).toBe(true);
+      expect(result.data.minQuotaThresholdPercent).toBe(10);
+    });
+
+    it("should validate and handle switcher:set-config", async () => {
+      const handler = registeredHandlers.get(IpcChannels.SWITCHER_SET_CONFIG)!;
+      expect(handler).toBeDefined();
+
+      const invalidRes = await handler({}, { minQuotaThresholdPercent: 150 });
+      expect(invalidRes.success).toBe(false);
+
+      const validRes = await handler({}, { minQuotaThresholdPercent: 20 });
+      expect(validRes.success).toBe(true);
+      expect(validRes.data.minQuotaThresholdPercent).toBe(20);
+    });
+
+    it("should validate and handle switcher:manual-trigger", async () => {
+      const handler = registeredHandlers.get(
+        IpcChannels.SWITCHER_MANUAL_TRIGGER,
+      )!;
+      expect(handler).toBeDefined();
+
+      const invalidRes = await handler({}, { accountId: "" });
+      expect(invalidRes.success).toBe(false);
+
+      const targetAcc: GoogleAccount = {
+        ...sampleAccount,
+        id: "ipc-target-2",
+        email: "target@example.com",
+      };
+      await accountStore.saveAccount(targetAcc);
+
+      const validRes = await handler({}, { accountId: "ipc-target-2" });
+      expect(validRes.success).toBe(true);
+      expect(validRes.data.newAccountId).toBe("ipc-target-2");
+    });
+
+    it("should handle rate-limit:get-states and rate-limit:clear", async () => {
+      const getHandler = registeredHandlers.get(
+        IpcChannels.RATE_LIMIT_GET_STATES,
+      )!;
+      const clearHandler = registeredHandlers.get(
+        IpcChannels.RATE_LIMIT_CLEAR,
+      )!;
+
+      const getRes = await getHandler({});
+      expect(getRes.success).toBe(true);
+      expect(typeof getRes.data).toBe("object");
+
+      const invalidClear = await clearHandler({}, { id: "" });
+      expect(invalidClear.success).toBe(false);
+
+      const validClear = await clearHandler({}, { id: sampleAccount.id });
+      expect(validClear.success).toBe(true);
+    });
+
+    it("should handle snapshots lifecycle over IPC (list, create, restore, delete)", async () => {
+      const listHandler = registeredHandlers.get(IpcChannels.SNAPSHOTS_LIST)!;
+      const createHandler = registeredHandlers.get(
+        IpcChannels.SNAPSHOTS_CREATE,
+      )!;
+      const restoreHandler = registeredHandlers.get(
+        IpcChannels.SNAPSHOTS_RESTORE,
+      )!;
+      const deleteHandler = registeredHandlers.get(
+        IpcChannels.SNAPSHOTS_DELETE,
+      )!;
+
+      // 1. Initial list
+      const initialList = await listHandler({});
+      expect(initialList.success).toBe(true);
+      expect(initialList.data.length).toBe(0);
+
+      // 2. Create validation
+      const invalidCreate = await createHandler({}, { name: "" });
+      expect(invalidCreate.success).toBe(false);
+
+      // 3. Create valid snapshot
+      const createRes = await createHandler(
+        {},
+        { name: "IPC Backup", description: "Created via IPC" },
+      );
+      expect(createRes.success).toBe(true);
+      expect(createRes.data.name).toBe("IPC Backup");
+      const snapshotId = createRes.data.id;
+
+      // 4. List again
+      const afterList = await listHandler({});
+      expect(afterList.data.length).toBe(1);
+
+      // 5. Restore validation
+      const invalidRestore = await restoreHandler({}, { id: "" });
+      expect(invalidRestore.success).toBe(false);
+
+      // 6. Restore valid snapshot
+      const restoreRes = await restoreHandler({}, { id: snapshotId });
+      expect(restoreRes.success).toBe(true);
+
+      // 7. Delete validation
+      const invalidDelete = await deleteHandler({}, { id: "" });
+      expect(invalidDelete.success).toBe(false);
+
+      // 8. Delete valid snapshot
+      const deleteRes = await deleteHandler({}, { id: snapshotId });
+      expect(deleteRes.success).toBe(true);
+    });
+
+    it("should broadcast quota, switcher, and pool exhaustion events to renderer", async () => {
+      // 1. Quota updated broadcast
+      (quotaMonitor as any).notifyQuotaUpdated("ipc-account-1", {
+        models: {},
+        last_polled_at: Date.now(),
+        source: "api",
+      });
+      expect(mockWin.webContents.send).toHaveBeenCalledWith(
+        IpcChannels.QUOTA_UPDATED,
+        expect.objectContaining({ accountId: "ipc-account-1" }),
+      );
+
+      // 2. Switcher event broadcast
+      (switchFlow as any).notifyListeners({
+        success: true,
+        newAccountId: "ipc-account-1",
+      });
+      expect(mockWin.webContents.send).toHaveBeenCalledWith(
+        IpcChannels.SWITCHER_EVENT,
+        expect.objectContaining({ newAccountId: "ipc-account-1" }),
+      );
+
+      // 3. Pool exhaustion broadcast
+      (autoSwitchService as any).notifyPoolExhausted("All accounts depleted");
+      expect(mockWin.webContents.send).toHaveBeenCalledWith(
+        IpcChannels.SWITCHER_EVENT,
+        expect.objectContaining({
+          type: "pool_exhausted",
+          reason: "All accounts depleted",
+        }),
+      );
+    });
+
+    it("should handle error rejections across all quota and switcher IPC channels cleanly", async () => {
+      // 1. Quota poll all error
+      vi.spyOn(quotaMonitor, "pollAll").mockRejectedValueOnce(
+        new Error("Poll all failed"),
+      );
+      const pollAllRes = await registeredHandlers.get(
+        IpcChannels.QUOTA_POLL_ALL,
+      )!({});
+      expect(pollAllRes.success).toBe(false);
+      expect(pollAllRes.error).toBe("Poll all failed");
+
+      // 2. Quota poll account error
+      vi.spyOn(quotaMonitor, "pollAccount").mockRejectedValueOnce(
+        new Error("Poll account failed"),
+      );
+      const pollAccRes = await registeredHandlers.get(
+        IpcChannels.QUOTA_POLL_ACCOUNT,
+      )!({}, { accountId: "ipc-account-1" });
+      expect(pollAccRes.success).toBe(false);
+      expect(pollAccRes.error).toBe("Poll account failed");
+
+      // 3. Switcher get config error
+      vi.spyOn(autoSwitchService, "getConfig").mockImplementationOnce(() => {
+        throw new Error("Get config failed");
+      });
+      const getCfgRes = await registeredHandlers.get(
+        IpcChannels.SWITCHER_GET_CONFIG,
+      )!({});
+      expect(getCfgRes.success).toBe(false);
+      expect(getCfgRes.error).toBe("Get config failed");
+
+      // 4. Switcher set config error
+      vi.spyOn(autoSwitchService, "setConfig").mockImplementationOnce(() => {
+        throw new Error("Set config failed");
+      });
+      const setCfgRes = await registeredHandlers.get(
+        IpcChannels.SWITCHER_SET_CONFIG,
+      )!({}, { minQuotaThresholdPercent: 20 });
+      expect(setCfgRes.success).toBe(false);
+      expect(setCfgRes.error).toBe("Set config failed");
+
+      // 5. Switcher manual trigger error
+      vi.spyOn(switchFlow, "executeSwitch").mockRejectedValueOnce(
+        new Error("Switch failed"),
+      );
+      const manualRes = await registeredHandlers.get(
+        IpcChannels.SWITCHER_MANUAL_TRIGGER,
+      )!({}, { accountId: "ipc-account-1" });
+      expect(manualRes.success).toBe(false);
+      expect(manualRes.error).toBe("Switch failed");
+
+      // 6. Rate limit get states error
+      vi.spyOn(rateLimitTracker, "getAllStates").mockImplementationOnce(() => {
+        throw new Error("Get states failed");
+      });
+      const getStatesRes = await registeredHandlers.get(
+        IpcChannels.RATE_LIMIT_GET_STATES,
+      )!({});
+      expect(getStatesRes.success).toBe(false);
+      expect(getStatesRes.error).toBe("Get states failed");
+
+      // 7. Rate limit clear error
+      vi.spyOn(rateLimitTracker, "clearRateLimit").mockImplementationOnce(
+        () => {
+          throw new Error("Clear failed");
+        },
+      );
+      const clearRes = await registeredHandlers.get(
+        IpcChannels.RATE_LIMIT_CLEAR,
+      )!({}, { id: "ipc-account-1" });
+      expect(clearRes.success).toBe(false);
+      expect(clearRes.error).toBe("Clear failed");
+
+      // 8. Snapshots list error
+      vi.spyOn(snapshotStore, "listSnapshots").mockRejectedValueOnce(
+        new Error("List snapshots failed"),
+      );
+      const listRes = await registeredHandlers.get(IpcChannels.SNAPSHOTS_LIST)!(
+        {},
+      );
+      expect(listRes.success).toBe(false);
+      expect(listRes.error).toBe("List snapshots failed");
+
+      // 9. Snapshots create error
+      vi.spyOn(snapshotStore, "createSnapshot").mockRejectedValueOnce(
+        new Error("Create snapshot failed"),
+      );
+      const createRes = await registeredHandlers.get(
+        IpcChannels.SNAPSHOTS_CREATE,
+      )!({}, { name: "Test Snap" });
+      expect(createRes.success).toBe(false);
+      expect(createRes.error).toBe("Create snapshot failed");
+
+      // 10. Snapshots restore error
+      vi.spyOn(snapshotStore, "restoreSnapshot").mockRejectedValueOnce(
+        new Error("Restore snapshot failed"),
+      );
+      const restoreRes = await registeredHandlers.get(
+        IpcChannels.SNAPSHOTS_RESTORE,
+      )!({}, { id: "some-id" });
+      expect(restoreRes.success).toBe(false);
+      expect(restoreRes.error).toBe("Restore snapshot failed");
+
+      // 11. Snapshots delete error
+      vi.spyOn(snapshotStore, "deleteSnapshot").mockRejectedValueOnce(
+        new Error("Delete snapshot failed"),
+      );
+      const deleteRes = await registeredHandlers.get(
+        IpcChannels.SNAPSHOTS_DELETE,
+      )!({}, { id: "some-id" });
+      expect(deleteRes.success).toBe(false);
+      expect(deleteRes.error).toBe("Delete snapshot failed");
+    });
+
+    it("should update quotaMonitor interval when pollIntervalMs is provided in set-config", async () => {
+      const setHandler = registeredHandlers.get(
+        IpcChannels.SWITCHER_SET_CONFIG,
+      )!;
+      const res = await setHandler({}, { pollIntervalMs: 45000 });
+      expect(res.success).toBe(true);
+      expect(quotaMonitor.getInterval()).toBe(45000);
+    });
+
+    it("should instantiate default fallback instances when optional dependencies are omitted", () => {
+      expect(() => {
+        registerIpcHandlers({
+          accountStore,
+          processController,
+          oauthConfig: mockOAuthConfig,
+        });
+      }).not.toThrow();
+    });
+
+    it("should safely skip event forwarding when window is destroyed or null", () => {
+      mockWin.isDestroyed.mockReturnValue(true);
+      (quotaMonitor as any).notifyQuotaUpdated("ipc-account-1", {
+        models: {},
+        last_polled_at: Date.now(),
+        source: "api",
+      });
+      (switchFlow as any).notifyListeners({ success: true });
+      (autoSwitchService as any).notifyPoolExhausted("Depleted");
+      (processController as any).notifyListeners({});
+      mockWin.isDestroyed.mockReturnValue(false);
     });
   });
 });

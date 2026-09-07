@@ -32,6 +32,12 @@
   --primitive-color-red-400: #f87171;
   --primitive-color-red-500: #ef4444;
   --primitive-color-red-600: #dc2626;
+  --primitive-color-rose-400: #fb7185;
+  --primitive-color-rose-500: #f43f5e;
+  --primitive-color-rose-600: #e11d48;
+  --primitive-color-purple-400: #c084fc;
+  --primitive-color-purple-500: #a855f7;
+  --primitive-color-purple-600: #9333ea;
 
   /* Primitive Spacing (8pt Grid System) */
   --primitive-space-0: 0px;
@@ -117,6 +123,30 @@
   --status-error-border: rgba(239, 68, 68, 0.3);
   --status-error-text: var(--primitive-color-red-400);
 
+  /* Semantic Quota Status: Healthy (>= 50%) */
+  --status-quota-healthy: var(--primitive-color-emerald-500);
+  --status-quota-healthy-bg: rgba(16, 185, 129, 0.12);
+  --status-quota-healthy-border: rgba(16, 185, 129, 0.3);
+  --status-quota-healthy-text: var(--primitive-color-emerald-400);
+
+  /* Semantic Quota Status: Warning (15% to 49%) */
+  --status-quota-warning: var(--primitive-color-amber-500);
+  --status-quota-warning-bg: rgba(245, 158, 11, 0.12);
+  --status-quota-warning-border: rgba(245, 158, 11, 0.3);
+  --status-quota-warning-text: var(--primitive-color-amber-400);
+
+  /* Semantic Quota Status: Exhausted (< 15%) */
+  --status-quota-exhausted: var(--primitive-color-rose-500);
+  --status-quota-exhausted-bg: rgba(244, 63, 94, 0.12);
+  --status-quota-exhausted-border: rgba(244, 63, 94, 0.3);
+  --status-quota-exhausted-text: var(--primitive-color-rose-400);
+
+  /* Semantic Rate-Limit Cooldown Status (HTTP 429) */
+  --status-quota-cooldown: var(--primitive-color-purple-500);
+  --status-quota-cooldown-bg: rgba(168, 85, 247, 0.12);
+  --status-quota-cooldown-border: rgba(168, 85, 247, 0.3);
+  --status-quota-cooldown-text: var(--primitive-color-purple-400);
+
   /* Accessibility Target Constraints */
   --target-min-width: 44px;
   --target-min-height: 44px;
@@ -163,4 +193,23 @@
   --comp-btn-padding-x: var(--primitive-space-4);
   --comp-btn-font-size: var(--primitive-font-size-sm);
   --comp-btn-font-weight: 500;
+
+  /* Component: Quota Bar */
+  --comp-quota-track-height: 6px;
+  --comp-quota-track-height-lg: 8px;
+  --comp-quota-track-bg: var(--primitive-color-neutral-800);
+  --comp-quota-track-radius: var(--primitive-radius-full);
+
+  /* Component: Cooldown Badge */
+  --comp-cooldown-badge-height: 24px;
+  --comp-cooldown-badge-radius: var(--primitive-radius-full);
+
+  /* Component: Switcher Settings Panel */
+  --comp-switcher-slider-height: 6px;
+  --comp-switcher-slider-thumb-size: 20px;
+
+  /* Component: Modal Dialogs */
+  --comp-modal-overlay-bg: rgba(9, 13, 22, 0.82);
+  --comp-modal-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+  --comp-modal-radius: var(--primitive-radius-xl);
 }
