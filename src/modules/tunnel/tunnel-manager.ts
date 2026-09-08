@@ -28,6 +28,26 @@ export interface TunnelManagerOptions {
   connectionTimeoutMs?: number;
 }
 
+export function isMissingBinaryError(err: unknown): boolean {
+  if (!err) return false;
+  if (typeof err === "object") {
+    const code = (err as { code?: string }).code;
+    if (code === "ENOENT") {
+      return true;
+    }
+  }
+  const msg =
+    typeof err === "string"
+      ? err
+      : (err as { message?: string }).message || String(err);
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("enoent") ||
+    lower.includes("not found") ||
+    lower.includes("executable missing")
+  );
+}
+
 export class TunnelManager {
   private config: TunnelConfig;
   private readonly spawnFn: SpawnFunction;
@@ -212,7 +232,7 @@ export class TunnelManager {
       });
 
       proc.on("error", (err: Error) => {
-        this.handleProcessFailure(err.message);
+        this.handleProcessFailure(err);
       });
 
       proc.on("exit", (code: number | null, signal: string | null) => {
@@ -222,8 +242,7 @@ export class TunnelManager {
       // Await URL acquisition or failure
       return await this.waitForConnection();
     } catch (err) {
-      const msg = (err as Error).message;
-      this.handleProcessFailure(msg);
+      this.handleProcessFailure(err);
       return this.getStatus();
     }
   }
@@ -238,14 +257,30 @@ export class TunnelManager {
     }
   }
 
-  private handleProcessFailure(errorMessage: string): void {
-    this.lastError = errorMessage;
+  private handleProcessFailure(error: unknown): void {
     if (this.isStopping) {
+      this.lastError =
+        typeof error === "string"
+          ? error
+          : (error as Error)?.message || String(error);
       return;
     }
 
     this.currentProcess = null;
     this.pid = null;
+
+    if (isMissingBinaryError(error)) {
+      this.clearReconnectTimer();
+      this.lastError = "cloudflared executable not found in PATH";
+      this.transitionState("error");
+      return;
+    }
+
+    const errorMessage =
+      typeof error === "string"
+        ? error
+        : (error as Error)?.message || String(error);
+    this.lastError = errorMessage;
 
     if (
       this.config.autoRestart &&
@@ -260,6 +295,15 @@ export class TunnelManager {
   private handleProcessExit(code: number | null, _signal: string | null): void {
     if (this.isStopping) {
       this.transitionState("stopped");
+      this.currentProcess = null;
+      this.pid = null;
+      return;
+    }
+
+    if (
+      this.state === "error" &&
+      this.lastError === "cloudflared executable not found in PATH"
+    ) {
       this.currentProcess = null;
       this.pid = null;
       return;

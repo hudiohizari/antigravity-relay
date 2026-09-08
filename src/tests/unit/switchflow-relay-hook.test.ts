@@ -1,12 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { SwitchFlow } from "../src/main/switcher/switch-flow";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   UpstreamBridge,
   UpstreamTransport,
-} from "../src/main/relay/upstream-bridge";
-import { SessionManager } from "../src/main/relay/session-manager";
-import { AccountStore } from "../src/main/account-store/account-store";
-import { ProcessController } from "../src/main/process/process-controller";
+  SwitchFlowNotifier,
+  SwitchResult,
+} from "@/modules/relay/upstream-bridge";
+import { SessionManager } from "@/modules/relay/session-manager";
 
 class MockUpstreamTransport implements UpstreamTransport {
   public isConnected = true;
@@ -47,13 +46,38 @@ class MockUpstreamTransport implements UpstreamTransport {
   }
 }
 
+class MockSwitchFlow implements SwitchFlowNotifier {
+  private startListeners: Array<() => void> = [];
+  private eventListeners: Array<(res: SwitchResult) => void> = [];
+
+  public onSwitchStart(cb: () => void): () => void {
+    this.startListeners.push(cb);
+    return () => {
+      this.startListeners = this.startListeners.filter((l) => l !== cb);
+    };
+  }
+
+  public onSwitchEvent(cb: (res: SwitchResult) => void): () => void {
+    this.eventListeners.push(cb);
+    return () => {
+      this.eventListeners = this.eventListeners.filter((l) => l !== cb);
+    };
+  }
+
+  public triggerStart(): void {
+    for (const l of this.startListeners) l();
+  }
+
+  public triggerComplete(success: boolean, error?: string): void {
+    for (const l of this.eventListeners) l({ success, error });
+  }
+}
+
 describe("SwitchFlow and Relay UpstreamBridge Hook Integration", () => {
   let sessionManager: SessionManager;
   let mockTransport: MockUpstreamTransport;
   let bridge: UpstreamBridge;
-  let switchFlow: SwitchFlow;
-  let mockAccountStore: any;
-  let mockProcessController: any;
+  let switchFlow: MockSwitchFlow;
 
   beforeEach(() => {
     sessionManager = new SessionManager();
@@ -64,36 +88,7 @@ describe("SwitchFlow and Relay UpstreamBridge Hook Integration", () => {
       transportFactory: () => mockTransport,
     });
 
-    mockAccountStore = {
-      getActive: vi
-        .fn()
-        .mockResolvedValue({ id: "acc-1", email: "first@gmail.com" }),
-      get: vi
-        .fn()
-        .mockResolvedValue({
-          id: "acc-2",
-          email: "second@gmail.com",
-          tokens: {},
-        }),
-      setActive: vi.fn().mockResolvedValue(undefined),
-    };
-
-    mockProcessController = {
-      getStatus: vi.fn().mockResolvedValue({
-        services: {
-          antigravity_daemon: { state: "running" },
-          antigravity_ide: { state: "stopped" },
-        },
-      }),
-      stopService: vi.fn().mockResolvedValue({ state: "stopped" }),
-      startService: vi.fn().mockResolvedValue({ state: "running" }),
-    };
-
-    switchFlow = new SwitchFlow({
-      accountStore: mockAccountStore as unknown as AccountStore,
-      processController: mockProcessController as unknown as ProcessController,
-    });
-
+    switchFlow = new MockSwitchFlow();
     bridge.hookSwitchFlow(switchFlow);
   });
 
@@ -114,8 +109,8 @@ describe("SwitchFlow and Relay UpstreamBridge Hook Integration", () => {
     expect(res1.forwarded).toBe(true);
     expect(mockTransport.sentMessages).toHaveLength(1);
 
-    // 2. Mock executeSwitch which will trigger onSwitchStart
-    const switchPromise = switchFlow.executeSwitch("acc-2", "quota_depleted");
+    // 2. Trigger switch start
+    switchFlow.triggerStart();
 
     // While switch executes, bridge enters buffering
     expect(bridge.isBuffering()).toBe(true);
@@ -132,9 +127,8 @@ describe("SwitchFlow and Relay UpstreamBridge Hook Integration", () => {
     expect(res3.buffered).toBe(true);
     expect(sessionManager.getBufferedCount()).toBe(2);
 
-    // 4. Await switch completion
-    const switchResult = await switchPromise;
-    expect(switchResult.success).toBe(true);
+    // 4. Trigger switch completion
+    switchFlow.triggerComplete(true);
 
     // 5. Allow microtasks to resolve buffer flush
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -153,5 +147,14 @@ describe("SwitchFlow and Relay UpstreamBridge Hook Integration", () => {
     expect(JSON.parse(mockTransport.sentMessages[2]).payload).toEqual({
       actionId: "act-101",
     });
+  });
+
+  it("should stay in buffering mode if switch flow fails", async () => {
+    await bridge.connect();
+    switchFlow.triggerStart();
+    expect(bridge.isBuffering()).toBe(true);
+
+    switchFlow.triggerComplete(false, "Account credentials invalid");
+    expect(bridge.isBuffering()).toBe(true);
   });
 });

@@ -98,6 +98,12 @@ const id = {
     tokenLabel: "Kunci Pemasangan",
     copyToken: "Salin Kunci",
     tokenCopied: "Kunci pemasangan disalin ke papan klip",
+    modeTunnel: "Tunnel Cloudflare",
+    modeWifi: "Wi-Fi Lokal",
+    wifiAdvisory:
+      "Hubungkan ponsel ke jaringan Wi-Fi yang sama untuk mengakses.",
+    copyLink: "Salin Tautan",
+    linkCopied: "Tautan pairing berhasil disalin",
   },
   sessions: {
     title: "Sesi Ponsel Terhubung",
@@ -111,8 +117,7 @@ const id = {
     colActions: "Tindakan",
     revoke: "Cabut",
     revoking: "Mencabut...",
-    revokeTooltip:
-      "Segera hentikan sesi dan putuskan koneksi soket",
+    revokeTooltip: "Segera hentikan sesi dan putuskan koneksi soket",
     confirmRevokeTitle: "Cabut Sesi Seluler?",
     confirmRevokeMessage:
       "Yakin ingin mencabut sesi untuk {{device}} ({{ip}})? Koneksi seluler akan segera diputuskan.",

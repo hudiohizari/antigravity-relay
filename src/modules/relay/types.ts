@@ -38,7 +38,7 @@ export type {
 
 export const DEFAULT_RELAY_CONFIG: RelayConfig = {
   port: 4040,
-  host: "127.0.0.1",
+  host: "0.0.0.0",
   corsOrigins: ["*"],
   maxBufferedCommands: 100,
   bufferTtlMs: 60000,

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { SessionManager, SocketLike } from "../src/main/relay/session-manager";
+import { SessionManager, SocketLike } from "@/modules/relay/session-manager";
 
 describe("SessionManager & Command Buffering", () => {
   let manager: SessionManager;

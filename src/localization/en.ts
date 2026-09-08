@@ -147,6 +147,11 @@ const en = {
     tokenLabel: "Pairing Key",
     copyToken: "Copy Key",
     tokenCopied: "Pairing key copied to clipboard",
+    modeTunnel: "Cloudflare Tunnel",
+    modeWifi: "Local Wi-Fi",
+    wifiAdvisory: "Connect your phone to the same Wi-Fi network to access.",
+    copyLink: "Copy Link",
+    linkCopied: "Pairing link copied to clipboard",
   },
   sessions: {
     title: "Connected Phone Sessions",

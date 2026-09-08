@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import WebSocket from "ws";
-import { RelayServer } from "../src/main/relay/relay-server";
-import { SessionManager } from "../src/main/relay/session-manager";
+import path from "node:path";
+import fs from "node:fs";
+import { RelayServer, resolveStaticDir } from "@/modules/relay/relay-server";
+import { SessionManager } from "@/modules/relay/session-manager";
 import {
   UpstreamBridge,
   UpstreamTransport,
-} from "../src/main/relay/upstream-bridge";
+} from "@/modules/relay/upstream-bridge";
 
 class MockUpstreamTransport implements UpstreamTransport {
   public isConnected = true;
@@ -63,6 +65,7 @@ describe("Fastify Relay Server & WebSocket Companion Interface", () => {
       config: {
         port: 0,
         host: "127.0.0.1",
+        heartbeatIntervalMs: 50,
       },
       sessionManager,
       upstreamBridge,
@@ -72,6 +75,162 @@ describe("Fastify Relay Server & WebSocket Companion Interface", () => {
   afterEach(async () => {
     await server.stop();
     server.dispose();
+  });
+
+  describe("Static Asset Resolution & Directory Delivery", () => {
+    it("should resolve existing relay-ui directory using default fallbacks", () => {
+      const resolved = resolveStaticDir();
+      expect(resolved).toBeTruthy();
+      expect(fs.existsSync(resolved!)).toBe(true);
+      expect(fs.existsSync(path.join(resolved!, "index.html"))).toBe(true);
+    });
+
+    it("should resolve explicit valid staticDir path", () => {
+      const expectedDir = path.resolve(process.cwd(), "src/relay-ui");
+      const resolved = resolveStaticDir(expectedDir);
+      expect(resolved).toBe(expectedDir);
+    });
+
+    it("should fall back to valid directory if given a non-existent configuredDir", () => {
+      const resolved = resolveStaticDir("/non/existent/path/xyz123");
+      expect(resolved).toBeTruthy();
+      expect(fs.existsSync(resolved!)).toBe(true);
+    });
+
+    it("should return null if no candidate directory exists", () => {
+      const existsSpy = vi.spyOn(fs, "existsSync").mockReturnValue(false);
+      try {
+        const resolved = resolveStaticDir();
+        expect(resolved).toBeNull();
+      } finally {
+        existsSpy.mockRestore();
+      }
+    });
+
+    it("should start server cleanly without static assets when staticDir cannot be resolved", async () => {
+      const existsSpy = vi.spyOn(fs, "existsSync").mockReturnValue(false);
+      let noStaticServer: RelayServer | null = null;
+      try {
+        noStaticServer = new RelayServer({
+          config: { port: 0, host: "127.0.0.1" },
+        });
+        const status = await noStaticServer.start();
+        expect(status.isRunning).toBe(true);
+
+        const res = await fetch(`http://127.0.0.1:${status.port}/health`);
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as any;
+        expect(body.success).toBe(true);
+        expect(body.status).toBe("healthy");
+
+        const indexRes = await fetch(
+          `http://127.0.0.1:${status.port}/index.html`,
+        );
+        expect(indexRes.status).toBe(404);
+      } finally {
+        existsSpy.mockRestore();
+        if (noStaticServer) {
+          await noStaticServer.stop();
+          noStaticServer.dispose();
+        }
+      }
+    });
+
+    it("should serve index.html on GET /", async () => {
+      const status = await server.start();
+      testPort = status.port;
+
+      const res = await fetch(`http://127.0.0.1:${testPort}/`);
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).toContain("Antigravity Remote");
+    });
+
+    it("should serve static assets under /index.html and /locales/id.json", async () => {
+      const status = await server.start();
+      testPort = status.port;
+
+      const indexRes = await fetch(`http://127.0.0.1:${testPort}/index.html`);
+      expect(indexRes.status).toBe(200);
+      const indexHtml = await indexRes.text();
+      expect(indexHtml).toContain("<!doctype html>");
+
+      const idRes = await fetch(`http://127.0.0.1:${testPort}/locales/id.json`);
+      expect(idRes.status).toBe(200);
+      const idJson = await idRes.json();
+      expect(idJson.app.title).toBe("Antigravity Remote");
+      expect(idJson.app.status.live).toBe("Aktif");
+
+      const enRes = await fetch(`http://127.0.0.1:${testPort}/locales/en.json`);
+      expect(enRes.status).toBe(200);
+      const enJson = await enRes.json();
+      expect(enJson.app.title).toBe("Antigravity Remote");
+      expect(enJson.app.status.live).toBe("Live");
+    });
+
+    it("should serve index.html on GET /relay-ui with query parameters", async () => {
+      const status = await server.start();
+      testPort = status.port;
+
+      const res = await fetch(
+        `http://127.0.0.1:${testPort}/relay-ui?pair=test-key-123`,
+      );
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).toContain("Antigravity Remote Companion");
+    });
+
+    it("should serve companion web app on /relay-ui/ and /relay-ui/index.html", async () => {
+      const status = await server.start();
+      testPort = status.port;
+
+      const trailingSlashRes = await fetch(
+        `http://127.0.0.1:${testPort}/relay-ui/`,
+      );
+      expect(trailingSlashRes.status).toBe(200);
+      const trailingSlashHtml = await trailingSlashRes.text();
+      expect(trailingSlashHtml).toContain("Antigravity Remote Companion");
+
+      const indexRes = await fetch(
+        `http://127.0.0.1:${testPort}/relay-ui/index.html`,
+      );
+      expect(indexRes.status).toBe(200);
+      const indexHtml = await indexRes.text();
+      expect(indexHtml).toContain("Antigravity Remote Companion");
+    });
+
+    it("should serve nested locale assets under /relay-ui/locales/*", async () => {
+      const status = await server.start();
+      testPort = status.port;
+
+      const enRes = await fetch(
+        `http://127.0.0.1:${testPort}/relay-ui/locales/en.json`,
+      );
+      expect(enRes.status).toBe(200);
+      const enJson = (await enRes.json()) as any;
+      expect(enJson.app.title).toBe("Antigravity Remote");
+      expect(enJson.app.status.live).toBe("Live");
+
+      const idRes = await fetch(
+        `http://127.0.0.1:${testPort}/relay-ui/locales/id.json`,
+      );
+      expect(idRes.status).toBe(200);
+      const idJson = (await idRes.json()) as any;
+      expect(idJson.app.title).toBe("Antigravity Remote");
+      expect(idJson.app.status.live).toBe("Aktif");
+    });
+
+    it("should default to host 0.0.0.0 for LAN connectivity", async () => {
+      const defaultServer = new RelayServer({ config: { port: 0 } });
+      expect(defaultServer.getStatus().host).toBe("0.0.0.0");
+      const status = await defaultServer.start();
+      expect(status.isRunning).toBe(true);
+      expect(status.host).toBe("0.0.0.0");
+      const res = await fetch(`http://127.0.0.1:${status.port}/health`);
+      expect(res.status).toBe(200);
+      await defaultServer.stop();
+      defaultServer.dispose();
+    });
   });
 
   describe("HTTP Routes & Lifecycle", () => {
@@ -228,6 +387,124 @@ describe("Fastify Relay Server & WebSocket Companion Interface", () => {
           }, 50);
         });
       });
+    });
+
+    it("should respond immediately to JSON PING message with PONG and not forward upstream", async () => {
+      const session = sessionManager.createSession();
+      const status = await server.start();
+      testPort = status.port;
+      await upstreamBridge.connect();
+
+      await new Promise<void>((resolve) => {
+        const ws = new WebSocket(
+          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
+        );
+
+        ws.on("message", (raw) => {
+          const parsed = JSON.parse(raw.toString());
+          if (parsed.type === "PONG") {
+            expect(parsed.payload.timestamp).toBeDefined();
+            expect(mockTransport.sentMessages).toHaveLength(0); // Never sent upstream
+            ws.close();
+            resolve();
+          }
+        });
+
+        ws.on("open", () => {
+          ws.send(JSON.stringify({ type: "PING" }));
+        });
+      });
+    });
+
+    it("should respond immediately to raw text PING message with PONG", async () => {
+      const session = sessionManager.createSession();
+      const status = await server.start();
+      testPort = status.port;
+
+      await new Promise<void>((resolve) => {
+        const ws = new WebSocket(
+          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
+        );
+
+        ws.on("message", (raw) => {
+          const parsed = JSON.parse(raw.toString());
+          if (parsed.type === "PONG") {
+            expect(parsed.timestamp).toBeDefined();
+            ws.close();
+            resolve();
+          }
+        });
+
+        ws.on("open", () => {
+          ws.send("ping");
+        });
+      });
+    });
+
+    it("should respond immediately to lowercase JSON ping message with PONG without forwarding upstream", async () => {
+      const session = sessionManager.createSession();
+      const status = await server.start();
+      testPort = status.port;
+      await upstreamBridge.connect();
+
+      await new Promise<void>((resolve) => {
+        const ws = new WebSocket(
+          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
+        );
+
+        ws.on("message", (raw) => {
+          const parsed = JSON.parse(raw.toString());
+          if (parsed.type === "PONG") {
+            expect(parsed.payload.timestamp).toBeDefined();
+            expect(mockTransport.sentMessages).toHaveLength(0);
+            ws.close();
+            resolve();
+          }
+        });
+
+        ws.on("open", () => {
+          ws.send(JSON.stringify({ type: "ping" }));
+        });
+      });
+    });
+
+    it("should broadcast periodic HEARTBEAT frames to connected clients", async () => {
+      const session = sessionManager.createSession();
+      const status = await server.start();
+      testPort = status.port;
+
+      await new Promise<void>((resolve) => {
+        const ws = new WebSocket(
+          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
+        );
+
+        ws.on("message", (raw) => {
+          const parsed = JSON.parse(raw.toString());
+          if (parsed.type === "HEARTBEAT") {
+            expect(parsed.payload.timestamp).toBeDefined();
+            expect(parsed.payload.activeSessions).toBe(1);
+            ws.close();
+            resolve();
+          }
+        });
+      });
+    });
+
+    it("should clear heartbeat timer on server.stop() and server.dispose()", async () => {
+      const hbServer = new RelayServer({
+        config: { port: 0, host: "127.0.0.1", heartbeatIntervalMs: 25 },
+      });
+      await hbServer.start();
+      expect((hbServer as any).heartbeatTimer).not.toBeNull();
+
+      await hbServer.stop();
+      expect((hbServer as any).heartbeatTimer).toBeNull();
+
+      hbServer.startHeartbeat();
+      expect((hbServer as any).heartbeatTimer).not.toBeNull();
+
+      hbServer.dispose();
+      expect((hbServer as any).heartbeatTimer).toBeNull();
     });
 
     it("should buffer commands and respond with BUFFERED_ACK when upstream is buffering", async () => {
@@ -402,7 +679,6 @@ describe("Fastify Relay Server & WebSocket Companion Interface", () => {
         });
 
         ws.on("open", () => {
-          // Trigger bridge message handler
           for (const handler of (mockTransport as any).messageHandlers) {
             handler(JSON.stringify({ text: "Agent working" }));
           }

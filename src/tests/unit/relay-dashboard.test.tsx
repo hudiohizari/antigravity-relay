@@ -1,10 +1,19 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RelayDashboard } from "@/modules/relay/components/RelayDashboard";
 import { QRCode } from "@/modules/relay/components/QRCode";
 import * as relayActions from "@/modules/relay/actions/relay";
+
+const mockToast = vi.fn();
+vi.mock("@/components/ui/use-toast", () => ({
+  useToast: () => ({
+    toast: mockToast,
+    toasts: [],
+    dismiss: vi.fn(),
+  }),
+}));
 
 // Mock react-i18next
 vi.mock("react-i18next", () => ({
@@ -50,6 +59,15 @@ describe("RelayDashboard Component", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
+    vi.clearAllMocks();
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+      writable: true,
+      configurable: true,
+    });
+
     queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -135,5 +153,115 @@ describe("RelayDashboard Component", () => {
     // Verify client IP appears
     const clientIp = await screen.findByText("192.168.1.50");
     expect(clientIp).toBeDefined();
+  });
+
+  it("renders Cloudflare Tunnel mode badge and URL when tunnel is connected", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const modeBadge = await screen.findByText("pairing.modeTunnel");
+    expect(modeBadge).toBeDefined();
+
+    const pairingInput = screen.getByLabelText(
+      "pairing.copyLink",
+    ) as HTMLInputElement;
+    expect(pairingInput.value).toContain(
+      "https://test-subdomain.trycloudflare.com/relay-ui/?pair=",
+    );
+
+    expect(screen.queryByText("pairing.wifiAdvisory")).toBeNull();
+  });
+
+  it("falls back to Local Wi-Fi mode badge, LAN URL, and advisory banner when tunnel is stopped", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+    });
+    vi.mocked(relayActions.getTunnelUrl).mockResolvedValue(null);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const modeBadge = await screen.findByText("pairing.modeWifi");
+    expect(modeBadge).toBeDefined();
+
+    const advisory = await screen.findByText("pairing.wifiAdvisory");
+    expect(advisory).toBeDefined();
+    expect(await screen.findByText("(192.168.1.100)")).toBeDefined();
+
+    await waitFor(() => {
+      const pairingInput = screen.getByLabelText(
+        "pairing.copyLink",
+      ) as HTMLInputElement;
+      expect(pairingInput.value).toContain(
+        "http://192.168.1.100:4040/relay-ui/?pair=",
+      );
+    });
+  });
+
+  it("falls back to Local Wi-Fi when tunnel state is error", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "error",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+      lastError: "cloudflared binary not found",
+    });
+    vi.mocked(relayActions.getTunnelUrl).mockResolvedValue(null);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const modeBadge = await screen.findByText("pairing.modeWifi");
+    expect(modeBadge).toBeDefined();
+
+    await waitFor(() => {
+      const pairingInput = screen.getByLabelText(
+        "pairing.copyLink",
+      ) as HTMLInputElement;
+      expect(pairingInput.value).toContain(
+        "http://192.168.1.100:4040/relay-ui/?pair=",
+      );
+    });
+  });
+
+  it("copies pairing link to clipboard and triggers feedback toast when Copy Link is clicked", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("pairing.modeTunnel");
+
+    const copyButtons = screen.getAllByText("pairing.copyLink");
+    const copyButton = copyButtons[copyButtons.length - 1];
+    fireEvent.click(copyButton);
+
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "https://test-subdomain.trycloudflare.com/relay-ui/?pair=",
+        ),
+      );
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "pairing.linkCopied",
+        }),
+      );
+    });
   });
 });

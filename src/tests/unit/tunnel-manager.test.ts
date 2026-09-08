@@ -441,6 +441,44 @@ describe("Cloudflare Tunnel Subprocess Supervisor", () => {
       expect(manager.getStatus().state).toBe("reconnecting");
     });
 
+    it("should abort reconnection loop and transition to error when process emits ENOENT error", async () => {
+      const enoentManager = new TunnelManager({
+        config: { autoRestart: true, maxRetries: 5, retryBackoffMs: 50 },
+        spawnFn: () => {
+          const proc = new MockChildProcess();
+          setTimeout(() => {
+            const err = new Error("spawn cloudflared ENOENT");
+            (err as any).code = "ENOENT";
+            proc.emit("error", err);
+          }, 5);
+          return proc;
+        },
+      });
+
+      const status = await enoentManager.start();
+      expect(status.state).toBe("error");
+      expect(status.lastError).toBe("cloudflared executable not found in PATH");
+      expect(status.reconnectAttempts).toBe(0);
+      expect((enoentManager as any).reconnectTimer).toBeNull();
+    });
+
+    it("should handle synchronous ENOENT spawn exception without reconnect loop", async () => {
+      const enoentManager = new TunnelManager({
+        config: { autoRestart: true, maxRetries: 5 },
+        spawnFn: () => {
+          const err = new Error("spawn ENOENT");
+          (err as any).code = "ENOENT";
+          throw err;
+        },
+      });
+
+      const status = await enoentManager.start();
+      expect(status.state).toBe("error");
+      expect(status.lastError).toBe("cloudflared executable not found in PATH");
+      expect(status.reconnectAttempts).toBe(0);
+      expect((enoentManager as any).reconnectTimer).toBeNull();
+    });
+
     it("should ignore process failure when isStopping is true", () => {
       (manager as any).isStopping = true;
       (manager as any).handleProcessFailure("Error during stop");

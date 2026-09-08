@@ -49,6 +49,7 @@ import {
   ExternalLink,
   Shield,
   Loader2,
+  Wifi,
 } from "lucide-react";
 
 function formatDuration(ms: number): string {
@@ -115,6 +116,7 @@ export const RelayDashboard: React.FC = () => {
   );
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [sessionToRevoke, setSessionToRevoke] = useState<Session | null>(null);
 
   // Live clock ticker for durations
@@ -173,7 +175,9 @@ export const RelayDashboard: React.FC = () => {
           isRecommended: boolean;
         }[];
       } catch {
-        return [{ address: "127.0.0.1", name: "localhost", isRecommended: false }];
+        return [
+          { address: "127.0.0.1", name: "localhost", isRecommended: false },
+        ];
       }
     },
     staleTime: Infinity,
@@ -187,7 +191,8 @@ export const RelayDashboard: React.FC = () => {
 
   // Mutations
   const startRelayMutation = useMutation({
-    mutationFn: (params?: { port?: number; host?: string }) => startRelay(params),
+    mutationFn: (params?: { port?: number; host?: string }) =>
+      startRelay(params),
     onSuccess: (data) => {
       queryClient.setQueryData(["relay", "status"], data);
       queryClient.invalidateQueries({ queryKey: ["relay"] });
@@ -264,15 +269,36 @@ export const RelayDashboard: React.FC = () => {
     },
   });
 
+  const isTunnelConnected =
+    tunnelStatus?.state === "connected" &&
+    typeof publicUrl === "string" &&
+    publicUrl.trim().length > 0;
+
   // Pairing URL construction
   const pairingUrl = useMemo(() => {
-    if (publicUrl && publicUrl.trim().length > 0) {
+    if (isTunnelConnected && publicUrl) {
       const base = publicUrl.endsWith("/") ? publicUrl.slice(0, -1) : publicUrl;
       return `${base}/relay-ui/?pair=${pairingToken}`;
     }
     const port = relayStatus?.port || 4040;
     return `http://${recommendedIp}:${port}/relay-ui/?pair=${pairingToken}`;
-  }, [publicUrl, relayStatus?.port, recommendedIp, pairingToken]);
+  }, [
+    isTunnelConnected,
+    publicUrl,
+    relayStatus?.port,
+    recommendedIp,
+    pairingToken,
+  ]);
+
+  const handleCopyLink = useCallback(async () => {
+    await navigator.clipboard.writeText(pairingUrl);
+    setCopiedLink(true);
+    toast({
+      title: t("pairing.title"),
+      description: t("pairing.linkCopied"),
+    });
+    setTimeout(() => setCopiedLink(false), 2000);
+  }, [pairingUrl, t, toast]);
 
   const handleCopyUrl = useCallback(async () => {
     if (!publicUrl) return;
@@ -308,12 +334,20 @@ export const RelayDashboard: React.FC = () => {
   }, [relayStatus?.isRunning, startRelayMutation, stopRelayMutation]);
 
   const handleToggleTunnel = useCallback(() => {
-    if (tunnelStatus?.state === "connected" || tunnelStatus?.state === "starting") {
+    if (
+      tunnelStatus?.state === "connected" ||
+      tunnelStatus?.state === "starting"
+    ) {
       stopTunnelMutation.mutate();
     } else {
       startTunnelMutation.mutate({ targetPort: relayStatus?.port || 4040 });
     }
-  }, [tunnelStatus?.state, relayStatus?.port, startTunnelMutation, stopTunnelMutation]);
+  }, [
+    tunnelStatus?.state,
+    relayStatus?.port,
+    startTunnelMutation,
+    stopTunnelMutation,
+  ]);
 
   const handleConfirmRevoke = useCallback(() => {
     if (!sessionToRevoke) return;
@@ -327,7 +361,8 @@ export const RelayDashboard: React.FC = () => {
     if (relayStatus?.isBuffering) {
       return {
         label: t("relay.upstreamBuffering"),
-        color: "bg-purple-500/15 text-purple-600 border-purple-300 dark:text-purple-400 dark:border-purple-800",
+        color:
+          "bg-purple-500/15 text-purple-600 border-purple-300 dark:text-purple-400 dark:border-purple-800",
         dot: "bg-purple-500 animate-pulse",
       };
     }
@@ -335,20 +370,23 @@ export const RelayDashboard: React.FC = () => {
     if (state === "connected") {
       return {
         label: t("relay.upstreamConnected"),
-        color: "bg-emerald-500/15 text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800",
+        color:
+          "bg-emerald-500/15 text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800",
         dot: "bg-emerald-500",
       };
     }
     if (state === "reconnecting") {
       return {
         label: t("relay.upstreamReconnecting"),
-        color: "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-800",
+        color:
+          "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-800",
         dot: "bg-amber-500 animate-pulse",
       };
     }
     return {
       label: t("relay.upstreamOffline"),
-      color: "bg-zinc-500/15 text-zinc-600 border-zinc-300 dark:text-zinc-400 dark:border-zinc-800",
+      color:
+        "bg-zinc-500/15 text-zinc-600 border-zinc-300 dark:text-zinc-400 dark:border-zinc-800",
       dot: "bg-zinc-400",
     };
   }, [relayStatus?.isBuffering, relayStatus?.upstream?.state, t]);
@@ -359,34 +397,39 @@ export const RelayDashboard: React.FC = () => {
     if (s === "connected") {
       return {
         label: t("tunnel.statusConnected"),
-        color: "bg-emerald-500/15 text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800",
+        color:
+          "bg-emerald-500/15 text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800",
         dot: "bg-emerald-500 animate-pulse",
       };
     }
     if (s === "starting") {
       return {
         label: t("tunnel.statusStarting"),
-        color: "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-800",
+        color:
+          "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-800",
         dot: "bg-amber-500 animate-ping",
       };
     }
     if (s === "reconnecting") {
       return {
         label: t("tunnel.statusReconnecting"),
-        color: "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-800",
+        color:
+          "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-800",
         dot: "bg-amber-500 animate-pulse",
       };
     }
     if (s === "error") {
       return {
         label: t("tunnel.statusError"),
-        color: "bg-red-500/15 text-red-600 border-red-300 dark:text-red-400 dark:border-red-800",
+        color:
+          "bg-red-500/15 text-red-600 border-red-300 dark:text-red-400 dark:border-red-800",
         dot: "bg-red-500",
       };
     }
     return {
       label: t("tunnel.statusStopped"),
-      color: "bg-zinc-500/15 text-zinc-600 border-zinc-300 dark:text-zinc-400 dark:border-zinc-800",
+      color:
+        "bg-zinc-500/15 text-zinc-600 border-zinc-300 dark:text-zinc-400 dark:border-zinc-800",
       dot: "bg-zinc-400",
     };
   }, [tunnelStatus?.state, t]);
@@ -436,7 +479,9 @@ export const RelayDashboard: React.FC = () => {
                     <Server className="h-5 w-5" />
                   </div>
                   <div>
-                    <CardTitle className="text-lg">{t("relay.title")}</CardTitle>
+                    <CardTitle className="text-lg">
+                      {t("relay.title")}
+                    </CardTitle>
                     <CardDescription className="text-xs">
                       {t("relay.subtitle")}
                     </CardDescription>
@@ -505,7 +550,9 @@ export const RelayDashboard: React.FC = () => {
                   variant="outline"
                   className={`gap-1.5 px-2.5 py-1 text-xs font-medium ${upstreamInfo.color}`}
                 >
-                  <span className={`h-2 w-2 rounded-full ${upstreamInfo.dot}`} />
+                  <span
+                    className={`h-2 w-2 rounded-full ${upstreamInfo.dot}`}
+                  />
                   {upstreamInfo.label}
                 </Badge>
               </div>
@@ -521,7 +568,9 @@ export const RelayDashboard: React.FC = () => {
                     <Cloud className="h-5 w-5" />
                   </div>
                   <div>
-                    <CardTitle className="text-lg">{t("tunnel.title")}</CardTitle>
+                    <CardTitle className="text-lg">
+                      {t("tunnel.title")}
+                    </CardTitle>
                     <CardDescription className="text-xs">
                       {t("tunnel.subtitle")}
                     </CardDescription>
@@ -531,7 +580,9 @@ export const RelayDashboard: React.FC = () => {
                   variant="outline"
                   className={`gap-1.5 px-2.5 py-1 text-xs font-medium ${tunnelStateInfo.color}`}
                 >
-                  <span className={`h-2 w-2 rounded-full ${tunnelStateInfo.dot}`} />
+                  <span
+                    className={`h-2 w-2 rounded-full ${tunnelStateInfo.dot}`}
+                  />
                   {tunnelStateInfo.label}
                 </Badge>
               </div>
@@ -594,7 +645,8 @@ export const RelayDashboard: React.FC = () => {
                       : "secondary"
                   }
                   disabled={
-                    startTunnelMutation.isPending || stopTunnelMutation.isPending
+                    startTunnelMutation.isPending ||
+                    stopTunnelMutation.isPending
                   }
                   onClick={handleToggleTunnel}
                   className="gap-2"
@@ -616,16 +668,39 @@ export const RelayDashboard: React.FC = () => {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
-                  <QrCode className="h-5 w-5" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
+                    <QrCode className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">
+                      {t("pairing.title")}
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {t("pairing.subtitle")}
+                    </CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-lg">{t("pairing.title")}</CardTitle>
-                  <CardDescription className="text-xs">
-                    {t("pairing.subtitle")}
-                  </CardDescription>
-                </div>
+                <Badge
+                  variant="outline"
+                  className={
+                    isTunnelConnected
+                      ? "gap-1.5 px-2.5 py-1 text-xs font-medium bg-emerald-500/15 text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800"
+                      : "gap-1.5 px-2.5 py-1 text-xs font-medium bg-blue-500/15 text-blue-600 border-blue-300 dark:text-blue-400 dark:border-blue-800"
+                  }
+                >
+                  {isTunnelConnected ? (
+                    <Cloud className="h-3.5 w-3.5" />
+                  ) : (
+                    <Wifi className="h-3.5 w-3.5" />
+                  )}
+                  <span>
+                    {isTunnelConnected
+                      ? t("pairing.modeTunnel")
+                      : t("pairing.modeWifi")}
+                  </span>
+                </Badge>
               </div>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-5">
@@ -647,6 +722,58 @@ export const RelayDashboard: React.FC = () => {
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
                   {t("pairing.scanTip")}
                 </p>
+              </div>
+
+              {!isTunnelConnected && (
+                <div
+                  role="status"
+                  className="w-full flex items-start gap-2.5 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs"
+                >
+                  <Wifi className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="font-medium">
+                      {t("pairing.wifiAdvisory")}
+                    </span>{" "}
+                    <span className="font-mono text-[11px] opacity-90">
+                      ({recommendedIp})
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Plain Pairing URL */}
+              <div className="w-full space-y-2 pt-2 border-t">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="pairing-url-input"
+                    className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 text-primary" />
+                    <span>{t("pairing.copyLink")}</span>
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    id="pairing-url-input"
+                    readOnly
+                    value={pairingUrl}
+                    aria-label={t("pairing.copyLink")}
+                    className="font-mono text-xs select-all bg-muted/30"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyLink}
+                    className="gap-1.5 shrink-0"
+                  >
+                    {copiedLink ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-500" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    <span>{t("pairing.copyLink")}</span>
+                  </Button>
+                </div>
               </div>
 
               {/* Ephemeral Pairing Token */}
@@ -720,7 +847,9 @@ export const RelayDashboard: React.FC = () => {
           {sessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 text-center rounded-lg border border-dashed bg-muted/10 space-y-2">
               <Smartphone className="h-8 w-8 text-muted-foreground/60" />
-              <div className="text-sm font-semibold">{t("sessions.emptyTitle")}</div>
+              <div className="text-sm font-semibold">
+                {t("sessions.emptyTitle")}
+              </div>
               <div className="text-xs text-muted-foreground max-w-sm">
                 {t("sessions.emptyDescription")}
               </div>
@@ -751,7 +880,9 @@ export const RelayDashboard: React.FC = () => {
                   <tbody className="divide-y">
                     {sessions.map((sess) => {
                       const parsed = parseDeviceUserAgent(sess.userAgent);
-                      const durationStr = formatDuration(now - sess.connectedAt);
+                      const durationStr = formatDuration(
+                        now - sess.connectedAt,
+                      );
                       const lastActiveStr = formatRelativeTime(
                         now - sess.lastActiveAt,
                       );
@@ -831,22 +962,17 @@ export const RelayDashboard: React.FC = () => {
             <DialogDescription className="pt-2">
               {sessionToRevoke &&
                 t("sessions.confirmRevokeMessage", {
-                  device: parseDeviceUserAgent(sessionToRevoke.userAgent).device,
+                  device: parseDeviceUserAgent(sessionToRevoke.userAgent)
+                    .device,
                   ip: sessionToRevoke.clientIp || "127.0.0.1",
                 })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setSessionToRevoke(null)}
-            >
+            <Button variant="outline" onClick={() => setSessionToRevoke(null)}>
               {t("action.details")}
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleConfirmRevoke}
-            >
+            <Button variant="destructive" onClick={handleConfirmRevoke}>
               {t("sessions.confirmRevokeAction")}
             </Button>
           </DialogFooter>

@@ -7,7 +7,7 @@ import {
   extractTokenFromQuery,
   validateToken,
   AuthRateLimiter,
-} from "../src/main/relay/relay-auth";
+} from "@/modules/relay/relay-auth";
 
 describe("Relay Authentication & Cryptographic Utilities", () => {
   describe("Cryptographic Token Generation", () => {

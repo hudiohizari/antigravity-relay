@@ -25,6 +25,51 @@ export interface RelayServerOptions {
   rateLimiter?: AuthRateLimiter;
 }
 
+export function resolveStaticDir(configuredDir?: string): string | null {
+  const candidates: string[] = [];
+
+  if (configuredDir) {
+    candidates.push(configuredDir);
+    if (!path.isAbsolute(configuredDir)) {
+      candidates.push(path.resolve(process.cwd(), configuredDir));
+    }
+  }
+
+  // Relative to current file location (__dirname)
+  candidates.push(path.resolve(__dirname, "../../relay-ui"));
+  candidates.push(path.resolve(__dirname, "../relay-ui"));
+  candidates.push(path.resolve(__dirname, "../../../src/relay-ui"));
+  candidates.push(path.resolve(__dirname, "../../src/relay-ui"));
+  candidates.push(path.resolve(__dirname, "../src/relay-ui"));
+
+  // Relative to process working directory
+  candidates.push(path.resolve(process.cwd(), "src/relay-ui"));
+  candidates.push(path.resolve(process.cwd(), "relay-ui"));
+
+  // Electron resources path
+  const resourcesPath = (process as unknown as { resourcesPath?: string })
+    .resourcesPath;
+  if (typeof resourcesPath === "string") {
+    candidates.push(path.resolve(resourcesPath, "relay-ui"));
+    candidates.push(path.resolve(resourcesPath, "src/relay-ui"));
+    candidates.push(
+      path.resolve(resourcesPath, "app.asar.unpacked/src/relay-ui"),
+    );
+  }
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+        return candidate;
+      }
+    } catch {
+      // Ignore error and continue
+    }
+  }
+
+  return null;
+}
+
 export class RelayServer {
   private readonly config: RelayConfig;
   private readonly sessionManager: SessionManager;
@@ -36,6 +81,7 @@ export class RelayServer {
   private startedAt?: number;
   private statusListeners: Set<(status: RelayServerStatus) => void> = new Set();
   private unhookUpstream?: () => void;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(options?: RelayServerOptions) {
     this.config = {
@@ -119,14 +165,33 @@ export class RelayServer {
     });
 
     // Static asset directory resolution
-    const staticDir =
-      this.config.staticDir || path.resolve(__dirname, "../../relay-ui");
+    const staticDir = resolveStaticDir(this.config.staticDir);
 
-    if (fs.existsSync(staticDir)) {
+    if (staticDir) {
       await app.register(fastifyStatic, {
         root: staticDir,
         prefix: "/",
         decorateReply: false,
+      });
+
+      await app.register(fastifyStatic, {
+        root: staticDir,
+        prefix: "/relay-ui/",
+        decorateReply: false,
+        prefixAvoidTrailingSlash: true,
+      });
+
+      app.get("/relay-ui", async (_request, reply) => {
+        const indexPath = path.join(staticDir, "index.html");
+        try {
+          if (fs.existsSync(indexPath)) {
+            const html = await fs.promises.readFile(indexPath, "utf-8");
+            return reply.type("text/html; charset=utf-8").send(html);
+          }
+        } catch {
+          // Suppress file read error
+        }
+        return reply.status(404).send({ success: false, error: "Not found" });
       });
     }
 
@@ -241,21 +306,53 @@ export class RelayServer {
         }
       }
 
+      const safeSend = (payload: string): void => {
+        try {
+          socket.send(payload);
+        } catch {
+          // Suppress send error if client dropped connection
+        }
+      };
+
       socket.on("message", async (raw: Buffer | string) => {
         this.sessionManager.updateSessionActivity(session.sessionId);
         try {
-          const parsed = JSON.parse(raw.toString());
-          const commandType = parsed.type || "PROMPT";
+          const rawStr = raw.toString().trim();
+          if (rawStr.toUpperCase() === "PING") {
+            safeSend(
+              JSON.stringify({
+                type: "PONG",
+                payload: { timestamp: Date.now() },
+                timestamp: Date.now(),
+              }),
+            );
+            return;
+          }
+
+          const parsed = JSON.parse(rawStr);
+          const rawType = parsed.type || "PROMPT";
+          const commandType = String(rawType).toUpperCase();
           const payload = parsed.payload || {};
+
+          if (commandType === "PING") {
+            safeSend(
+              JSON.stringify({
+                type: "PONG",
+                payload: { ...payload, timestamp: Date.now() },
+                timestamp: Date.now(),
+              }),
+            );
+            return;
+          }
 
           const result = await this.upstreamBridge.sendCommand(
             session.sessionId,
-            commandType,
+            rawType,
             payload,
           );
 
           if (result.buffered) {
-            socket.send(
+            safeSend(
               JSON.stringify({
                 type: "BUFFERED_ACK",
                 payload: {
@@ -266,7 +363,7 @@ export class RelayServer {
               }),
             );
           } else if (result.error) {
-            socket.send(
+            safeSend(
               JSON.stringify({
                 type: "ERROR",
                 payload: { error: result.error },
@@ -275,7 +372,7 @@ export class RelayServer {
             );
           }
         } catch {
-          socket.send(
+          safeSend(
             JSON.stringify({
               type: "ERROR",
               payload: { error: "Invalid JSON payload" },
@@ -309,6 +406,7 @@ export class RelayServer {
     this.app = app;
     this.isRunning = true;
     this.startedAt = Date.now();
+    this.startHeartbeat();
 
     // Attempt upstream connection in background
     this.upstreamBridge.connect().catch(() => {
@@ -324,6 +422,7 @@ export class RelayServer {
       return;
     }
 
+    this.stopHeartbeat();
     this.isRunning = false;
     this.startedAt = undefined;
 
@@ -366,12 +465,64 @@ export class RelayServer {
   }
 
   public dispose(): void {
+    this.stopHeartbeat();
     if (this.unhookUpstream) {
       this.unhookUpstream();
       this.unhookUpstream = undefined;
     }
     this.upstreamBridge.dispose();
     this.statusListeners.clear();
+  }
+
+  public getApp(): FastifyInstance | null {
+    return this.app;
+  }
+
+  public startHeartbeat(): void {
+    this.stopHeartbeat();
+    if (
+      this.config.heartbeatIntervalMs &&
+      this.config.heartbeatIntervalMs > 0
+    ) {
+      this.heartbeatTimer = setInterval(() => {
+        this.broadcastHeartbeat();
+      }, this.config.heartbeatIntervalMs);
+    }
+  }
+
+  public stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  public broadcastHeartbeat(): void {
+    const activeSessions = this.sessionManager.getActiveSessions();
+    const payload = JSON.stringify({
+      type: "HEARTBEAT",
+      payload: {
+        timestamp: Date.now(),
+        isBuffering: this.upstreamBridge.isBuffering(),
+        activeSessions: activeSessions.length,
+      },
+      timestamp: Date.now(),
+    });
+
+    for (const session of activeSessions) {
+      const socket = this.sessionManager.getSocket(session.sessionId);
+      if (socket) {
+        if (socket.readyState === 1 /* OPEN */) {
+          try {
+            socket.send(payload);
+          } catch {
+            this.sessionManager.unbindSocket(session.sessionId);
+          }
+        } else if (socket.readyState === 2 || socket.readyState === 3) {
+          this.sessionManager.unbindSocket(session.sessionId);
+        }
+      }
+    }
   }
 
   // --- Private Helpers ---
