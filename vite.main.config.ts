@@ -9,7 +9,14 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      external: ["electron", "electron/main", "electron/common"],
+      external: [
+        "electron",
+        "electron/main",
+        "electron/common",
+        "ws",
+        "bufferutil",
+        "utf-8-validate",
+      ],
       output: {
         entryFileNames: "main.js",
       },

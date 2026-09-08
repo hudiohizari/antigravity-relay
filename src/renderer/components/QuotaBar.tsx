@@ -14,11 +14,20 @@ export interface QuotaBarProps {
 
 function formatModelName(modelId: string): string {
   const overrides: Record<string, string> = {
+    "gemini-3.1-pro": "Gemini 3.1 Pro",
+    "gemini-3.5-flash": "Gemini 3.5 Flash",
+    "gemini-flash-lite": "Gemini Flash Lite",
     "gemini-2.0-flash": "Gemini 2.0 Flash",
     "gemini-1.5-pro": "Gemini 1.5 Pro",
     "gemini-1.5-flash": "Gemini 1.5 Flash",
+    "gemini-pro-image": "Gemini Pro Image",
+    "gemini-flash-image": "Gemini Flash Image",
+    "claude-sonnet-4-6": "Claude Sonnet 4.6",
+    "claude-opus-4-6": "Claude Opus 4.6",
+    "claude-opus-4-5": "Claude Opus 4.5",
     "claude-3-5-sonnet-vertex": "Claude 3.5 Sonnet (Vertex)",
     "claude-on-vertex": "Claude on Vertex",
+    "gpt-oss-120b": "GPT OSS 120B",
   };
 
   if (overrides[modelId]) {
@@ -65,8 +74,7 @@ export const QuotaBar: React.FC<QuotaBarProps> = ({
   }, []);
 
   const models = quota?.models ? Object.entries(quota.models) : [];
-  const isCached =
-    quota?.source === "cached" || Boolean(quota?.poll_error);
+  const isCached = quota?.source === "cached" || Boolean(quota?.poll_error);
 
   const getHealthTheme = (percentage: number) => {
     if (isRateLimited) {
@@ -139,7 +147,9 @@ export const QuotaBar: React.FC<QuotaBarProps> = ({
           >
             <RefreshCw
               className={`w-3.5 h-3.5 ${
-                isRefreshing ? "animate-spin text-[var(--primitive-color-blue-500)]" : ""
+                isRefreshing
+                  ? "animate-spin text-[var(--primitive-color-blue-500)]"
+                  : ""
               }`}
               aria-hidden="true"
             />
@@ -155,7 +165,7 @@ export const QuotaBar: React.FC<QuotaBarProps> = ({
       ) : (
         <div className="space-y-3 min-w-0">
           {models.map(([modelId, model]) => {
-            const displayName = formatModelName(modelId);
+            const displayName = model.displayName || formatModelName(modelId);
             const clampedPercent = Math.max(
               0,
               Math.min(100, Math.round(model.percentage)),
@@ -177,8 +187,7 @@ export const QuotaBar: React.FC<QuotaBarProps> = ({
                     {typeof model.remainingQueries === "number" &&
                       typeof model.totalQueries === "number" && (
                         <span className="text-[var(--text-muted)] text-[11px] hidden xs:inline">
-                          (
-                          {model.remainingQueries.toLocaleString()}/
+                          ({model.remainingQueries.toLocaleString()}/
                           {model.totalQueries.toLocaleString()} req)
                         </span>
                       )}

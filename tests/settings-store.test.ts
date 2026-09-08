@@ -47,6 +47,11 @@ describe("SettingsStore", () => {
     expect(settings.minimizeToTrayOnClose).toBe(true);
     expect(settings.network.relayPort).toBe(4040);
     expect(settings.notifications.enabled).toBe(true);
+    expect(settings.oauth.clientId).toBe(
+      "antigravity-relay.apps.googleusercontent.com",
+    );
+    expect(settings.oauth.clientSecret).toBe("");
+    expect(settings.oauth.isCustom).toBe(false);
   });
 
   it("should encrypt sensitive fields on disk and decrypt on load", async () => {

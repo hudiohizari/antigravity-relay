@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { URL } from "node:url";
 import { GoogleAccount, TokenData } from "../../shared/types";
 import { AccountStore } from "../account-store/account-store";
-import { DEFAULT_OAUTH_SCOPES, getScopeString } from "./oauth-scopes";
+import { getScopesForClientId, getScopeString } from "./oauth-scopes";
 
 export interface OAuthConfig {
   clientId: string;
@@ -265,7 +265,9 @@ export class OAuthLoopbackServer {
         authUrl.searchParams.set("response_type", "code");
         authUrl.searchParams.set(
           "scope",
-          getScopeString(this.config.scopes || DEFAULT_OAUTH_SCOPES),
+          getScopeString(
+            this.config.scopes || getScopesForClientId(this.config.clientId),
+          ),
         );
         authUrl.searchParams.set("state", state);
         authUrl.searchParams.set("code_challenge", challenge);

@@ -288,33 +288,46 @@ describe("IPC Boundary and Handler Verification", () => {
       vi.restoreAllMocks();
     });
 
-    it("should reject concurrent OAuth flow invocation when one is already in progress", async () => {
-      let releaseFlow: () => void = () => {};
-      const pendingFlow = new Promise<GoogleAccount>((resolve) => {
-        releaseFlow = () =>
-          resolve({
-            id: "oauth-concurrent",
-            email: "concurrent@test.com",
-            status: "active",
-            tokens: {
-              access_token: "tok",
-              refresh_token: "ref",
-              expires_in: 3600,
-              expiry_timestamp: Date.now() + 3600000,
-              token_type: "Bearer",
-            },
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          });
+    it("should cancel previous in-progress flow and start new flow when re-initiated", async () => {
+      let cancelReason: string | undefined;
+      const cancelSpy = vi
+        .spyOn(OAuthLoopbackServer.prototype, "cancel")
+        .mockImplementation(function (this: any, reason?: string) {
+          cancelReason = reason;
+        });
+
+      let flowCallCount = 0;
+      let rejectFirstFlow: (err: Error) => void = () => {};
+      const pendingFirstFlow = new Promise<GoogleAccount>((_, reject) => {
+        rejectFirstFlow = reject;
       });
 
-      vi.spyOn(OAuthLoopbackServer.prototype, "startFlow").mockImplementation(
-        async () => {
-          return pendingFlow;
+      const secondFlowAccount: GoogleAccount = {
+        id: "oauth-superseded-user",
+        email: "superseded@test.com",
+        status: "active",
+        tokens: {
+          access_token: "tok-superseded",
+          refresh_token: "ref-superseded",
+          expires_in: 3600,
+          expiry_timestamp: Date.now() + 3600000,
+          token_type: "Bearer",
         },
-      );
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
       vi.spyOn(OAuthLoopbackServer.prototype, "isInProgress").mockReturnValue(
         true,
+      );
+      vi.spyOn(OAuthLoopbackServer.prototype, "startFlow").mockImplementation(
+        async () => {
+          flowCallCount++;
+          if (flowCallCount === 1) {
+            return pendingFirstFlow;
+          }
+          return secondFlowAccount;
+        },
       );
 
       const handler = registeredHandlers.get(
@@ -322,17 +335,102 @@ describe("IPC Boundary and Handler Verification", () => {
       )!;
 
       const firstCallPromise = handler({});
-      // Call again while first is in flight
       const secondCallResult = await handler({});
 
-      expect(secondCallResult.success).toBe(false);
-      expect(secondCallResult.error).toBe(
-        "An OAuth flow is already in progress",
+      expect(cancelSpy).toHaveBeenCalled();
+      expect(cancelReason).toBe("Superseded by new OAuth flow");
+      expect(secondCallResult.success).toBe(true);
+      expect(secondCallResult.account?.email).toBe("superseded@test.com");
+
+      rejectFirstFlow(new Error("Superseded by new OAuth flow"));
+      const firstCallResult = await firstCallPromise;
+      expect(firstCallResult.success).toBe(false);
+      expect(firstCallResult.error).toBe("Superseded by new OAuth flow");
+
+      vi.restoreAllMocks();
+    });
+
+    it("should preserve active server reference when earlier flow finishes cleanup after being superseded", async () => {
+      const cancelCalls: string[] = [];
+      vi.spyOn(OAuthLoopbackServer.prototype, "cancel").mockImplementation(
+        function (this: any, reason?: string) {
+          cancelCalls.push(reason || "default");
+        },
       );
 
-      releaseFlow();
-      const firstCallResult = await firstCallPromise;
-      expect(firstCallResult.success).toBe(true);
+      let rejectFirst: (err: Error) => void = () => {};
+      const firstPromise = new Promise<GoogleAccount>((_, reject) => {
+        rejectFirst = reject;
+      });
+
+      let rejectSecond: (err: Error) => void = () => {};
+      const secondPromise = new Promise<GoogleAccount>((_, reject) => {
+        rejectSecond = reject;
+      });
+
+      const thirdAccount: GoogleAccount = {
+        id: "oauth-third-user",
+        email: "third-user@test.com",
+        status: "active",
+        tokens: {
+          access_token: "tok-third",
+          refresh_token: "ref-third",
+          expires_in: 3600,
+          expiry_timestamp: Date.now() + 3600000,
+          token_type: "Bearer",
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      let flowInvocation = 0;
+      vi.spyOn(OAuthLoopbackServer.prototype, "isInProgress").mockReturnValue(
+        true,
+      );
+      vi.spyOn(OAuthLoopbackServer.prototype, "startFlow").mockImplementation(
+        async () => {
+          flowInvocation++;
+          if (flowInvocation === 1) {
+            return firstPromise;
+          }
+          if (flowInvocation === 2) {
+            return secondPromise;
+          }
+          return thirdAccount;
+        },
+      );
+
+      const handler = registeredHandlers.get(
+        IpcChannels.ACCOUNTS_INITIATE_OAUTH,
+      )!;
+
+      // Start first flow
+      const firstCallPromise = handler({});
+
+      // Start second flow (which cancels first)
+      const secondCallPromise = handler({});
+      expect(cancelCalls.length).toBe(1);
+      expect(cancelCalls[0]).toBe("Superseded by new OAuth flow");
+
+      // Settle first flow rejection so its finally block runs while second flow is still pending
+      rejectFirst(new Error("Superseded by new OAuth flow"));
+      const firstResult = await firstCallPromise;
+      expect(firstResult.success).toBe(false);
+
+      // Trigger third flow while second flow is still in progress:
+      // If the first flow's finally block incorrectly cleared activeOAuthServer to null,
+      // the third flow would fail to cancel the second flow.
+      const thirdCallResult = await handler({});
+
+      expect(cancelCalls.length).toBe(2);
+      expect(cancelCalls[1]).toBe("Superseded by new OAuth flow");
+      expect(thirdCallResult.success).toBe(true);
+      expect(thirdCallResult.account?.email).toBe("third-user@test.com");
+
+      // Cleanly reject second flow
+      rejectSecond(new Error("Superseded by new OAuth flow"));
+      const secondResult = await secondCallPromise;
+      expect(secondResult.success).toBe(false);
 
       vi.restoreAllMocks();
     });

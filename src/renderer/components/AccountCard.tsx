@@ -79,7 +79,12 @@ export const AccountCard: React.FC<AccountCardProps> = ({
 }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
   const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [account.avatarUrl]);
 
   // Tick timers every second for live countdowns
   useEffect(() => {
@@ -195,10 +200,12 @@ export const AccountCard: React.FC<AccountCardProps> = ({
       <div>
         <div className="flex items-start justify-between gap-3 min-w-0 mb-3">
           <div className="flex items-center gap-3 min-w-0">
-            {account.avatarUrl ? (
+            {account.avatarUrl && !avatarError ? (
               <img
                 src={account.avatarUrl}
                 alt=""
+                referrerPolicy="no-referrer"
+                onError={() => setAvatarError(true)}
                 className="w-9 h-9 rounded-full object-cover border border-[var(--border-subtle)] shrink-0"
               />
             ) : (
@@ -286,7 +293,10 @@ export const AccountCard: React.FC<AccountCardProps> = ({
               aria-busy="true"
               className="min-h-[44px] px-3.5 rounded-md text-xs font-medium border border-[var(--primitive-color-blue-700)] bg-[var(--primitive-color-blue-800)] text-white flex items-center gap-2 opacity-90 cursor-wait"
             >
-              <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+              <Loader2
+                className="w-3.5 h-3.5 animate-spin"
+                aria-hidden="true"
+              />
               <span>{t("switcher.switchingInProgress")}</span>
             </button>
           ) : isRateLimited ? (

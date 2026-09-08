@@ -47,6 +47,17 @@ import { SettingsStore } from "../src/main/settings/settings-store";
 import { AppSettings, DEFAULT_APP_SETTINGS } from "../src/main/settings/types";
 import { TrayManager } from "../src/main/tray/tray";
 import { NativeNotifier } from "../src/main/notifications/notifier";
+import {
+  DEFAULT_OAUTH_SCOPES,
+  ENTERPRISE_OAUTH_SCOPES,
+  STANDARD_OAUTH_SCOPES,
+  getScopesForClientId,
+} from "../src/main/oauth/oauth-scopes";
+import {
+  GoogleQuotaApiClient,
+  aggregateQuotaModelFamilies,
+  getQuotaModelFamilyId,
+} from "../src/main/quota/google-api";
 
 const {
   MockTray,
@@ -2430,6 +2441,141 @@ describe("Shift-Left Sabotage & Mutation Vectors", () => {
         expect(mockWindow.restore).toHaveBeenCalled();
         expect(mockWindow.show).toHaveBeenCalled();
         expect(mockWindow.focus).toHaveBeenCalled();
+      });
+    });
+
+    describe("Avatar Resilience & Dynamic Quota Model Sabotage & Mutation Vectors", () => {
+      it("should kill mutant that corrupts standard or enterprise OAuth scopes or resolution", () => {
+        expect(STANDARD_OAUTH_SCOPES.length).toBe(4);
+        expect(ENTERPRISE_OAUTH_SCOPES.length).toBe(7);
+        expect(DEFAULT_OAUTH_SCOPES).toEqual(STANDARD_OAUTH_SCOPES);
+
+        const enterpriseRequired = [
+          "openid",
+          "https://www.googleapis.com/auth/cloud-platform",
+          "https://www.googleapis.com/auth/userinfo.email",
+          "https://www.googleapis.com/auth/userinfo.profile",
+          "https://www.googleapis.com/auth/cclog",
+          "https://www.googleapis.com/auth/experimentsandconfigs",
+          "https://www.googleapis.com/auth/aicode",
+        ];
+
+        for (const scope of enterpriseRequired) {
+          expect(ENTERPRISE_OAUTH_SCOPES).toContain(scope);
+        }
+
+        // Sabotage check: mutant dropping cloud-platform from standard scopes
+        const mutantStandard = STANDARD_OAUTH_SCOPES.filter(
+          (s) => !s.includes("cloud-platform"),
+        );
+        expect(mutantStandard.length).not.toBe(STANDARD_OAUTH_SCOPES.length);
+
+        // Sabotage check: mutant leaking enterprise scopes to custom client ID
+        const customResolved = getScopesForClientId("custom-client-id");
+        expect(customResolved).not.toContain(
+          "https://www.googleapis.com/auth/aicode",
+        );
+        expect(customResolved.length).toBe(4);
+
+        // Sabotage check: mutant withholding enterprise scopes from official client ID
+        const officialResolved = getScopesForClientId(
+          "1071006060591-mock-enterprise.apps.googleusercontent.com",
+        );
+        expect(officialResolved).toContain(
+          "https://www.googleapis.com/auth/aicode",
+        );
+        expect(officialResolved.length).toBe(7);
+      });
+
+      it("should kill mutant that maps models to fragmented individual families instead of unified groups", () => {
+        const previewFamily = getQuotaModelFamilyId("gemini-3.1-pro-preview");
+        const highFamily = getQuotaModelFamilyId("gemini-3.1-pro-high");
+        const flashLiteFamily = getQuotaModelFamilyId("gemini-3.1-flash-lite");
+        const sonnetFamily = getQuotaModelFamilyId("claude-sonnet-4-6");
+
+        expect(previewFamily).toBe("gemini-3.1-pro");
+        expect(highFamily).toBe("gemini-3.1-pro");
+        expect(flashLiteFamily).toBe("gemini-flash-lite");
+        expect(sonnetFamily).toBe("claude-sonnet-4-6");
+
+        // Sabotage mutant: if highFamily !== previewFamily, mutant survives
+        expect(previewFamily).toBe(highFamily);
+      });
+
+      it("should kill mutant that fails to pick minimum percentage or earliest reset time in family aggregation", () => {
+        const models = {
+          "gemini-3.1-pro-low": {
+            modelId: "gemini-3.1-pro-low",
+            percentage: 95,
+            resetTime: "2026-09-08T15:00:00.000Z",
+          },
+          "gemini-3.1-pro-high": {
+            modelId: "gemini-3.1-pro-high",
+            percentage: 60,
+            resetTime: "2026-09-08T12:00:00.000Z",
+          },
+        };
+
+        const aggregated = aggregateQuotaModelFamilies(models);
+        expect(aggregated["gemini-3.1-pro"]).toBeDefined();
+        // Strict minimum percentage verification
+        expect(aggregated["gemini-3.1-pro"].percentage).toBe(60);
+        // Strict earliest reset time verification
+        expect(aggregated["gemini-3.1-pro"].resetTime).toBe(
+          "2026-09-08T12:00:00.000Z",
+        );
+        expect(aggregated["gemini-3.1-pro"].displayName).toBe("Gemini 3.1 Pro");
+      });
+
+      it("should kill mutant that omits project-less retry on HTTP 403", async () => {
+        const account: GoogleAccount = {
+          id: "sabotage-acc",
+          email: "sabotage@example.com",
+          status: "active",
+          tokens: {
+            access_token: "sab-tok",
+            refresh_token: "sab-ref",
+            expires_in: 3600,
+            expiry_timestamp: Date.now() + 3600000,
+            token_type: "Bearer",
+            project_id: "restricted-project",
+          },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+
+        let attempts = 0;
+        const mockFetch = vi.fn().mockImplementation((_url, init) => {
+          attempts++;
+          const body = JSON.parse(String(init?.body || "{}"));
+          if (body.project) {
+            return Promise.resolve({
+              status: 403,
+              headers: new Headers(),
+              text: () => Promise.resolve("Forbidden with project"),
+            });
+          }
+          return Promise.resolve({
+            status: 200,
+            headers: new Headers(),
+            json: () =>
+              Promise.resolve({
+                models: {
+                  "gemini-3.5-flash": {
+                    quotaInfo: { remainingFraction: 0.88 },
+                    displayName: "Gemini 3.5 Flash",
+                  },
+                },
+              }),
+          });
+        });
+
+        const client = new GoogleQuotaApiClient({ fetchFn: mockFetch as any });
+        const result = await client.fetchQuota(account);
+
+        expect(result.success).toBe(true);
+        expect(attempts).toBe(2);
+        expect(result.quota?.models["gemini-3.5-flash"].percentage).toBe(88);
       });
     });
   });

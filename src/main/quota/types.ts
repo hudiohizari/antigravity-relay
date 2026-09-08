@@ -2,6 +2,7 @@ export const QUOTA_SCHEMA_VERSION = 1;
 
 export interface ModelQuota {
   modelId?: string;
+  displayName?: string;
   percentage: number;
   resetTime: string;
   remainingQueries?: number;

@@ -62,6 +62,7 @@ export interface TokenData {
 
 export interface ModelQuota {
   modelId?: string;
+  displayName?: string;
   percentage: number;
   resetTime: string;
   remainingQueries?: number;

@@ -265,6 +265,37 @@ describe("Frontend Copy Catalogs & Token Architecture", () => {
       expect(html).toContain("animate-pulse");
     });
 
+    it("should render QuotaBar with dynamic model display names matching Google Code Assist", () => {
+      const dynamicQuota: QuotaData = {
+        models: {
+          "gemini-3.1-pro": {
+            modelId: "gemini-3.1-pro",
+            displayName: "Gemini 3.1 Pro",
+            percentage: 85,
+            resetTime: new Date(Date.now() + 3600000).toISOString(),
+          },
+          "claude-sonnet-4-6": {
+            modelId: "claude-sonnet-4-6",
+            displayName: "Claude Sonnet 4.6",
+            percentage: 90,
+            resetTime: new Date(Date.now() + 3600000).toISOString(),
+          },
+        },
+        source: "api",
+      };
+
+      const html = renderWithI18n(
+        React.createElement(QuotaBar, { quota: dynamicQuota }),
+      );
+
+      expect(html).toContain("Gemini 3.1 Pro");
+      expect(html).toContain("Claude Sonnet 4.6");
+      expect(html).toContain('aria-label="Gemini 3.1 Pro quota remaining 85%"');
+      expect(html).toContain(
+        'aria-label="Claude Sonnet 4.6 quota remaining 90%"',
+      );
+    });
+
     it("should render AccountCard with integrated QuotaBar, cooldown badge, and manual switch CTA", () => {
       const healthyAccount: GoogleAccount = {
         id: "acc-healthy-1",
@@ -331,6 +362,59 @@ describe("Frontend Copy Catalogs & Token Architecture", () => {
       expect(htmlCooldown).toContain('role="timer"');
       expect(htmlCooldown).toContain("Cooldown:");
       expect(htmlCooldown).toContain("In Cooldown");
+    });
+
+    it("should render AccountCard with avatar image and no-referrer policy", () => {
+      const accountWithAvatar: GoogleAccount = {
+        id: "acc-avatar-1",
+        email: "alice@example.com",
+        avatarUrl: "https://lh3.googleusercontent.com/a/mock-avatar-photo",
+        status: "active",
+        tokens: {
+          access_token: "tok",
+          refresh_token: "ref",
+          expires_in: 3600,
+          expiry_timestamp: Date.now() + 3600000,
+          token_type: "Bearer",
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const htmlWithAvatar = renderWithI18n(
+        React.createElement(AccountCard, {
+          account: accountWithAvatar,
+          isActive: true,
+          isRefreshing: false,
+          isDeleting: false,
+          onRefreshToken: async () => true,
+          onRemoveRequest: () => {},
+        }),
+      );
+
+      expect(htmlWithAvatar).toContain('referrerPolicy="no-referrer"');
+      expect(htmlWithAvatar).toContain(
+        "https://lh3.googleusercontent.com/a/mock-avatar-photo",
+      );
+
+      const accountWithoutAvatar: GoogleAccount = {
+        ...accountWithAvatar,
+        avatarUrl: undefined,
+      };
+
+      const htmlWithoutAvatar = renderWithI18n(
+        React.createElement(AccountCard, {
+          account: accountWithoutAvatar,
+          isActive: false,
+          isRefreshing: false,
+          isDeleting: false,
+          onRefreshToken: async () => true,
+          onRemoveRequest: () => {},
+        }),
+      );
+
+      expect(htmlWithoutAvatar).not.toContain("<img");
+      expect(htmlWithoutAvatar).toContain("A");
     });
 
     it("should render AutoSwitchSettings with threshold slider, evaluation interval, and manual switch action", () => {

@@ -203,6 +203,157 @@ describe("Google Quota API Client", () => {
     expect(result.quota?.models["gemini-1.5-pro"].resetTime).toBeDefined();
   });
 
+  it("should dynamically parse Google Code Assist models and aggregate into model families", async () => {
+    const mockData = {
+      models: {
+        "gemini-3.1-pro-preview": {
+          quotaInfo: {
+            remainingFraction: 0.85,
+            resetTime: "2026-09-08T12:00:00.000Z",
+          },
+          displayName: "Gemini 3.1 Pro (Low)",
+        },
+        "gemini-3.1-pro-high": {
+          quotaInfo: {
+            remainingFraction: 0.8,
+            resetTime: "2026-09-08T11:45:00.000Z",
+          },
+          displayName: "Gemini 3.1 Pro High",
+        },
+        "claude-sonnet-4-6": {
+          quotaInfo: {
+            remainingFraction: 0.9,
+            resetTime: "2026-09-08T13:00:00.000Z",
+          },
+          displayName: "Claude Sonnet 4.6",
+        },
+        "custom-neural-model": {
+          quotaInfo: {
+            remainingFraction: 0.55,
+            resetTime: "2026-09-08T14:00:00.000Z",
+          },
+          displayName: "Custom Neural Model",
+        },
+      },
+    };
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers(),
+      json: () => Promise.resolve(mockData),
+    });
+
+    const client = new GoogleQuotaApiClient({ fetchFn: mockFetch as any });
+    const result = await client.fetchQuota(sampleAccount);
+
+    expect(result.success).toBe(true);
+    expect(result.quota?.models["gemini-3.1-pro"]).toBeDefined();
+    expect(result.quota?.models["gemini-3.1-pro"].percentage).toBe(80);
+    expect(result.quota?.models["gemini-3.1-pro"].resetTime).toBe(
+      "2026-09-08T11:45:00.000Z",
+    );
+    expect(result.quota?.models["gemini-3.1-pro"].displayName).toBe(
+      "Gemini 3.1 Pro",
+    );
+
+    expect(result.quota?.models["claude-sonnet-4-6"]).toBeDefined();
+    expect(result.quota?.models["claude-sonnet-4-6"].percentage).toBe(90);
+    expect(result.quota?.models["claude-sonnet-4-6"].displayName).toBe(
+      "Claude Sonnet 4.6",
+    );
+
+    expect(result.quota?.models["custom-neural-model"]).toBeDefined();
+    expect(result.quota?.models["custom-neural-model"].percentage).toBe(55);
+    expect(result.quota?.models["custom-neural-model"].displayName).toBe(
+      "Custom Neural Model",
+    );
+  });
+
+  it("should fallback to secondary endpoint when primary endpoint returns 500", async () => {
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      callCount++;
+      if (String(url).startsWith("https://cloudcode-pa.googleapis.com/")) {
+        return Promise.resolve({
+          status: 500,
+          headers: new Headers(),
+          text: () => Promise.resolve("Internal Error"),
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        headers: new Headers(),
+        json: () =>
+          Promise.resolve({
+            models: {
+              "gemini-3.5-flash": {
+                quotaInfo: { remainingFraction: 0.95 },
+                displayName: "Gemini 3.5 Flash",
+              },
+            },
+          }),
+      });
+    });
+
+    const client = new GoogleQuotaApiClient({ fetchFn: mockFetch as any });
+    const result = await client.fetchQuota(sampleAccount);
+
+    expect(result.success).toBe(true);
+    expect(callCount).toBe(2);
+    expect(result.quota?.models["gemini-3.5-flash"].percentage).toBe(95);
+  });
+
+  it("should retry without project ID when initial request with project returns 403", async () => {
+    const accountWithProject: GoogleAccount = {
+      ...sampleAccount,
+      tokens: {
+        ...sampleAccount.tokens,
+        project_id: "test-cloud-project-123",
+      },
+    };
+
+    const requestedBodies: string[] = [];
+    const mockFetch = vi.fn().mockImplementation((_url, init) => {
+      requestedBodies.push(String(init?.body));
+      if (requestedBodies.length === 1) {
+        return Promise.resolve({
+          status: 403,
+          headers: new Headers(),
+          text: () => Promise.resolve("Permission denied for project"),
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        headers: new Headers(),
+        json: () => Promise.resolve({ models: {} }),
+      });
+    });
+
+    const client = new GoogleQuotaApiClient({ fetchFn: mockFetch as any });
+    const result = await client.fetchQuota(accountWithProject);
+
+    expect(result.success).toBe(true);
+    expect(requestedBodies.length).toBe(2);
+    expect(requestedBodies[0]).toContain("test-cloud-project-123");
+    expect(requestedBodies[1]).toBe("{}");
+  });
+
+  it("should load project context via loadCodeAssist", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          cloudaicompanionProject: "companion-proj-789",
+        }),
+    });
+
+    const client = new GoogleQuotaApiClient({ fetchFn: mockFetch as any });
+    const project = await client.loadProjectContext("valid-token");
+
+    expect(project).toBe("companion-proj-789");
+  });
+
   it("should export quota schema version", () => {
     expect(QUOTA_SCHEMA_VERSION).toBe(1);
   });

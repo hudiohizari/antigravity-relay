@@ -147,16 +147,16 @@ export function registerIpcHandlers(
 
   // 2. accounts:initiate-oauth
   ipcMain.handle(IpcChannels.ACCOUNTS_INITIATE_OAUTH, async () => {
+    let currentServer: OAuthLoopbackServer | null = null;
     try {
       if (activeOAuthServer && activeOAuthServer.isInProgress()) {
-        return {
-          success: false,
-          error: "An OAuth flow is already in progress",
-        };
+        activeOAuthServer.cancel("Superseded by new OAuth flow");
       }
 
-      activeOAuthServer = new OAuthLoopbackServer(accountStore, oauthConfig);
-      const account = await activeOAuthServer.startFlow({
+      currentServer = new OAuthLoopbackServer(accountStore, oauthConfig);
+      activeOAuthServer = currentServer;
+
+      const account = await currentServer.startFlow({
         openBrowser: (url) => shell.openExternal(url),
       });
 
@@ -170,7 +170,9 @@ export function registerIpcHandlers(
         error: (err as Error).message,
       };
     } finally {
-      activeOAuthServer = null;
+      if (activeOAuthServer === currentServer) {
+        activeOAuthServer = null;
+      }
     }
   });
 

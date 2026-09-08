@@ -10,21 +10,85 @@ import {
 } from "../src/main/oauth/oauth-server";
 import {
   DEFAULT_OAUTH_SCOPES,
+  ENTERPRISE_OAUTH_SCOPES,
+  STANDARD_OAUTH_SCOPES,
+  getScopesForClientId,
   getScopeString,
 } from "../src/main/oauth/oauth-scopes";
 import { refreshTokenIfNeeded } from "../src/main/oauth/token-refresh";
 import { GoogleAccount } from "../src/shared/types";
 
 describe("OAuth Scopes Utilities", () => {
-  it("should define default scopes and join properly", () => {
-    expect(DEFAULT_OAUTH_SCOPES.length).toBe(3);
-    const scopeStr = getScopeString();
-    expect(scopeStr).toContain("openid");
-    expect(scopeStr).toContain("userinfo.email");
-    expect(scopeStr).toContain("userinfo.profile");
+  it("should define standard scopes containing core identity and cloud platform permissions", () => {
+    expect(STANDARD_OAUTH_SCOPES.length).toBe(4);
+    expect(STANDARD_OAUTH_SCOPES).toContain("openid");
+    expect(STANDARD_OAUTH_SCOPES).toContain(
+      "https://www.googleapis.com/auth/cloud-platform",
+    );
+    expect(STANDARD_OAUTH_SCOPES).toContain(
+      "https://www.googleapis.com/auth/userinfo.email",
+    );
+    expect(STANDARD_OAUTH_SCOPES).toContain(
+      "https://www.googleapis.com/auth/userinfo.profile",
+    );
+    expect(STANDARD_OAUTH_SCOPES).not.toContain(
+      "https://www.googleapis.com/auth/aicode",
+    );
   });
 
-  it("should format custom scope list into space-delimited string", () => {
+  it("should define enterprise scopes containing all standard scopes plus code assist internal permissions", () => {
+    expect(ENTERPRISE_OAUTH_SCOPES.length).toBe(7);
+    for (const scope of STANDARD_OAUTH_SCOPES) {
+      expect(ENTERPRISE_OAUTH_SCOPES).toContain(scope);
+    }
+    expect(ENTERPRISE_OAUTH_SCOPES).toContain(
+      "https://www.googleapis.com/auth/cclog",
+    );
+    expect(ENTERPRISE_OAUTH_SCOPES).toContain(
+      "https://www.googleapis.com/auth/experimentsandconfigs",
+    );
+    expect(ENTERPRISE_OAUTH_SCOPES).toContain(
+      "https://www.googleapis.com/auth/aicode",
+    );
+  });
+
+  it("should default DEFAULT_OAUTH_SCOPES to STANDARD_OAUTH_SCOPES for unprivileged safety", () => {
+    expect(DEFAULT_OAUTH_SCOPES).toEqual(STANDARD_OAUTH_SCOPES);
+    expect(DEFAULT_OAUTH_SCOPES.length).toBe(4);
+  });
+
+  it("should resolve enterprise scopes for official client id prefix and standard scopes for custom or missing clients", () => {
+    // Official client IDs starting with 1071006060591
+    const officialId =
+      "1071006060591-mock-enterprise.apps.googleusercontent.com";
+    expect(getScopesForClientId(officialId)).toEqual(ENTERPRISE_OAUTH_SCOPES);
+    expect(getScopesForClientId("1071006060591-custom-variant")).toEqual(
+      ENTERPRISE_OAUTH_SCOPES,
+    );
+    expect(getScopesForClientId("  1071006060591-padded  ")).toEqual(
+      ENTERPRISE_OAUTH_SCOPES,
+    );
+
+    // Custom personal Google Cloud Console client IDs
+    expect(
+      getScopesForClientId("9876543210-personal.apps.googleusercontent.com"),
+    ).toEqual(STANDARD_OAUTH_SCOPES);
+    expect(getScopesForClientId("custom-client-id")).toEqual(
+      STANDARD_OAUTH_SCOPES,
+    );
+
+    // Empty or undefined client ID
+    expect(getScopesForClientId(undefined)).toEqual(STANDARD_OAUTH_SCOPES);
+    expect(getScopesForClientId("")).toEqual(STANDARD_OAUTH_SCOPES);
+  });
+
+  it("should format scopes into space-delimited string", () => {
+    const defaultScopeStr = getScopeString();
+    expect(defaultScopeStr).toBe(STANDARD_OAUTH_SCOPES.join(" "));
+
+    const enterpriseScopeStr = getScopeString(ENTERPRISE_OAUTH_SCOPES);
+    expect(enterpriseScopeStr).toBe(ENTERPRISE_OAUTH_SCOPES.join(" "));
+
     const custom = ["scope1", "scope2"];
     expect(getScopeString(custom)).toBe("scope1 scope2");
   });
@@ -516,6 +580,114 @@ describe("OAuth Loopback Server and Authentication Flow", () => {
       "Failed to bind loopback server",
     );
     vi.restoreAllMocks();
+  });
+
+  it("should configure authorization url with enterprise scopes for official client id", async () => {
+    const officialConfig: OAuthConfig = {
+      ...mockOAuthConfig,
+      clientId: "1071006060591-mock-enterprise.apps.googleusercontent.com",
+    };
+    const oauthServer = new OAuthLoopbackServer(store, officialConfig);
+    let capturedUrl = "";
+
+    const flowPromise = oauthServer.startFlow({
+      openBrowser: (url) => {
+        capturedUrl = url;
+      },
+    });
+
+    while (!capturedUrl) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    const parsed = new URL(capturedUrl);
+    const scopeParam = parsed.searchParams.get("scope") || "";
+
+    expect(scopeParam).toContain("openid");
+    expect(scopeParam).toContain(
+      "https://www.googleapis.com/auth/cloud-platform",
+    );
+    expect(scopeParam).toContain(
+      "https://www.googleapis.com/auth/userinfo.email",
+    );
+    expect(scopeParam).toContain(
+      "https://www.googleapis.com/auth/userinfo.profile",
+    );
+    expect(scopeParam).toContain("https://www.googleapis.com/auth/cclog");
+    expect(scopeParam).toContain(
+      "https://www.googleapis.com/auth/experimentsandconfigs",
+    );
+    expect(scopeParam).toContain("https://www.googleapis.com/auth/aicode");
+
+    oauthServer.cancel();
+    await expect(flowPromise).rejects.toThrow("OAuth flow cancelled by user");
+  });
+
+  it("should configure authorization url with standard scopes for custom client id", async () => {
+    const customConfig: OAuthConfig = {
+      ...mockOAuthConfig,
+      clientId: "9988776655-custom.apps.googleusercontent.com",
+    };
+    const oauthServer = new OAuthLoopbackServer(store, customConfig);
+    let capturedUrl = "";
+
+    const flowPromise = oauthServer.startFlow({
+      openBrowser: (url) => {
+        capturedUrl = url;
+      },
+    });
+
+    while (!capturedUrl) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    const parsed = new URL(capturedUrl);
+    const scopeParam = parsed.searchParams.get("scope") || "";
+
+    expect(scopeParam).toContain("openid");
+    expect(scopeParam).toContain(
+      "https://www.googleapis.com/auth/cloud-platform",
+    );
+    expect(scopeParam).toContain(
+      "https://www.googleapis.com/auth/userinfo.email",
+    );
+    expect(scopeParam).toContain(
+      "https://www.googleapis.com/auth/userinfo.profile",
+    );
+    expect(scopeParam).not.toContain("https://www.googleapis.com/auth/aicode");
+    expect(scopeParam).not.toContain("https://www.googleapis.com/auth/cclog");
+    expect(scopeParam).not.toContain(
+      "https://www.googleapis.com/auth/experimentsandconfigs",
+    );
+
+    oauthServer.cancel();
+    await expect(flowPromise).rejects.toThrow("OAuth flow cancelled by user");
+  });
+
+  it("should honor explicit scopes configuration over client id dynamic resolution", async () => {
+    const explicitConfig: OAuthConfig = {
+      ...mockOAuthConfig,
+      clientId: "1071006060591-mock-enterprise.apps.googleusercontent.com",
+      scopes: ["openid", "email"],
+    };
+    const oauthServer = new OAuthLoopbackServer(store, explicitConfig);
+    let capturedUrl = "";
+
+    const flowPromise = oauthServer.startFlow({
+      openBrowser: (url) => {
+        capturedUrl = url;
+      },
+    });
+
+    while (!capturedUrl) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    const parsed = new URL(capturedUrl);
+    expect(parsed.searchParams.get("scope")).toBe("openid email");
+
+    oauthServer.cancel();
+    await expect(flowPromise).rejects.toThrow("OAuth flow cancelled by user");
   });
 });
 
