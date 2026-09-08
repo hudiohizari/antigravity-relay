@@ -306,23 +306,6 @@ const en = {
       macos_hint:
         "macOS requires a signed app for Login Items to work. If auto-start fails, please sign the app or enable it manually in System Settings.",
     },
-    privacy: {
-      title: "Privacy",
-      description: "Control how your data is used to improve the application.",
-      error_reporting: "Error Reporting",
-      error_reporting_desc:
-        "Send anonymous error reports to help us improve the app. No personal data is collected.",
-      telemetry: "Performance Telemetry",
-      telemetry_desc:
-        "Share anonymous timing metrics and traces to diagnose slow account switching.",
-      clarity: "Microsoft Clarity",
-      clarity_desc:
-        "Share anonymous interaction diagnostics, heatmaps, and session replay to improve the app.",
-      clarity_unavailable:
-        "Microsoft Clarity is not configured for this build.",
-      restart_note:
-        "Some observability changes will take effect after restarting the application.",
-    },
     notifications: {
       title: "Notifications",
       description: "Configure desktop alerts for account events.",

@@ -1,4 +1,3 @@
-import "./instrument"; // MUST be the first import to ensure Sentry initializes before app ready
 import { app, BrowserWindow, dialog, shell } from "electron";
 import type { MessageBoxOptions } from "electron";
 import path from "path";
@@ -54,7 +53,6 @@ import {
   registerElectronUpdater,
 } from "@/modules/app-shell/update/electronUpdaterService";
 import { selectWindowsUpdateResult } from "@/modules/app-shell/update/windowsUpdateFallbackPolicy";
-import { getQuickObservabilityConfig } from "@/shared/observability/observabilityConfig";
 import { registerPerformanceRecorderIpc } from "@/modules/app-shell/performance-recorder/ipc";
 import { configurePerformanceRecorderCommandLine } from "@/modules/app-shell/performance-recorder/main-recorder";
 import { waitForViteDevServer } from "@/modules/app-shell/utils/wait-for-vite-dev-server";
@@ -335,12 +333,6 @@ ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL_URL, async (_event, url: unknown) => {
   }
 
   await shell.openExternal(url);
-});
-
-ipcMain.handle(IPC_CHANNELS.GET_OBSERVABILITY_CONFIG, () => {
-  return getQuickObservabilityConfig((message, error) => {
-    logger.error(message, error);
-  });
 });
 
 registerPerformanceRecorderIpc();

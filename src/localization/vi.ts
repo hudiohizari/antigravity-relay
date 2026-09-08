@@ -222,23 +222,6 @@ const vi = {
       macos_hint:
         "macOS cần bản ký ứng dụng để Login Items hoạt động. Nếu tự động khởi động thất bại, hãy ký ứng dụng hoặc bật thủ công trong System Settings.",
     },
-    privacy: {
-      title: "Quyền riêng tư",
-      description: "Quản lý cách dữ liệu được sử dụng để cải thiện ứng dụng.",
-      error_reporting: "Báo cáo lỗi",
-      error_reporting_desc:
-        "Gửi báo cáo lỗi ẩn danh để giúp cải thiện ứng dụng. Không thu thập dữ liệu cá nhân.",
-      telemetry: "Telemetry hiệu năng",
-      telemetry_desc:
-        "Chia sẻ metric thời gian và trace ẩn danh để chẩn đoán chuyển tài khoản chậm.",
-      clarity: "Microsoft Clarity",
-      clarity_desc:
-        "Chia sẻ chẩn đoán tương tác ẩn danh, heatmap và phát lại phiên để cải thiện ứng dụng.",
-      clarity_unavailable:
-        "Microsoft Clarity chưa được cấu hình cho bản build này.",
-      restart_note:
-        "Một số thay đổi quan sát sẽ có hiệu lực sau khi khởi động lại ứng dụng.",
-    },
     notifications: {
       title: "Thông báo",
       description: "Cấu hình cảnh báo trên desktop cho các sự kiện tài khoản.",

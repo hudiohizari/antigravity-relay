@@ -47,10 +47,6 @@ declare global {
 
   interface Window {
     electron: {
-      getObservabilityConfig: () => Promise<{
-        errorReportingEnabled: boolean;
-        telemetryEnabled: boolean;
-      }>;
       onGoogleAuthCode: (callback: (code: string) => void) => () => void;
       changeLanguage: (lang: string) => void;
       onManualUpdateAvailable: (

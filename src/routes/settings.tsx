@@ -39,7 +39,6 @@ import {
   openLogDirectory,
   selectAntigravityExecutable,
 } from "@/modules/antigravity-runtime/actions/system";
-import { isClarityAvailable } from "@/shared/analytics/clarity";
 import { AntigravityClientCacheSettings } from "@/modules/antigravity-runtime/components/AntigravityClientCacheSettings";
 
 function parseArgsInput(value: string): string[] {
@@ -68,7 +67,6 @@ function SettingsPage() {
   const [antigravityExecutable, setAntigravityExecutable] = useState("");
   const [antigravityArgs, setAntigravityArgs] = useState("");
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
-  const clarityAvailable = isClarityAvailable();
 
   // Sync config to local state when loaded
   useEffect(() => {
@@ -512,78 +510,6 @@ function SettingsPage() {
                   <span>{t("settings.openLogDir")}</span>
                 </button>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Privacy & Error Reporting Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("settings.privacy.title")}</CardTitle>
-              <CardDescription>
-                {t("settings.privacy.description")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div className="space-y-1">
-                  <Label>{t("settings.privacy.error_reporting")}</Label>
-                  <p className="text-xs text-gray-500">
-                    {t("settings.privacy.error_reporting_desc")}
-                  </p>
-                </div>
-                <Switch
-                  checked={config?.error_reporting_enabled || false}
-                  onCheckedChange={async (checked) => {
-                    if (config) {
-                      await saveConfig({
-                        ...config,
-                        error_reporting_enabled: checked,
-                      });
-                    }
-                  }}
-                />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div className="space-y-1">
-                  <Label>{t("settings.privacy.telemetry")}</Label>
-                  <p className="text-xs text-gray-500">
-                    {t("settings.privacy.telemetry_desc")}
-                  </p>
-                </div>
-                <Switch
-                  checked={config?.telemetry_enabled ?? true}
-                  onCheckedChange={async (checked) => {
-                    if (config) {
-                      await saveConfig({
-                        ...config,
-                        telemetry_enabled: checked,
-                      });
-                    }
-                  }}
-                />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div className="space-y-1">
-                  <Label>{t("settings.privacy.clarity")}</Label>
-                  <p className="text-xs text-gray-500">
-                    {clarityAvailable
-                      ? t("settings.privacy.clarity_desc")
-                      : t("settings.privacy.clarity_unavailable")}
-                  </p>
-                </div>
-                <Switch
-                  checked={config?.clarity_enabled ?? true}
-                  disabled={!clarityAvailable}
-                  onCheckedChange={async (checked) => {
-                    if (config) {
-                      await saveConfig({ ...config, clarity_enabled: checked });
-                    }
-                  }}
-                />
-              </div>
-              <p className="text-muted-foreground text-xs">
-                {t("settings.privacy.restart_note")}
-              </p>
             </CardContent>
           </Card>
 

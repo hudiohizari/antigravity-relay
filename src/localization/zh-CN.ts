@@ -207,19 +207,6 @@ const zhCn = {
       macos_hint:
         "macOS 需要应用已签名才可生效。如自启动失败，请自行签名或在系统设置中手动启用。",
     },
-    privacy: {
-      title: "隐私",
-      description: "控制你的数据如何用于改进应用。",
-      error_reporting: "错误上报",
-      error_reporting_desc:
-        "发送匿名错误报告以帮助我们改进应用。不收集个人数据。",
-      telemetry: "性能遥测",
-      telemetry_desc: "分享匿名耗时指标和链路数据，用于诊断账号切换变慢问题。",
-      clarity: "Microsoft Clarity",
-      clarity_desc: "分享匿名交互诊断、热图和会话回放，帮助改进应用体验。",
-      clarity_unavailable: "当前构建未配置 Microsoft Clarity。",
-      restart_note: "部分可观测性设置会在重启应用后生效。",
-    },
     notifications: {
       title: "通知",
       description: "配置账号事件的桌面提醒。",

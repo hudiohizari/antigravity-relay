@@ -227,24 +227,6 @@ const tr = {
       macos_hint:
         "macOS, Oturum Açma Öğelerinin çalışması için imzalanmış bir uygulama gerektirir. Otomatik başlatma başarısız olursa, lütfen uygulamayı imzalayın veya Sistem Ayarlarından manuel olarak etkinleştirin.",
     },
-    privacy: {
-      title: "Gizlilik",
-      description:
-        "Verilerinizin uygulamayı geliştirmek için nasıl kullanılacağını kontrol edin.",
-      error_reporting: "Hata Raporlama",
-      error_reporting_desc:
-        "Uygulamayı geliştirmemize yardımcı olmak için anonim hata raporları gönderin. Hiçbir kişisel veri toplanmaz.",
-      telemetry: "Performans Telemetrisi",
-      telemetry_desc:
-        "Yavaş hesap geçişlerini teşhis etmek için anonim zamanlama metrikleri ve izler paylaşın.",
-      clarity: "Microsoft Clarity",
-      clarity_desc:
-        "Uygulamayı iyileştirmek için anonim etkileşim tanıları, ısı haritaları ve oturum tekrarları paylaşın.",
-      clarity_unavailable:
-        "Microsoft Clarity bu derleme için yapılandırılmamış.",
-      restart_note:
-        "Bazı gözlemlenebilirlik değişiklikleri uygulamayı yeniden başlattıktan sonra geçerli olur.",
-    },
     notifications: {
       title: "Bildirimler",
       description: "Hesap olayları için masaüstü uyarılarını yapılandırın.",

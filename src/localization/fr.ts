@@ -240,24 +240,6 @@ const fr = {
       macos_hint:
         "macOS exige une app signee pour que les elements de connexion fonctionnent. Si le demarrage automatique echoue, signez l app ou activez-la manuellement dans les reglages systeme.",
     },
-    privacy: {
-      title: "Confidentialite",
-      description:
-        "Controlez l utilisation de vos donnees pour ameliorer l application.",
-      error_reporting: "Rapports d erreur",
-      error_reporting_desc:
-        "Envoyer des rapports d erreur anonymes pour nous aider a ameliorer l app. Aucune donnee personnelle n est collectee.",
-      telemetry: "Telemetrie de performance",
-      telemetry_desc:
-        "Partager des metriques et traces anonymes pour diagnostiquer les basculements de compte lents.",
-      clarity: "Microsoft Clarity",
-      clarity_desc:
-        "Partager des diagnostics d interaction anonymes, des heatmaps et des relectures de session pour ameliorer l app.",
-      clarity_unavailable:
-        "Microsoft Clarity n est pas configure pour cette build.",
-      restart_note:
-        "Certaines modifications d observabilite prendront effet apres le redemarrage de l application.",
-    },
     notifications: {
       title: "Notifications",
       description:
