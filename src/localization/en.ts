@@ -152,6 +152,8 @@ const en = {
     wifiAdvisory: "Connect your phone to the same Wi-Fi network to access.",
     copyLink: "Copy Link",
     linkCopied: "Pairing link copied to clipboard",
+    serverInactive: "Relay Server Inactive",
+    startServerToPair: "Start relay server to enable mobile pairing",
   },
   sessions: {
     title: "Connected Phone Sessions",

@@ -50,6 +50,7 @@ import {
   Shield,
   Loader2,
   Wifi,
+  PowerOff,
 } from "lucide-react";
 
 function formatDuration(ms: number): string {
@@ -269,6 +270,7 @@ export const RelayDashboard: React.FC = () => {
     },
   });
 
+  const isRelayRunning = Boolean(relayStatus?.isRunning);
   const isTunnelConnected =
     tunnelStatus?.state === "connected" &&
     typeof publicUrl === "string" &&
@@ -278,10 +280,10 @@ export const RelayDashboard: React.FC = () => {
   const pairingUrl = useMemo(() => {
     if (isTunnelConnected && publicUrl) {
       const base = publicUrl.endsWith("/") ? publicUrl.slice(0, -1) : publicUrl;
-      return `${base}/relay-ui/?pair=${pairingToken}`;
+      return `${base}/?pair=${pairingToken}`;
     }
     const port = relayStatus?.port || 4040;
-    return `http://${recommendedIp}:${port}/relay-ui/?pair=${pairingToken}`;
+    return `http://${recommendedIp}:${port}/?pair=${pairingToken}`;
   }, [
     isTunnelConnected,
     publicUrl,
@@ -666,14 +668,20 @@ export const RelayDashboard: React.FC = () => {
 
         {/* Right Column: Mobile Pairing & QR Access */}
         <div className="space-y-6">
-          <Card>
+          <Card
+            className={
+              !isRelayRunning
+                ? "opacity-80 transition-opacity"
+                : "transition-opacity"
+            }
+          >
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 shrink-0 mt-0.5">
                     <QrCode className="h-5 w-5" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <CardTitle className="text-lg">
                       {t("pairing.title")}
                     </CardTitle>
@@ -684,39 +692,72 @@ export const RelayDashboard: React.FC = () => {
                 </div>
                 <Badge
                   variant="outline"
-                  className={
-                    isTunnelConnected
-                      ? "gap-1.5 px-2.5 py-1 text-xs font-medium bg-emerald-500/15 text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800"
-                      : "gap-1.5 px-2.5 py-1 text-xs font-medium bg-blue-500/15 text-blue-600 border-blue-300 dark:text-blue-400 dark:border-blue-800"
-                  }
+                  className={`shrink-0 whitespace-nowrap gap-1.5 px-2.5 py-1 text-xs font-medium ${
+                    !isRelayRunning
+                      ? "bg-zinc-500/15 text-zinc-600 border-zinc-300 dark:text-zinc-400 dark:border-zinc-800"
+                      : isTunnelConnected
+                        ? "bg-emerald-500/15 text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800"
+                        : "bg-blue-500/15 text-blue-600 border-blue-300 dark:text-blue-400 dark:border-blue-800"
+                  }`}
                 >
-                  {isTunnelConnected ? (
+                  {!isRelayRunning ? (
+                    <PowerOff className="h-3.5 w-3.5" />
+                  ) : isTunnelConnected ? (
                     <Cloud className="h-3.5 w-3.5" />
                   ) : (
                     <Wifi className="h-3.5 w-3.5" />
                   )}
                   <span>
-                    {isTunnelConnected
-                      ? t("pairing.modeTunnel")
-                      : t("pairing.modeWifi")}
+                    {!isRelayRunning
+                      ? t("pairing.serverInactive")
+                      : isTunnelConnected
+                        ? t("pairing.modeTunnel")
+                        : t("pairing.modeWifi")}
                   </span>
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-5">
               {/* QR Code */}
-              <div className="p-4 rounded-xl border bg-white dark:bg-zinc-950 shadow-sm">
-                <QRCode
-                  value={pairingUrl}
-                  size={190}
-                  title={t("pairing.title")}
-                  description={t("pairing.scanInstructions")}
-                  ariaLabel={t("pairing.qrAlt")}
-                />
+              <div className="relative p-4 rounded-xl border bg-white dark:bg-zinc-950 shadow-sm overflow-hidden">
+                <div
+                  className={`transition-all duration-200 ${
+                    !isRelayRunning
+                      ? "filter grayscale blur-[1px] opacity-20 pointer-events-none select-none"
+                      : ""
+                  }`}
+                >
+                  <QRCode
+                    value={pairingUrl}
+                    size={190}
+                    title={t("pairing.title")}
+                    description={t("pairing.scanInstructions")}
+                    ariaLabel={t("pairing.qrAlt")}
+                  />
+                </div>
+                {!isRelayRunning && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-background/80 backdrop-blur-[2px] text-center select-none">
+                    <div className="p-2.5 rounded-full bg-muted text-muted-foreground mb-2">
+                      <PowerOff className="h-6 w-6" />
+                    </div>
+                    <span className="text-xs font-semibold text-foreground">
+                      {t("pairing.serverInactive")}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground mt-1 max-w-[170px] leading-tight">
+                      {t("pairing.startServerToPair")}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="text-center space-y-1 max-w-sm">
-                <p className="text-xs font-semibold text-foreground">
+                <p
+                  className={`text-xs font-semibold ${
+                    !isRelayRunning
+                      ? "text-muted-foreground"
+                      : "text-foreground"
+                  }`}
+                >
                   {t("pairing.scanInstructions")}
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
@@ -724,7 +765,7 @@ export const RelayDashboard: React.FC = () => {
                 </p>
               </div>
 
-              {!isTunnelConnected && (
+              {isRelayRunning && !isTunnelConnected && (
                 <div
                   role="status"
                   className="w-full flex items-start gap-2.5 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs"
@@ -742,7 +783,11 @@ export const RelayDashboard: React.FC = () => {
               )}
 
               {/* Plain Pairing URL */}
-              <div className="w-full space-y-2 pt-2 border-t">
+              <div
+                className={`w-full space-y-2 pt-2 border-t ${
+                  !isRelayRunning ? "opacity-50" : ""
+                }`}
+              >
                 <div className="flex items-center justify-between">
                   <label
                     htmlFor="pairing-url-input"
@@ -756,6 +801,7 @@ export const RelayDashboard: React.FC = () => {
                   <Input
                     id="pairing-url-input"
                     readOnly
+                    disabled={!isRelayRunning}
                     value={pairingUrl}
                     aria-label={t("pairing.copyLink")}
                     className="font-mono text-xs select-all bg-muted/30"
@@ -763,6 +809,7 @@ export const RelayDashboard: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={!isRelayRunning}
                     onClick={handleCopyLink}
                     className="gap-1.5 shrink-0"
                   >
@@ -777,7 +824,11 @@ export const RelayDashboard: React.FC = () => {
               </div>
 
               {/* Ephemeral Pairing Token */}
-              <div className="w-full space-y-2 pt-2 border-t">
+              <div
+                className={`w-full space-y-2 pt-2 border-t ${
+                  !isRelayRunning ? "opacity-50" : ""
+                }`}
+              >
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                     <Shield className="h-3.5 w-3.5 text-primary" />
@@ -786,6 +837,7 @@ export const RelayDashboard: React.FC = () => {
                   <Button
                     variant="ghost"
                     size="sm"
+                    disabled={!isRelayRunning}
                     className="h-7 text-xs text-muted-foreground hover:text-foreground"
                     onClick={() => setPairingToken(generatePairingToken())}
                   >
@@ -796,6 +848,7 @@ export const RelayDashboard: React.FC = () => {
                 <div className="flex gap-2">
                   <Input
                     readOnly
+                    disabled={!isRelayRunning}
                     value={pairingToken}
                     type="password"
                     className="font-mono text-xs select-all bg-muted/30"
@@ -803,6 +856,7 @@ export const RelayDashboard: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={!isRelayRunning}
                     onClick={handleCopyToken}
                     className="gap-1.5 shrink-0"
                   >

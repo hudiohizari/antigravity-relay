@@ -1,868 +1,532 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import WebSocket from "ws";
-import path from "node:path";
 import fs from "node:fs";
-import { RelayServer, resolveStaticDir } from "@/modules/relay/relay-server";
+import path from "node:path";
+import os from "node:os";
+import { RelayServer } from "@/modules/relay/relay-server";
 import { SessionManager } from "@/modules/relay/session-manager";
+import { UpstreamBridge } from "@/modules/relay/upstream-bridge";
+import { PortDiscoveryService } from "@/modules/relay/port-discovery";
 import {
-  UpstreamBridge,
-  UpstreamTransport,
-} from "@/modules/relay/upstream-bridge";
+  MockUpstreamServer,
+  TEST_TLS_KEY,
+  TEST_TLS_CERT,
+} from "../helpers/mock-upstream";
+import https from "node:https";
+import { request as undiciRequest } from "undici";
 
-class MockUpstreamTransport implements UpstreamTransport {
-  public isConnected = true;
-  public sentMessages: string[] = [];
-  public messageHandlers: Set<(data: string) => void> = new Set();
-  public closeHandlers: Set<(code: number, reason: string) => void> = new Set();
-  public errorHandlers: Set<(err: Error) => void> = new Set();
+describe("RelayServer Reverse Proxy Mirror", () => {
+  let mockUpstream: MockUpstreamServer;
+  let upstreamPort: number;
+  let relayServer: RelayServer;
+  let relayPort: number;
+  let tempDir: string;
+  let logFilePath: string;
+  let portDiscovery: PortDiscoveryService;
 
-  public async connect(_url: string): Promise<void> {
-    this.isConnected = true;
-  }
+  beforeEach(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-mirror-test-"));
+    logFilePath = path.join(tempDir, "main.log");
 
-  public send(data: string): void {
-    this.sentMessages.push(data);
-  }
+    mockUpstream = new MockUpstreamServer({
+      csrfToken: "test-initial-csrf-token",
+      validateCsrf: true,
+    });
+    upstreamPort = await mockUpstream.start();
 
-  public close(): void {
-    this.isConnected = false;
-  }
+    fs.writeFileSync(
+      logFilePath,
+      `[LOG] listening on https://127.0.0.1:${upstreamPort}/\n`,
+      "utf-8",
+    );
 
-  public isReady(): boolean {
-    return this.isConnected;
-  }
-
-  public onMessage(callback: (data: string) => void): void {
-    this.messageHandlers.add(callback);
-  }
-
-  public onClose(callback: (code: number, reason: string) => void): void {
-    this.closeHandlers.add(callback);
-  }
-
-  public onError(callback: (err: Error) => void): void {
-    this.errorHandlers.add(callback);
-  }
-}
-
-describe("Fastify Relay Server & WebSocket Companion Interface", () => {
-  let server: RelayServer;
-  let sessionManager: SessionManager;
-  let upstreamBridge: UpstreamBridge;
-  let mockTransport: MockUpstreamTransport;
-  let testPort: number;
-
-  beforeEach(() => {
-    sessionManager = new SessionManager();
-    mockTransport = new MockUpstreamTransport();
-    upstreamBridge = new UpstreamBridge({
-      sessionManager,
-      autoReconnect: false,
-      transportFactory: () => mockTransport,
+    portDiscovery = new PortDiscoveryService({
+      logPath: logFilePath,
+      pollIntervalMs: 50,
+      debounceMs: 10,
     });
 
-    server = new RelayServer({
+    relayServer = new RelayServer({
       config: {
         port: 0,
         host: "127.0.0.1",
-        heartbeatIntervalMs: 50,
       },
-      sessionManager,
-      upstreamBridge,
+      portDiscovery,
     });
+
+    const status = await relayServer.start();
+    relayPort = status.port;
   });
 
   afterEach(async () => {
-    await server.stop();
-    server.dispose();
+    if (relayServer) {
+      await relayServer.stop();
+      relayServer.dispose();
+    }
+    if (mockUpstream) {
+      await mockUpstream.stop();
+    }
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Suppress temp dir cleanup error
+    }
   });
 
-  describe("Static Asset Resolution & Directory Delivery", () => {
-    it("should resolve existing relay-ui directory using default fallbacks", () => {
-      const resolved = resolveStaticDir();
-      expect(resolved).toBeTruthy();
-      expect(fs.existsSync(resolved!)).toBe(true);
-      expect(fs.existsSync(path.join(resolved!, "index.html"))).toBe(true);
+  describe("HTTP Reverse Proxying", () => {
+    it("proxies root GET request returning HTML with CSRF token and custom headers", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/`);
+      expect(res.status).toBe(200);
+
+      const contentType = res.headers.get("content-type");
+      expect(contentType).toContain("text/html");
+
+      const customHeader = res.headers.get("x-custom-header");
+      expect(customHeader).toBe("antigravity-upstream");
+
+      const bodyText = await res.text();
+      expect(bodyText).toContain(
+        'window.__APP_CONFIG__ = {csrfToken: "test-initial-csrf-token"}',
+      );
+      expect(bodyText).toContain("<h1>Antigravity App</h1>");
     });
 
-    it("should resolve explicit valid staticDir path", () => {
-      const expectedDir = path.resolve(process.cwd(), "src/relay-ui");
-      const resolved = resolveStaticDir(expectedDir);
-      expect(resolved).toBe(expectedDir);
-    });
+    it("proxies static asset requests with correct Content-Type headers", async () => {
+      const assets = [
+        { path: "/main.js", expectedType: "application/javascript" },
+        { path: "/compiled_tailwind.css", expectedType: "text/css" },
+        { path: "/jetbox.css", expectedType: "text/css" },
+        { path: "/prism_bundle.js", expectedType: "application/javascript" },
+      ];
 
-    it("should fall back to valid directory if given a non-existent configuredDir", () => {
-      const resolved = resolveStaticDir("/non/existent/path/xyz123");
-      expect(resolved).toBeTruthy();
-      expect(fs.existsSync(resolved!)).toBe(true);
-    });
-
-    it("should return null if no candidate directory exists", () => {
-      const existsSpy = vi.spyOn(fs, "existsSync").mockReturnValue(false);
-      try {
-        const resolved = resolveStaticDir();
-        expect(resolved).toBeNull();
-      } finally {
-        existsSpy.mockRestore();
-      }
-    });
-
-    it("should start server cleanly without static assets when staticDir cannot be resolved", async () => {
-      const existsSpy = vi.spyOn(fs, "existsSync").mockReturnValue(false);
-      let noStaticServer: RelayServer | null = null;
-      try {
-        noStaticServer = new RelayServer({
-          config: { port: 0, host: "127.0.0.1" },
-        });
-        const status = await noStaticServer.start();
-        expect(status.isRunning).toBe(true);
-
-        const res = await fetch(`http://127.0.0.1:${status.port}/health`);
+      for (const asset of assets) {
+        const res = await fetch(`http://127.0.0.1:${relayPort}${asset.path}`);
         expect(res.status).toBe(200);
-        const body = (await res.json()) as any;
-        expect(body.success).toBe(true);
-        expect(body.status).toBe("healthy");
-
-        const indexRes = await fetch(
-          `http://127.0.0.1:${status.port}/index.html`,
-        );
-        expect(indexRes.status).toBe(404);
-      } finally {
-        existsSpy.mockRestore();
-        if (noStaticServer) {
-          await noStaticServer.stop();
-          noStaticServer.dispose();
-        }
+        const ct = res.headers.get("content-type") || "";
+        expect(ct).toContain(asset.expectedType);
       }
     });
 
-    it("should serve index.html on GET /", async () => {
-      const status = await server.start();
-      testPort = status.port;
+    it("proxies POST requests with body intact and sets upstream Host header", async () => {
+      const payload = { prompt: "Explain quantum computing", maxTokens: 100 };
 
-      const res = await fetch(`http://127.0.0.1:${testPort}/`);
+      const res = await fetch(`http://127.0.0.1:${relayPort}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Client-Session": "mobile-client-01",
+        },
+        body: JSON.stringify(payload),
+      });
+
       expect(res.status).toBe(200);
-      const text = await res.text();
-      expect(text).toContain("Antigravity Remote");
+      const json = (await res.json()) as any;
+      expect(json.success).toBe(true);
+      expect(json.method).toBe("POST");
+      expect(json.receivedBody).toEqual(payload);
+
+      // Verify that mock upstream received the correct Host header
+      const lastReq =
+        mockUpstream.recordedRequests[mockUpstream.recordedRequests.length - 1];
+      expect(lastReq.headers["host"]).toBe(`127.0.0.1:${upstreamPort}`);
+      expect(lastReq.headers["x-client-session"]).toBe("mobile-client-01");
     });
 
-    it("should serve static assets under /index.html and /locales/id.json", async () => {
-      const status = await server.start();
-      testPort = status.port;
+    it("proxies PUT and DELETE requests to upstream API", async () => {
+      const putRes = await fetch(`http://127.0.0.1:${relayPort}/api/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ theme: "dark" }),
+      });
+      expect(putRes.status).toBe(200);
 
-      const indexRes = await fetch(`http://127.0.0.1:${testPort}/index.html`);
-      expect(indexRes.status).toBe(200);
-      const indexHtml = await indexRes.text();
-      expect(indexHtml).toContain("<!doctype html>");
-
-      const idRes = await fetch(`http://127.0.0.1:${testPort}/locales/id.json`);
-      expect(idRes.status).toBe(200);
-      const idJson = await idRes.json();
-      expect(idJson.app.title).toBe("Antigravity Remote");
-      expect(idJson.app.status.live).toBe("Aktif");
-
-      const enRes = await fetch(`http://127.0.0.1:${testPort}/locales/en.json`);
-      expect(enRes.status).toBe(200);
-      const enJson = await enRes.json();
-      expect(enJson.app.title).toBe("Antigravity Remote");
-      expect(enJson.app.status.live).toBe("Live");
+      const delRes = await fetch(`http://127.0.0.1:${relayPort}/api/item/1`, {
+        method: "DELETE",
+      });
+      expect(delRes.status).toBe(200);
     });
 
-    it("should serve index.html on GET /relay-ui with query parameters", async () => {
-      const status = await server.start();
-      testPort = status.port;
+    it("returns 503 with retry information when upstream port is not yet discovered", async () => {
+      const unlinkedDiscovery = new PortDiscoveryService({
+        logPath: path.join(tempDir, "missing.log"),
+      });
 
-      const res = await fetch(
-        `http://127.0.0.1:${testPort}/relay-ui?pair=test-key-123`,
-      );
-      expect(res.status).toBe(200);
-      const text = await res.text();
-      expect(text).toContain("Antigravity Remote Companion");
+      const unlinkedServer = new RelayServer({
+        config: { port: 0, host: "127.0.0.1" },
+        portDiscovery: unlinkedDiscovery,
+      });
+
+      const st = await unlinkedServer.start();
+      try {
+        const res = await fetch(`http://127.0.0.1:${st.port}/`);
+        expect(res.status).toBe(503);
+        expect(res.headers.get("retry-after")).toBe("2");
+        const body = (await res.json()) as any;
+        expect(body.error).toBe("upstream_unavailable");
+        expect(body.retry_after_ms).toBe(2000);
+      } finally {
+        await unlinkedServer.stop();
+        unlinkedServer.dispose();
+      }
     });
 
-    it("should serve companion web app on /relay-ui/ and /relay-ui/index.html", async () => {
-      const status = await server.start();
-      testPort = status.port;
+    it("returns 503 when upstream port is set but upstream server is unreachable", async () => {
+      const deadPortDiscovery = new PortDiscoveryService({
+        initialPort: 65530, // Unassigned port
+        logPath: path.join(tempDir, "dead.log"),
+      });
 
-      const trailingSlashRes = await fetch(
-        `http://127.0.0.1:${testPort}/relay-ui/`,
-      );
-      expect(trailingSlashRes.status).toBe(200);
-      const trailingSlashHtml = await trailingSlashRes.text();
-      expect(trailingSlashHtml).toContain("Antigravity Remote Companion");
+      const deadServer = new RelayServer({
+        config: { port: 0, host: "127.0.0.1" },
+        portDiscovery: deadPortDiscovery,
+      });
 
-      const indexRes = await fetch(
-        `http://127.0.0.1:${testPort}/relay-ui/index.html`,
-      );
-      expect(indexRes.status).toBe(200);
-      const indexHtml = await indexRes.text();
-      expect(indexHtml).toContain("Antigravity Remote Companion");
-    });
-
-    it("should serve nested locale assets under /relay-ui/locales/*", async () => {
-      const status = await server.start();
-      testPort = status.port;
-
-      const enRes = await fetch(
-        `http://127.0.0.1:${testPort}/relay-ui/locales/en.json`,
-      );
-      expect(enRes.status).toBe(200);
-      const enJson = (await enRes.json()) as any;
-      expect(enJson.app.title).toBe("Antigravity Remote");
-      expect(enJson.app.status.live).toBe("Live");
-
-      const idRes = await fetch(
-        `http://127.0.0.1:${testPort}/relay-ui/locales/id.json`,
-      );
-      expect(idRes.status).toBe(200);
-      const idJson = (await idRes.json()) as any;
-      expect(idJson.app.title).toBe("Antigravity Remote");
-      expect(idJson.app.status.live).toBe("Aktif");
-    });
-
-    it("should default to host 0.0.0.0 for LAN connectivity", async () => {
-      const defaultServer = new RelayServer({ config: { port: 0 } });
-      expect(defaultServer.getStatus().host).toBe("0.0.0.0");
-      const status = await defaultServer.start();
-      expect(status.isRunning).toBe(true);
-      expect(status.host).toBe("0.0.0.0");
-      const res = await fetch(`http://127.0.0.1:${status.port}/health`);
-      expect(res.status).toBe(200);
-      await defaultServer.stop();
-      defaultServer.dispose();
+      const st = await deadServer.start();
+      try {
+        const res = await fetch(`http://127.0.0.1:${st.port}/`);
+        expect(res.status).toBe(503);
+        const body = (await res.json()) as any;
+        expect(body.error).toBe("upstream_unavailable");
+      } finally {
+        await deadServer.stop();
+        deadServer.dispose();
+      }
     });
   });
 
-  describe("HTTP Routes & Lifecycle", () => {
-    it("should start Fastify server and respond to /health endpoint", async () => {
-      const status = await server.start();
-      testPort = status.port;
-      expect(server.getStatus().isRunning).toBe(true);
+  describe("WebSocket Reverse Proxying and CSRF Verification", () => {
+    it("upgrades /connect-websocket, forwards CSRF token, and bridges bidirectional frames", async () => {
+      const csrfToken = mockUpstream.getCsrfToken();
 
-      const res = await fetch(`http://127.0.0.1:${testPort}/health`);
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.on("open", () => {
+          ws.send("ping-frame-1");
+        });
+
+        ws.on("message", (data) => {
+          expect(data.toString()).toBe("ping-frame-1");
+          ws.close();
+          resolve();
+        });
+
+        ws.on("error", reject);
+      });
+
+      // Assert upstream recorded the CSRF header
+      expect(mockUpstream.recordedWsHeaders).toHaveLength(1);
+      expect(mockUpstream.recordedWsHeaders[0]["x-codeium-csrf-token"]).toBe(
+        csrfToken,
+      );
+      expect(mockUpstream.recordedWsMessages).toContain("ping-frame-1");
+    });
+
+    it("rejects connection when CSRF token is invalid according to upstream validation", async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: {
+            "x-codeium-csrf-token": "wrong-token",
+          },
+        },
+      );
+
+      await new Promise<void>((resolve) => {
+        ws.on("close", (code) => {
+          expect(code).toBe(1011);
+          resolve();
+        });
+        ws.on("error", () => {
+          // Expected close error on 403 upgrade failure
+        });
+      });
+    });
+
+    it("propagates close frames from downstream client to upstream server within 1 second", async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: { "x-codeium-csrf-token": mockUpstream.getCsrfToken() },
+        },
+      );
+
+      await new Promise<void>((resolve) => {
+        ws.on("open", () => {
+          // Send close from client
+          ws.close(1000, "Client normal exit");
+        });
+
+        const checkUpstreamClosed = setInterval(() => {
+          if (mockUpstream.connectedSockets.size === 0) {
+            clearInterval(checkUpstreamClosed);
+            resolve();
+          }
+        }, 50);
+
+        setTimeout(() => {
+          clearInterval(checkUpstreamClosed);
+          resolve();
+        }, 1000);
+      });
+
+      expect(mockUpstream.connectedSockets.size).toBe(0);
+    });
+
+    it("propagates close frames from upstream server to downstream client within 1 second", async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: { "x-codeium-csrf-token": mockUpstream.getCsrfToken() },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        // Send a frame on open to ensure upstream bridge is active
+        ws.on("open", () => {
+          ws.send("ready-check");
+        });
+
+        // Poll until mockUpstream has the connected socket
+        const checkInterval = setInterval(() => {
+          if (mockUpstream.connectedSockets.size > 0) {
+            clearInterval(checkInterval);
+            for (const s of mockUpstream.connectedSockets) {
+              s.close(1000, "Upstream closed");
+            }
+          }
+        }, 20);
+
+        ws.on("close", (code) => {
+          clearInterval(checkInterval);
+          expect(code).toBe(1000);
+          resolve();
+        });
+
+        ws.on("error", (err) => {
+          clearInterval(checkInterval);
+          reject(err);
+        });
+      });
+    });
+
+    it("returns HTTP 503 when attempting WebSocket upgrade while port is unknown", async () => {
+      const noPortServer = new RelayServer({
+        config: { port: 0, host: "127.0.0.1" },
+        portDiscovery: new PortDiscoveryService({
+          logPath: "/nonexistent/path.log",
+        }),
+      });
+
+      const st = await noPortServer.start();
+
+      const ws = new WebSocket(`ws://127.0.0.1:${st.port}/connect-websocket`);
+
+      await new Promise<void>((resolve) => {
+        ws.on("error", () => {
+          resolve();
+        });
+      });
+
+      await noPortServer.stop();
+      noPortServer.dispose();
+    });
+  });
+
+  describe("Transparent CSRF Token Passthrough", () => {
+    it("delivers HTML byte-for-byte identical without modifying the csrfToken script", async () => {
+      const directUpstreamRes = await undiciRequest(
+        `https://127.0.0.1:${upstreamPort}/`,
+        {
+          dispatcher: (relayServer as any).upstreamDispatcher,
+        },
+      );
+      const directHtml = await directUpstreamRes.body.text();
+
+      const proxiedRes = await fetch(`http://127.0.0.1:${relayPort}/`);
+      const proxiedHtml = await proxiedRes.text();
+
+      expect(proxiedHtml).toBe(directHtml);
+      expect(proxiedHtml).toContain(mockUpstream.getCsrfToken());
+    });
+  });
+
+  describe("Account Swap Resilience and Port Re-targeting", () => {
+    it("detects new port, closes existing WebSockets with code 1012, and proxies to new upstream", async () => {
+      // 1. Establish an active WebSocket connection on the initial port
+      const clientWs = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: { "x-codeium-csrf-token": mockUpstream.getCsrfToken() },
+        },
+      );
+
+      await new Promise<void>((resolve) => {
+        clientWs.on("open", () => resolve());
+      });
+
+      let closeCodeReceived: number | null = null;
+      let closeReasonReceived: string | null = null;
+      clientWs.on("close", (code, reason) => {
+        closeCodeReceived = code;
+        closeReasonReceived = reason.toString();
+      });
+
+      // 2. Start a new mock upstream server simulating language_server restart
+      const secondUpstream = new MockUpstreamServer({
+        csrfToken: "new-account-csrf-token-777",
+        validateCsrf: true,
+      });
+      const secondPort = await secondUpstream.start();
+
+      try {
+        // 3. Mark port discovery as restarting during gap
+        portDiscovery.setRestarting(true);
+
+        // Verify that HTTP requests during the gap return 503 upstream_restarting
+        const gapRes = await fetch(`http://127.0.0.1:${relayPort}/api/test`);
+        expect(gapRes.status).toBe(503);
+        const gapJson = (await gapRes.json()) as any;
+        expect(gapJson.error).toBe("upstream_restarting");
+
+        // 4. Update log file with new listen port
+        fs.appendFileSync(
+          logFilePath,
+          `[LOG] account switch restart\nlistening on https://127.0.0.1:${secondPort}/\n`,
+          "utf-8",
+        );
+
+        // Wait for port discovery to detect the new port
+        await new Promise<void>((resolve) => {
+          if (portDiscovery.getPort() === secondPort) {
+            resolve();
+          } else {
+            portDiscovery.once("port-changed", () => resolve());
+          }
+        });
+
+        // 5. Assert that the old WebSocket connection was closed with code 1012 (Service Restart)
+        await new Promise<void>((resolve) => {
+          if (closeCodeReceived !== null) {
+            resolve();
+          } else {
+            clientWs.once("close", () => resolve());
+          }
+        });
+
+        expect(closeCodeReceived).toBe(1012);
+        expect(closeReasonReceived).toContain("Service Restart");
+
+        // 6. Assert that new HTTP requests receive the new HTML and CSRF token
+        const newHtmlRes = await fetch(`http://127.0.0.1:${relayPort}/`);
+        expect(newHtmlRes.status).toBe(200);
+        const newHtml = await newHtmlRes.text();
+        expect(newHtml).toContain('csrfToken: "new-account-csrf-token-777"');
+
+        // 7. Assert that new WebSocket can connect to the new upstream with the new token
+        const newWs = new WebSocket(
+          `ws://127.0.0.1:${relayPort}/connect-websocket`,
+          {
+            headers: { "x-codeium-csrf-token": "new-account-csrf-token-777" },
+          },
+        );
+
+        await new Promise<void>((resolve, reject) => {
+          newWs.on("open", () => {
+            newWs.send("hello-new-upstream");
+          });
+          newWs.on("message", (msg) => {
+            expect(msg.toString()).toBe("hello-new-upstream");
+            newWs.close();
+            resolve();
+          });
+          newWs.on("error", reject);
+        });
+      } finally {
+        await secondUpstream.stop();
+      }
+    });
+  });
+
+  describe("TLS Certificate Security and Scoped Verification Bypass", () => {
+    it("does not set NODE_TLS_REJECT_UNAUTHORIZED globally in environment", () => {
+      expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+    });
+
+    it("verifies certificates on non-whitelisted dispatchers while proxying localhost self-signed certs", async () => {
+      // Localhost self-signed connection through RelayServer reverse proxy succeeds
+      const res = await fetch(`http://127.0.0.1:${relayPort}/health`);
       expect(res.status).toBe(200);
 
-      const body = (await res.json()) as any;
-      expect(body.success).toBe(true);
-      expect(body.status).toBe("healthy");
-      expect(body.isRunning).toBe(true);
+      // A direct fetch using standard Node TLS validation against self-signed HTTPS server fails
+      let directError: any = null;
+      try {
+        await fetch(`https://127.0.0.1:${upstreamPort}/`);
+      } catch (err) {
+        directError = err;
+      }
+
+      // Assert standard fetch without custom dispatcher rejected the self-signed cert
+      expect(directError).not.toBeNull();
+      expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+    });
+  });
+
+  describe("Non-Proxied Monitoring Endpoints and Server Subsystems", () => {
+    it("serves operational health check on /health without proxying upstream", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/health`);
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.success).toBe(true);
+      expect(json.status).toBe("healthy");
+      expect(json.isRunning).toBe(true);
+      expect(json.upstreamPort).toBe(upstreamPort);
     });
 
-    it("should serve status and active sessions via REST", async () => {
-      sessionManager.createSession({ clientIp: "10.0.0.1" });
-      const status = await server.start();
-      testPort = status.port;
-
-      const statusRes = await fetch(`http://127.0.0.1:${testPort}/api/status`);
-      const statusBody = (await statusRes.json()) as any;
-      expect(statusBody.success).toBe(true);
-      expect(statusBody.data.activeSessions).toBe(1);
-
-      const sessionsRes = await fetch(
-        `http://127.0.0.1:${testPort}/api/sessions`,
-      );
-      const sessionsBody = (await sessionsRes.json()) as any;
-      expect(sessionsBody.success).toBe(true);
-      expect(sessionsBody.data).toHaveLength(1);
+    it("serves server status on /api/status without proxying upstream", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/api/status`);
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.success).toBe(true);
+      expect(json.data.isRunning).toBe(true);
+      expect(json.data.port).toBe(relayPort);
     });
 
-    it("should revoke session via POST /api/sessions/revoke", async () => {
+    it("maintains session management backwards compatibility", async () => {
+      const sessionManager = relayServer.getSessionManager();
       const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
+      expect(session.sessionId).toBeTruthy();
+
+      const listRes = await fetch(`http://127.0.0.1:${relayPort}/api/sessions`);
+      expect(listRes.status).toBe(200);
+      const listJson = (await listRes.json()) as any;
+      expect(listJson.data.length).toBeGreaterThan(0);
 
       const revokeRes = await fetch(
-        `http://127.0.0.1:${testPort}/api/sessions/revoke`,
+        `http://127.0.0.1:${relayPort}/api/sessions/revoke`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId: session.sessionId }),
         },
       );
-
-      const body = (await revokeRes.json()) as any;
-      expect(body.success).toBe(true);
-      expect(sessionManager.getSession(session.sessionId)).toBeUndefined();
+      expect(revokeRes.status).toBe(200);
+      const revokeJson = (await revokeRes.json()) as any;
+      expect(revokeJson.success).toBe(true);
     });
 
-    it("should validate required payload on /api/sessions/revoke", async () => {
-      const status = await server.start();
-      testPort = status.port;
-
-      const res = await fetch(
-        `http://127.0.0.1:${testPort}/api/sessions/revoke`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
-      );
-
-      expect(res.status).toBe(400);
-      const body = (await res.json()) as any;
-      expect(body.success).toBe(false);
-    });
-  });
-
-  describe("WebSocket Authentication & Communication", () => {
-    it("should reject connection attempts without an auth token", async () => {
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(`ws://127.0.0.1:${testPort}/ws`);
-        ws.on("close", (code) => {
-          expect(code).toBe(1008);
-          resolve();
-        });
-      });
-    });
-
-    it("should reject connection attempts with an invalid token", async () => {
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=invalid-secret`,
-        );
-        ws.on("close", (code) => {
-          expect(code).toBe(1008);
-          resolve();
-        });
-      });
-    });
-
-    it("should establish pairing session via ?pair=<key>", async () => {
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?pair=quick-pair-key-123`,
-        );
-        ws.on("open", () => {
-          expect(sessionManager.getActiveSessions()).toHaveLength(1);
-          expect(sessionManager.getActiveSessions()[0].token).toBe(
-            "quick-pair-key-123",
-          );
-          expect(sessionManager.getActiveSessions()[0].socketState).toBe(
-            "connected",
-          );
-          ws.close();
-          resolve();
-        });
-      });
-    });
-
-    it("should accept connection with valid session token and forward commands", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-      await upstreamBridge.connect();
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("open", () => {
-          expect(session.socketState).toBe("connected");
-
-          // Send action approval command
-          ws.send(
-            JSON.stringify({
-              type: "APPROVE_ACTION",
-              payload: { actionId: "act-99" },
-            }),
-          );
-
-          setTimeout(() => {
-            expect(mockTransport.sentMessages).toHaveLength(1);
-            const msg = JSON.parse(mockTransport.sentMessages[0]);
-            expect(msg.type).toBe("APPROVE_ACTION");
-            expect(msg.payload).toEqual({ actionId: "act-99" });
-            ws.close();
-            resolve();
-          }, 50);
-        });
-      });
-    });
-
-    it("should respond immediately to JSON PING message with PONG and not forward upstream", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-      await upstreamBridge.connect();
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "PONG") {
-            expect(parsed.payload.timestamp).toBeDefined();
-            expect(mockTransport.sentMessages).toHaveLength(0); // Never sent upstream
-            ws.close();
-            resolve();
-          }
-        });
-
-        ws.on("open", () => {
-          ws.send(JSON.stringify({ type: "PING" }));
-        });
-      });
-    });
-
-    it("should respond immediately to raw text PING message with PONG", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "PONG") {
-            expect(parsed.timestamp).toBeDefined();
-            ws.close();
-            resolve();
-          }
-        });
-
-        ws.on("open", () => {
-          ws.send("ping");
-        });
-      });
-    });
-
-    it("should respond immediately to lowercase JSON ping message with PONG without forwarding upstream", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-      await upstreamBridge.connect();
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "PONG") {
-            expect(parsed.payload.timestamp).toBeDefined();
-            expect(mockTransport.sentMessages).toHaveLength(0);
-            ws.close();
-            resolve();
-          }
-        });
-
-        ws.on("open", () => {
-          ws.send(JSON.stringify({ type: "ping" }));
-        });
-      });
-    });
-
-    it("should broadcast periodic HEARTBEAT frames to connected clients", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "HEARTBEAT") {
-            expect(parsed.payload.timestamp).toBeDefined();
-            expect(parsed.payload.activeSessions).toBe(1);
-            ws.close();
-            resolve();
-          }
-        });
-      });
-    });
-
-    it("should clear heartbeat timer on server.stop() and server.dispose()", async () => {
-      const hbServer = new RelayServer({
-        config: { port: 0, host: "127.0.0.1", heartbeatIntervalMs: 25 },
-      });
-      await hbServer.start();
-      expect((hbServer as any).heartbeatTimer).not.toBeNull();
-
-      await hbServer.stop();
-      expect((hbServer as any).heartbeatTimer).toBeNull();
-
-      hbServer.startHeartbeat();
-      expect((hbServer as any).heartbeatTimer).not.toBeNull();
-
-      hbServer.dispose();
-      expect((hbServer as any).heartbeatTimer).toBeNull();
-    });
-
-    it("should buffer commands and respond with BUFFERED_ACK when upstream is buffering", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-      upstreamBridge.enterBuffering("Account swap in progress");
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "BUFFERED_ACK") {
-            expect(parsed.payload.status).toBe("queued");
-            expect(parsed.payload.commandId).toBeDefined();
-            expect(sessionManager.getBufferedCount()).toBe(1);
-            ws.close();
-            resolve();
-          }
-        });
-
-        ws.on("open", () => {
-          ws.send(
-            JSON.stringify({
-              type: "PROMPT",
-              payload: { text: "Run tests" },
-            }),
-          );
-        });
-      });
-    });
-
-    it("should broadcast events to connected clients", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "AGENT_STATE") {
-            expect(parsed.payload.status).toBe("thinking");
-            ws.close();
-            resolve();
-          }
-        });
-
-        ws.on("open", () => {
-          server.broadcastToClients({
-            type: "AGENT_STATE",
-            payload: { status: "thinking" },
-            timestamp: Date.now(),
-          });
-        });
-      });
-    });
-
-    it("should respond with ERROR payload on invalid JSON", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "ERROR") {
-            expect(parsed.payload.error).toContain("Invalid JSON payload");
-            ws.close();
-            resolve();
-          }
-        });
-
-        ws.on("open", () => {
-          ws.send("NOT_JSON_DATA{{{");
-        });
-      });
-    });
-
-    it("should respond with ERROR payload when upstream sendCommand returns error", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      vi.spyOn(upstreamBridge, "sendCommand").mockResolvedValueOnce({
-        forwarded: false,
-        buffered: false,
-        error: "BUFFER_FULL: Queue full",
-      });
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "ERROR") {
-            expect(parsed.payload.error).toBe("BUFFER_FULL: Queue full");
-            ws.close();
-            resolve();
-          }
-        });
-
-        ws.on("open", () => {
-          ws.send(
-            JSON.stringify({ type: "PROMPT", payload: { text: "overflow" } }),
-          );
-        });
-      });
-    });
-
-    it("should reject connection when IP is rate limited", async () => {
-      const status = await server.start();
-      testPort = status.port;
-
-      // Exhaust rate limiter
-      const rateLimiter = (server as any).rateLimiter;
-      for (let i = 0; i < 6; i++) {
-        rateLimiter.recordFailure("127.0.0.1");
-      }
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=valid-or-not`,
-        );
-        ws.on("close", (code, reason) => {
-          expect(code).toBe(1008);
-          expect(reason.toString()).toContain("Authentication rate limited");
-          resolve();
-        });
-      });
-    });
-
-    it("should handle start() when already running and stop() when stopped", async () => {
-      const s1 = await server.start();
-      const s2 = await server.start();
-      expect(s1.isRunning).toBe(true);
-      expect(s2.isRunning).toBe(true);
-
-      await server.stop();
-      await expect(server.stop()).resolves.toBeUndefined();
-    });
-
-    it("should distribute agent output received from upstream bridge", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "AGENT_OUTPUT") {
-            expect(parsed.payload.text).toBe("Agent working");
-            ws.close();
-            resolve();
-          }
-        });
-
-        ws.on("open", () => {
-          for (const handler of (mockTransport as any).messageHandlers) {
-            handler(JSON.stringify({ text: "Agent working" }));
-          }
-        });
-      });
-    });
-
-    it("should suppress listener callback errors on status updates", async () => {
-      server.onStatusUpdated(() => {
-        throw new Error("Broken status listener");
-      });
-      expect(() => (server as any).notifyStatusUpdated()).not.toThrow();
-    });
-
-    it("should distribute SWAP_RESUMED event to clients", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "SWAP_RESUMED") {
-            ws.close();
-            resolve();
-          }
-        });
-        ws.on("open", () => {
-          (upstreamBridge as any).swapResumedListeners.forEach((l: any) => l());
-        });
-      });
-    });
-
-    it("should distribute raw string agent output from upstream bridge", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-        ws.on("message", (raw) => {
-          const parsed = JSON.parse(raw.toString());
-          if (parsed.type === "AGENT_OUTPUT") {
-            expect(parsed.payload.text).toBe("Raw stream chunk");
-            ws.close();
-            resolve();
-          }
-        });
-        ws.on("open", () => {
-          (upstreamBridge as any).messageListeners.forEach((l: any) =>
-            l("Raw stream chunk"),
-          );
-        });
-      });
-    });
-
-    it("should suppress error when client socket.send throws on broadcast", async () => {
-      const session = sessionManager.createSession();
-      const faultySocket = {
-        readyState: 1,
-        send: vi.fn().mockImplementation(() => {
-          throw new Error("Broken pipe");
-        }),
-      } as any;
-      sessionManager.bindSocket(session.sessionId, faultySocket);
-
-      expect(() => {
-        server.broadcastToClients({
-          type: "AGENT_STATE",
-          payload: {},
-          timestamp: Date.now(),
-        });
-      }).not.toThrow();
-    });
-
-    it("should allow unsubscribing from status listener", () => {
-      const listener = vi.fn();
-      const unsub = server.onStatusUpdated(listener);
-      (server as any).notifyStatusUpdated();
-      expect(listener).toHaveBeenCalledTimes(1);
-      unsub();
-      (server as any).notifyStatusUpdated();
-      expect(listener).toHaveBeenCalledTimes(1);
-    });
-
-    it("should apply host override when provided on start", async () => {
-      const status = await server.start({ host: "127.0.0.1", port: 0 });
-      expect(status.isRunning).toBe(true);
-    });
-
-    it("should authenticate websocket using sec-websocket-protocol header", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve, reject) => {
-        const ws = new WebSocket(`ws://127.0.0.1:${testPort}/ws`, [
-          session.token,
-        ]);
-        ws.on("open", () => {
-          ws.close();
-          resolve();
-        });
-        ws.on("error", reject);
-      });
-    });
-
-    it("should handle client socket error event and unbind socket", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-        ws.on("open", () => {
-          const serverSocket = sessionManager.getSocket(session.sessionId);
-          expect(serverSocket).toBeDefined();
-          (serverSocket as any).emit("error", new Error("Client socket error"));
-          expect(sessionManager.getSocket(session.sessionId)).toBeUndefined();
-          ws.close();
-          resolve();
-        });
-      });
-    });
-
-    it("should initialize with default config and support port overrides on start", async () => {
-      const defaultServer = new RelayServer();
-      expect(defaultServer.getStatus().port).toBe(4040);
-      expect(defaultServer.getSessionManager()).toBeDefined();
-      expect(defaultServer.getUpstreamBridge()).toBeDefined();
-      defaultServer.dispose();
-
-      const overrideServer = new RelayServer();
-      const status = await overrideServer.start({ port: 5678 });
-      expect(status.isRunning).toBe(true);
-      expect(status.port).toBe(5678);
-      await overrideServer.stop();
-      overrideServer.dispose();
-    });
-
-    it("should suppress error if socket.send throws on initial buffering alert", async () => {
-      const session = sessionManager.createSession();
-      const status = await server.start();
-      testPort = status.port;
-      upstreamBridge.enterBuffering("Testing alert error");
-
-      const origBind = sessionManager.bindSocket.bind(sessionManager);
-      vi.spyOn(sessionManager, "bindSocket").mockImplementationOnce(
-        (id: string, sock: any) => {
-          origBind(id, sock);
-          vi.spyOn(sock, "send").mockImplementationOnce(() => {
-            throw new Error("Simulated send crash");
-          });
-        },
-      );
-
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket(
-          `ws://127.0.0.1:${testPort}/ws?token=${session.token}`,
-        );
-        ws.on("open", () => {
-          ws.close();
-          resolve();
-        });
-        ws.on("error", () => {
-          resolve();
-        });
-      });
-    });
-
-    it("should suppress error if app.close throws during server stop", async () => {
-      await server.start();
-      vi.spyOn((server as any).app, "close").mockRejectedValueOnce(
-        new Error("Failed to close"),
-      );
-      await expect(server.stop()).resolves.toBeUndefined();
-      expect(server.getStatus().isRunning).toBe(false);
+    it("handles lifecycle stop and dispose cleanly", async () => {
+      expect(relayServer.getStatus().isRunning).toBe(true);
+      await relayServer.stop();
+      expect(relayServer.getStatus().isRunning).toBe(false);
+      expect(() => relayServer.dispose()).not.toThrow();
     });
   });
 });

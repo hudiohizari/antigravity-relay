@@ -1,73 +1,72 @@
 import fastify, { FastifyInstance } from "fastify";
 import fastifyCors from "@fastify/cors";
-import fastifyWebsocket from "@fastify/websocket";
-import fastifyStatic from "@fastify/static";
-import path from "node:path";
-import fs from "node:fs";
+import { IncomingMessage } from "node:http";
+import { Duplex } from "node:stream";
+import { Agent, request as undiciRequest } from "undici";
+import WebSocket, { WebSocketServer, RawData } from "ws";
 import {
   RelayConfig,
   RelayServerStatus,
   RemoteEvent,
   DEFAULT_RELAY_CONFIG,
 } from "./types";
-import {
-  AuthRateLimiter,
-  extractTokenFromHeader,
-  extractTokenFromQuery,
-} from "./relay-auth";
+import { AuthRateLimiter } from "./relay-auth";
 import { SessionManager } from "./session-manager";
 import { UpstreamBridge } from "./upstream-bridge";
+import { PortDiscoveryService } from "./port-discovery";
 
 export interface RelayServerOptions {
   config?: Partial<RelayConfig>;
   sessionManager?: SessionManager;
   upstreamBridge?: UpstreamBridge;
   rateLimiter?: AuthRateLimiter;
+  portDiscovery?: PortDiscoveryService;
+  upstreamPort?: number;
 }
 
-export function resolveStaticDir(configuredDir?: string): string | null {
-  const candidates: string[] = [];
+interface ActiveWsPair {
+  clientWs: WebSocket;
+  upstreamWs: WebSocket;
+}
 
-  if (configuredDir) {
-    candidates.push(configuredDir);
-    if (!path.isAbsolute(configuredDir)) {
-      candidates.push(path.resolve(process.cwd(), configuredDir));
-    }
-  }
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+  "upgrade",
+  "proxy-connection",
+  "trailer",
+]);
 
-  // Relative to current file location (__dirname)
-  candidates.push(path.resolve(__dirname, "../../relay-ui"));
-  candidates.push(path.resolve(__dirname, "../relay-ui"));
-  candidates.push(path.resolve(__dirname, "../../../src/relay-ui"));
-  candidates.push(path.resolve(__dirname, "../../src/relay-ui"));
-  candidates.push(path.resolve(__dirname, "../src/relay-ui"));
-
-  // Relative to process working directory
-  candidates.push(path.resolve(process.cwd(), "src/relay-ui"));
-  candidates.push(path.resolve(process.cwd(), "relay-ui"));
-
-  // Electron resources path
-  const resourcesPath = (process as unknown as { resourcesPath?: string })
-    .resourcesPath;
-  if (typeof resourcesPath === "string") {
-    candidates.push(path.resolve(resourcesPath, "relay-ui"));
-    candidates.push(path.resolve(resourcesPath, "src/relay-ui"));
-    candidates.push(
-      path.resolve(resourcesPath, "app.asar.unpacked/src/relay-ui"),
-    );
-  }
-
-  for (const candidate of candidates) {
+function safeClose(
+  ws: WebSocket,
+  code?: number,
+  reason?: Buffer | string,
+): void {
+  if (
+    ws.readyState === WebSocket.OPEN ||
+    ws.readyState === WebSocket.CONNECTING
+  ) {
     try {
-      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-        return candidate;
+      if (
+        code &&
+        code !== 1005 &&
+        code !== 1006 &&
+        code >= 1000 &&
+        code <= 4999
+      ) {
+        ws.close(code, reason);
+      } else {
+        ws.close();
       }
     } catch {
-      // Ignore error and continue
+      try {
+        ws.terminate();
+      } catch {
+        // Suppress termination error
+      }
     }
   }
-
-  return null;
 }
 
 export class RelayServer {
@@ -75,8 +74,16 @@ export class RelayServer {
   private readonly sessionManager: SessionManager;
   private readonly upstreamBridge: UpstreamBridge;
   private readonly rateLimiter: AuthRateLimiter;
+  private readonly portDiscovery: PortDiscoveryService;
+  private readonly upstreamDispatcher: Agent;
 
   private app: FastifyInstance | null = null;
+  private wss: WebSocketServer | null = null;
+  private upgradeHandler:
+    ((req: IncomingMessage, socket: Duplex, head: Buffer) => void) | null =
+    null;
+  private activeWsConnections: Set<ActiveWsPair> = new Set();
+
   private isRunning = false;
   private startedAt?: number;
   private statusListeners: Set<(status: RelayServerStatus) => void> = new Set();
@@ -101,7 +108,22 @@ export class RelayServer {
       });
     this.rateLimiter = options?.rateLimiter ?? new AuthRateLimiter();
 
+    this.portDiscovery = options?.portDiscovery ?? new PortDiscoveryService();
+    if (options?.upstreamPort !== undefined) {
+      this.portDiscovery.setPort(options.upstreamPort);
+    }
+
+    // Scoped Agent for localhost upstream with self-signed certificate acceptance
+    this.upstreamDispatcher = new Agent({
+      connect: {
+        rejectUnauthorized: false,
+      },
+      pipelining: 1,
+      keepAliveTimeout: 30000,
+    });
+
     this.wireUpstreamEvents();
+    this.wirePortDiscoveryEvents();
   }
 
   public getSessionManager(): SessionManager {
@@ -110,6 +132,10 @@ export class RelayServer {
 
   public getUpstreamBridge(): UpstreamBridge {
     return this.upstreamBridge;
+  }
+
+  public getPortDiscovery(): PortDiscoveryService {
+    return this.portDiscovery;
   }
 
   public getStatus(): RelayServerStatus {
@@ -121,7 +147,8 @@ export class RelayServer {
       isBuffering: this.upstreamBridge.isBuffering(),
       upstream: this.upstreamBridge.getStatus(),
       startedAt: this.startedAt,
-    };
+      upstreamPort: this.portDiscovery.getPort(),
+    } as RelayServerStatus & { upstreamPort?: number | null };
   }
 
   public onStatusUpdated(
@@ -148,6 +175,8 @@ export class RelayServer {
       this.config.host = overrides.host;
     }
 
+    await this.portDiscovery.start();
+
     const app = fastify({
       logger: false,
       forceCloseConnections: true,
@@ -158,44 +187,12 @@ export class RelayServer {
       credentials: true,
     });
 
-    await app.register(fastifyWebsocket, {
-      options: {
-        maxPayload: 1048576, // 1MB
-      },
+    // Content type parser for all media types allowing raw body forwarding
+    app.addContentTypeParser("*", (_request, payload, done) => {
+      done(null, payload);
     });
 
-    // Static asset directory resolution
-    const staticDir = resolveStaticDir(this.config.staticDir);
-
-    if (staticDir) {
-      await app.register(fastifyStatic, {
-        root: staticDir,
-        prefix: "/",
-        decorateReply: false,
-      });
-
-      await app.register(fastifyStatic, {
-        root: staticDir,
-        prefix: "/relay-ui/",
-        decorateReply: false,
-        prefixAvoidTrailingSlash: true,
-      });
-
-      app.get("/relay-ui", async (_request, reply) => {
-        const indexPath = path.join(staticDir, "index.html");
-        try {
-          if (fs.existsSync(indexPath)) {
-            const html = await fs.promises.readFile(indexPath, "utf-8");
-            return reply.type("text/html; charset=utf-8").send(html);
-          }
-        } catch {
-          // Suppress file read error
-        }
-        return reply.status(404).send({ success: false, error: "Not found" });
-      });
-    }
-
-    // Health check endpoint
+    // Non-proxied health check endpoint
     app.get("/health", async () => {
       return {
         success: true,
@@ -204,11 +201,12 @@ export class RelayServer {
         activeSessions: this.sessionManager.getActiveSessions().length,
         isBuffering: this.upstreamBridge.isBuffering(),
         upstream: this.upstreamBridge.getStatus(),
+        upstreamPort: this.portDiscovery.getPort(),
         timestamp: Date.now(),
       };
     });
 
-    // Status endpoint
+    // Non-proxied status endpoint
     app.get("/api/status", async () => {
       return {
         success: true,
@@ -216,7 +214,7 @@ export class RelayServer {
       };
     });
 
-    // Sessions endpoint
+    // Sessions endpoint (backward compatibility)
     app.get("/api/sessions", async () => {
       return {
         success: true,
@@ -224,10 +222,21 @@ export class RelayServer {
       };
     });
 
-    // Revoke session endpoint
+    // Revoke session endpoint (backward compatibility)
     app.post("/api/sessions/revoke", async (request, reply) => {
-      const body = request.body as { sessionId?: string };
-      if (!body?.sessionId) {
+      let body = request.body as Record<string, unknown> | undefined;
+      if (body && typeof (body as any).pipe === "function") {
+        const chunks: Buffer[] = [];
+        for await (const chunk of body as any) {
+          chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+        }
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+        } catch {
+          body = {};
+        }
+      }
+      if (!body || typeof body.sessionId !== "string") {
         return reply.status(400).send({
           success: false,
           error: "Missing required field: sessionId",
@@ -239,158 +248,101 @@ export class RelayServer {
       };
     });
 
-    // WebSocket route
-    app.get("/ws", { websocket: true }, (socket, req) => {
-      const ip =
-        (req.headers["x-forwarded-for"] as string) || req.ip || "127.0.0.1";
-
-      if (this.rateLimiter.isRateLimited(ip)) {
-        socket.close(1008, "Authentication rate limited");
-        return;
-      }
-
-      // Extract auth token
-      const headerToken = extractTokenFromHeader(req.headers.authorization);
-      const queryInfo = extractTokenFromQuery(req.url || "");
-      const protoToken = req.headers["sec-websocket-protocol"]
-        ? String(req.headers["sec-websocket-protocol"]).trim()
-        : undefined;
-
-      const token =
-        headerToken || queryInfo.token || queryInfo.pair || protoToken;
-
-      if (!token) {
-        this.rateLimiter.recordFailure(ip);
-        socket.close(1008, "Missing authentication token");
-        return;
-      }
-
-      let session = this.sessionManager.getSessionByToken(token);
-
-      // Support initial pairing exchange if token not yet associated
-      if (!session && queryInfo.pair) {
-        session = this.sessionManager.createSession({
-          token: queryInfo.pair,
-          clientIp: ip,
-          userAgent:
-            (req.headers["user-agent"] as string) || "AntigravityRemote/1.0",
-        });
-      }
-
-      if (!session) {
-        this.rateLimiter.recordFailure(ip);
-        socket.close(1008, "Invalid session token");
-        return;
-      }
-
-      this.rateLimiter.recordSuccess(ip);
-      session.clientIp = ip;
-      session.userAgent =
-        (req.headers["user-agent"] as string) || session.userAgent;
-
-      this.sessionManager.bindSocket(session.sessionId, socket);
-      this.notifyStatusUpdated();
-
-      // If upstream is currently buffering, alert the new connection immediately
-      if (this.upstreamBridge.isBuffering()) {
-        try {
-          socket.send(
-            JSON.stringify({
-              type: "BUFFERING_ALERT",
-              payload: { reason: "Upstream reconnecting" },
-              timestamp: Date.now(),
-            }),
-          );
-        } catch {
-          // Suppress send error
+    // Wildcard reverse proxy handler
+    app.route({
+      method: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+      url: "/*",
+      handler: async (request, reply) => {
+        const port = this.portDiscovery.getPort();
+        if (!port) {
+          return reply.status(503).header("Retry-After", "2").send({
+            error: "upstream_unavailable",
+            retry_after_ms: 2000,
+          });
         }
-      }
 
-      const safeSend = (payload: string): void => {
-        try {
-          socket.send(payload);
-        } catch {
-          // Suppress send error if client dropped connection
+        if (this.portDiscovery.isRestarting()) {
+          return reply.status(503).header("Retry-After", "2").send({
+            error: "upstream_restarting",
+            retry_after_ms: 2000,
+          });
         }
-      };
 
-      socket.on("message", async (raw: Buffer | string) => {
-        this.sessionManager.updateSessionActivity(session.sessionId);
+        const upstreamUrl = `https://127.0.0.1:${port}${request.url}`;
+
+        const upstreamHeaders: Record<string, string> = {};
+        for (const [key, value] of Object.entries(request.headers)) {
+          if (value === undefined) continue;
+          const lowerKey = key.toLowerCase();
+          if (
+            lowerKey === "host" ||
+            lowerKey === "connection" ||
+            lowerKey === "keep-alive" ||
+            lowerKey === "transfer-encoding"
+          ) {
+            continue;
+          }
+          upstreamHeaders[lowerKey] = Array.isArray(value)
+            ? value.join(", ")
+            : value;
+        }
+        upstreamHeaders["host"] = `127.0.0.1:${port}`;
+
+        const method = request.method.toUpperCase();
+        const hasBody = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+        let bodyStream: any = undefined;
+
+        if (hasBody) {
+          if (request.body !== undefined && request.body !== null) {
+            if (
+              Buffer.isBuffer(request.body) ||
+              typeof request.body === "string"
+            ) {
+              bodyStream = request.body;
+            } else if (
+              typeof (request.body as any).pipe === "function" ||
+              typeof (request.body as any)[Symbol.asyncIterator] === "function"
+            ) {
+              bodyStream = request.body;
+            } else {
+              bodyStream = JSON.stringify(request.body);
+            }
+          } else if (request.raw) {
+            bodyStream = request.raw;
+          }
+        }
+
         try {
-          const rawStr = raw.toString().trim();
-          if (rawStr.toUpperCase() === "PING") {
-            safeSend(
-              JSON.stringify({
-                type: "PONG",
-                payload: { timestamp: Date.now() },
-                timestamp: Date.now(),
-              }),
-            );
-            return;
+          const upstreamRes = await undiciRequest(upstreamUrl, {
+            method: method as any,
+            headers: upstreamHeaders,
+            body: bodyStream,
+            dispatcher: this.upstreamDispatcher,
+          });
+
+          for (const [headerName, headerVal] of Object.entries(
+            upstreamRes.headers,
+          )) {
+            if (headerVal === undefined) continue;
+            const lower = headerName.toLowerCase();
+            if (HOP_BY_HOP_HEADERS.has(lower)) continue;
+            reply.header(headerName, headerVal);
           }
 
-          const parsed = JSON.parse(rawStr);
-          const rawType = parsed.type || "PROMPT";
-          const commandType = String(rawType).toUpperCase();
-          const payload = parsed.payload || {};
-
-          if (commandType === "PING") {
-            safeSend(
-              JSON.stringify({
-                type: "PONG",
-                payload: { ...payload, timestamp: Date.now() },
-                timestamp: Date.now(),
-              }),
-            );
-            return;
-          }
-
-          const result = await this.upstreamBridge.sendCommand(
-            session.sessionId,
-            rawType,
-            payload,
-          );
-
-          if (result.buffered) {
-            safeSend(
-              JSON.stringify({
-                type: "BUFFERED_ACK",
-                payload: {
-                  commandId: result.messageId,
-                  status: "queued",
-                },
-                timestamp: Date.now(),
-              }),
-            );
-          } else if (result.error) {
-            safeSend(
-              JSON.stringify({
-                type: "ERROR",
-                payload: { error: result.error },
-                timestamp: Date.now(),
-              }),
-            );
-          }
+          return reply.status(upstreamRes.statusCode).send(upstreamRes.body);
         } catch {
-          safeSend(
-            JSON.stringify({
-              type: "ERROR",
-              payload: { error: "Invalid JSON payload" },
-              timestamp: Date.now(),
-            }),
-          );
+          const isRestarting = this.portDiscovery.isRestarting();
+          return reply
+            .status(503)
+            .header("Retry-After", "2")
+            .send({
+              error: isRestarting
+                ? "upstream_restarting"
+                : "upstream_unavailable",
+              retry_after_ms: 2000,
+            });
         }
-      });
-
-      socket.on("close", () => {
-        this.sessionManager.unbindSocket(session.sessionId);
-        this.notifyStatusUpdated();
-      });
-
-      socket.on("error", () => {
-        this.sessionManager.unbindSocket(session.sessionId);
-        this.notifyStatusUpdated();
-      });
+      },
     });
 
     await app.listen({
@@ -408,9 +360,10 @@ export class RelayServer {
     this.startedAt = Date.now();
     this.startHeartbeat();
 
-    // Attempt upstream connection in background
+    this.setupWebSocketUpgradeHandler();
+
     this.upstreamBridge.connect().catch(() => {
-      // Connect errors are handled by upstream bridge buffering
+      // Connect errors handled by upstream bridge buffering
     });
 
     this.notifyStatusUpdated();
@@ -426,7 +379,28 @@ export class RelayServer {
     this.isRunning = false;
     this.startedAt = undefined;
 
-    // Disconnect all client sockets
+    this.portDiscovery.stop();
+
+    for (const pair of this.activeWsConnections) {
+      safeClose(pair.clientWs, 1000, "Server stopping");
+      safeClose(pair.upstreamWs, 1000, "Server stopping");
+    }
+    this.activeWsConnections.clear();
+
+    if (this.upgradeHandler && this.app?.server) {
+      this.app.server.off("upgrade", this.upgradeHandler);
+      this.upgradeHandler = null;
+    }
+
+    if (this.wss) {
+      try {
+        this.wss.close();
+      } catch {
+        // Suppress websocket server close error
+      }
+      this.wss = null;
+    }
+
     for (const session of this.sessionManager.getActiveSessions()) {
       this.sessionManager.closeSessionSocket(
         session.sessionId,
@@ -435,14 +409,13 @@ export class RelayServer {
       );
     }
 
-    // Disconnect upstream bridge
     await this.upstreamBridge.disconnect();
 
     if (this.app) {
       try {
         await this.app.close();
       } catch {
-        // Suppress close error
+        // Suppress fastify close error
       }
       this.app = null;
     }
@@ -458,7 +431,7 @@ export class RelayServer {
         try {
           socket.send(payload);
         } catch {
-          // Suppress socket error
+          // Suppress socket send error
         }
       }
     }
@@ -466,6 +439,12 @@ export class RelayServer {
 
   public dispose(): void {
     this.stopHeartbeat();
+    this.portDiscovery.dispose();
+    try {
+      this.upstreamDispatcher.destroy();
+    } catch {
+      // Suppress agent destroy error
+    }
     if (this.unhookUpstream) {
       this.unhookUpstream();
       this.unhookUpstream = undefined;
@@ -525,7 +504,175 @@ export class RelayServer {
     }
   }
 
-  // --- Private Helpers ---
+  private setupWebSocketUpgradeHandler(): void {
+    if (!this.app?.server) {
+      return;
+    }
+
+    this.wss = new WebSocketServer({ noServer: true });
+
+    this.upgradeHandler = (
+      req: IncomingMessage,
+      socket: Duplex,
+      head: Buffer,
+    ) => {
+      const parsedUrl = req.url ? new URL(req.url, "http://127.0.0.1") : null;
+      const pathname = parsedUrl?.pathname ?? "";
+
+      if (pathname === "/connect-websocket" || pathname === "/ws") {
+        const port = this.portDiscovery.getPort();
+        if (!port || this.portDiscovery.isRestarting()) {
+          const reason = this.portDiscovery.isRestarting()
+            ? "upstream_restarting"
+            : "upstream_unavailable";
+          const body = JSON.stringify({ error: reason, retry_after_ms: 2000 });
+          socket.write(
+            `HTTP/1.1 503 Service Unavailable\r\n` +
+              `Content-Type: application/json\r\n` +
+              `Retry-After: 2\r\n` +
+              `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+              `Connection: close\r\n` +
+              `\r\n` +
+              body,
+          );
+          socket.destroy();
+          return;
+        }
+
+        this.wss?.handleUpgrade(req, socket, head, (clientWs) => {
+          this.bridgeWebSocket(clientWs, req, port);
+        });
+        return;
+      }
+
+      socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+    };
+
+    this.app.server.on("upgrade", this.upgradeHandler);
+  }
+
+  private bridgeWebSocket(
+    clientWs: WebSocket,
+    req: IncomingMessage,
+    upstreamPort: number,
+  ): void {
+    const forwardHeaders: Record<string, string> = {};
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (value === undefined) continue;
+      const lowerKey = key.toLowerCase();
+      if (
+        [
+          "host",
+          "upgrade",
+          "connection",
+          "sec-websocket-key",
+          "sec-websocket-version",
+          "sec-websocket-extensions",
+        ].includes(lowerKey)
+      ) {
+        continue;
+      }
+      forwardHeaders[lowerKey] = Array.isArray(value)
+        ? value.join(", ")
+        : value;
+    }
+    forwardHeaders["host"] = `127.0.0.1:${upstreamPort}`;
+
+    const upstreamUrl = `wss://127.0.0.1:${upstreamPort}${req.url || "/connect-websocket"}`;
+    const upstreamWs = new WebSocket(upstreamUrl, {
+      headers: forwardHeaders,
+      rejectUnauthorized: false,
+    });
+
+    const pair: ActiveWsPair = { clientWs, upstreamWs };
+    this.activeWsConnections.add(pair);
+
+    const pendingMessages: Array<{ data: RawData; isBinary: boolean }> = [];
+    let isUpstreamOpen = false;
+
+    upstreamWs.on("open", () => {
+      isUpstreamOpen = true;
+      for (const msg of pendingMessages) {
+        try {
+          upstreamWs.send(msg.data, { binary: msg.isBinary });
+        } catch {
+          // Suppress send error
+        }
+      }
+      pendingMessages.length = 0;
+    });
+
+    clientWs.on("message", (data: RawData, isBinary: boolean) => {
+      if (isUpstreamOpen && upstreamWs.readyState === WebSocket.OPEN) {
+        try {
+          upstreamWs.send(data, { binary: isBinary });
+        } catch {
+          // Suppress send error
+        }
+      } else if (upstreamWs.readyState === WebSocket.CONNECTING) {
+        pendingMessages.push({ data, isBinary });
+      }
+    });
+
+    upstreamWs.on("message", (data: RawData, isBinary: boolean) => {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        try {
+          clientWs.send(data, { binary: isBinary });
+        } catch {
+          // Suppress send error
+        }
+      }
+    });
+
+    clientWs.on("close", (code: number, reason: Buffer) => {
+      this.activeWsConnections.delete(pair);
+      safeClose(upstreamWs, code, reason);
+    });
+
+    upstreamWs.on("close", (code: number, reason: Buffer) => {
+      this.activeWsConnections.delete(pair);
+      safeClose(clientWs, code, reason);
+    });
+
+    clientWs.on("error", () => {
+      this.activeWsConnections.delete(pair);
+      safeClose(upstreamWs);
+    });
+
+    upstreamWs.on("error", () => {
+      this.activeWsConnections.delete(pair);
+      safeClose(clientWs, 1011, "Upstream connection error");
+    });
+  }
+
+  private handlePortChanged(_oldPort: number | null, _newPort: number): void {
+    for (const pair of this.activeWsConnections) {
+      safeClose(pair.clientWs, 1012, "Service Restart");
+      safeClose(pair.upstreamWs, 1012, "Service Restart");
+    }
+    this.activeWsConnections.clear();
+    this.notifyStatusUpdated();
+  }
+
+  private handleRestarting(): void {
+    for (const pair of this.activeWsConnections) {
+      safeClose(pair.clientWs, 1012, "Service Restart");
+      safeClose(pair.upstreamWs, 1012, "Service Restart");
+    }
+    this.activeWsConnections.clear();
+    this.notifyStatusUpdated();
+  }
+
+  private wirePortDiscoveryEvents(): void {
+    this.portDiscovery.on("port-changed", ({ oldPort, newPort }) => {
+      this.handlePortChanged(oldPort, newPort);
+    });
+
+    this.portDiscovery.on("restarting", () => {
+      this.handleRestarting();
+    });
+  }
 
   private wireUpstreamEvents(): void {
     const unsubs: Array<() => void> = [];

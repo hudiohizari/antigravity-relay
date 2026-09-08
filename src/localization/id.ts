@@ -104,6 +104,8 @@ const id = {
       "Hubungkan ponsel ke jaringan Wi-Fi yang sama untuk mengakses.",
     copyLink: "Salin Tautan",
     linkCopied: "Tautan pairing berhasil disalin",
+    serverInactive: "Server Relay Nonaktif",
+    startServerToPair: "Mulai server relay untuk mengaktifkan pairing ponsel",
   },
   sessions: {
     title: "Sesi Ponsel Terhubung",

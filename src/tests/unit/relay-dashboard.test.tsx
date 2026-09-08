@@ -121,10 +121,7 @@ describe("RelayDashboard Component", () => {
 
   it("renders QRCode component with SVG element", () => {
     const { container } = render(
-      <QRCode
-        value="https://test.trycloudflare.com/relay-ui/?pair=abc"
-        size={180}
-      />,
+      <QRCode value="https://test.trycloudflare.com/?pair=abc" size={180} />,
     );
 
     const svg = container.querySelector("svg");
@@ -169,7 +166,7 @@ describe("RelayDashboard Component", () => {
       "pairing.copyLink",
     ) as HTMLInputElement;
     expect(pairingInput.value).toContain(
-      "https://test-subdomain.trycloudflare.com/relay-ui/?pair=",
+      "https://test-subdomain.trycloudflare.com/?pair=",
     );
 
     expect(screen.queryByText("pairing.wifiAdvisory")).toBeNull();
@@ -202,9 +199,7 @@ describe("RelayDashboard Component", () => {
       const pairingInput = screen.getByLabelText(
         "pairing.copyLink",
       ) as HTMLInputElement;
-      expect(pairingInput.value).toContain(
-        "http://192.168.1.100:4040/relay-ui/?pair=",
-      );
+      expect(pairingInput.value).toContain("http://192.168.1.100:4040/?pair=");
     });
   });
 
@@ -232,9 +227,7 @@ describe("RelayDashboard Component", () => {
       const pairingInput = screen.getByLabelText(
         "pairing.copyLink",
       ) as HTMLInputElement;
-      expect(pairingInput.value).toContain(
-        "http://192.168.1.100:4040/relay-ui/?pair=",
-      );
+      expect(pairingInput.value).toContain("http://192.168.1.100:4040/?pair=");
     });
   });
 
@@ -254,7 +247,7 @@ describe("RelayDashboard Component", () => {
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
         expect.stringContaining(
-          "https://test-subdomain.trycloudflare.com/relay-ui/?pair=",
+          "https://test-subdomain.trycloudflare.com/?pair=",
         ),
       );
       expect(mockToast).toHaveBeenCalledWith(
@@ -263,5 +256,56 @@ describe("RelayDashboard Component", () => {
         }),
       );
     });
+  });
+
+  it("greys out and disables QR pairing when relay server is stopped/inactive", async () => {
+    vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
+      isRunning: false,
+      port: 4040,
+      host: "0.0.0.0",
+      activeSessions: 0,
+      isBuffering: false,
+      upstream: {
+        state: "disconnected",
+        targetHost: "127.0.0.1",
+        targetPort: 4041,
+        reconnectAttempts: 0,
+        bufferedCommandCount: 0,
+        flushedCommandCount: 0,
+      },
+    });
+
+    const testQueryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={testQueryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    // Verify badge and overlay show inactive
+    const inactiveElements = await screen.findAllByText(
+      "pairing.serverInactive",
+    );
+    expect(inactiveElements.length).toBeGreaterThanOrEqual(1);
+
+    // Verify inactive overlay text is shown
+    expect(screen.getByText("pairing.startServerToPair")).toBeDefined();
+
+    // Verify input and copy buttons are disabled
+    const pairingInput = screen.getByLabelText(
+      "pairing.copyLink",
+    ) as HTMLInputElement;
+    expect(pairingInput.disabled).toBe(true);
+
+    const copyButtons = screen.getAllByText("pairing.copyLink");
+    const copyButton = copyButtons[copyButtons.length - 1].closest("button");
+    expect(copyButton?.disabled).toBe(true);
   });
 });
