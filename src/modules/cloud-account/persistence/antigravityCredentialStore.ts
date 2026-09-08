@@ -316,6 +316,7 @@ function writeToSystemCredentialStore(payload: string): void {
           "antigravity",
           "-U",
           "-w",
+          value,
         ]
       : [
           "add-generic-password",
@@ -326,11 +327,10 @@ function writeToSystemCredentialStore(payload: string): void {
           "-A",
           "-U",
           "-w",
+          value,
         ];
     execFileSync("security", args, {
-      input: `${value}\n`,
-      encoding: "utf-8",
-      stdio: ["pipe", "ignore", "ignore"],
+      stdio: "ignore",
     });
     return;
   }
