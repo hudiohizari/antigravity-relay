@@ -1,0 +1,351 @@
+import { Entry } from "@napi-rs/keyring";
+import { execFileSync, spawnSync } from "child_process";
+import { z } from "zod";
+import { logger } from "@/shared/logging/logger";
+import type { CredentialStoreTokenInput } from "@/shared/auth/credentialStoreToken";
+import { writeAgyCliToken } from "./agyCliTokenStore";
+import { writeGoogleOAuthCredentials } from "./googleOAuthCredentialStore";
+
+export interface CredentialStoreToken {
+  accessToken?: string;
+  refreshToken: string;
+  idToken?: string;
+  projectId?: string;
+  expiryTimestamp?: number;
+}
+
+export type CredentialStoreReadErrorCode =
+  "permission-denied" | "locked" | "malformed" | "timed-out" | "unavailable";
+
+const CREDENTIAL_STORE_READ_ERROR_MESSAGES: Record<
+  CredentialStoreReadErrorCode,
+  string
+> = {
+  "permission-denied":
+    "Permission was denied while reading the Antigravity credential store.",
+  locked: "The Antigravity credential store is locked.",
+  malformed: "The Antigravity credential payload is malformed.",
+  "timed-out": "Timed out while reading the Antigravity credential store.",
+  unavailable: "The Antigravity credential store is unavailable.",
+};
+
+export class CredentialStoreReadError extends Error {
+  constructor(readonly code: CredentialStoreReadErrorCode) {
+    super(CREDENTIAL_STORE_READ_ERROR_MESSAGES[code]);
+    this.name = "CredentialStoreReadError";
+  }
+}
+
+const CredentialTokenPayloadSchema = z
+  .object({
+    access_token: z.string().trim().min(1).optional(),
+    refresh_token: z.string().trim().min(1),
+    id_token: z.string().trim().min(1).optional(),
+    project_id: z.string().trim().min(1).optional(),
+    expiry_timestamp: z.number().finite().optional(),
+    expiry: z.string().trim().min(1).optional(),
+  })
+  .passthrough();
+
+const NestedCredentialPayloadSchema = z
+  .object({
+    token: CredentialTokenPayloadSchema,
+  })
+  .passthrough();
+
+function buildCredentialStorePayload(token: CredentialStoreTokenInput): string {
+  const expiry = new Date(token.expiry_timestamp * 1000)
+    .toISOString()
+    .replace(/\.(\d{3})Z$/, ".$1000Z");
+  return JSON.stringify({
+    token: {
+      access_token: token.access_token,
+      token_type: "Bearer",
+      refresh_token: token.refresh_token,
+      expiry,
+    },
+    auth_method: "consumer",
+  });
+}
+
+function decodeCredentialStoreText(secret: Uint8Array): string {
+  let payload: string;
+  try {
+    payload = new TextDecoder("utf-8", { fatal: true }).decode(secret).trim();
+  } catch {
+    throw new CredentialStoreReadError("malformed");
+  }
+
+  if (!payload.startsWith("go-keyring-base64:")) {
+    return payload;
+  }
+
+  try {
+    const encodedPayload = payload.slice("go-keyring-base64:".length);
+    return new TextDecoder("utf-8", { fatal: true })
+      .decode(Buffer.from(encodedPayload, "base64"))
+      .trim();
+  } catch {
+    throw new CredentialStoreReadError("malformed");
+  }
+}
+
+function parseCredentialStorePayload(payload: string): CredentialStoreToken {
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(payload);
+  } catch {
+    throw new CredentialStoreReadError("malformed");
+  }
+
+  const nestedPayload = NestedCredentialPayloadSchema.safeParse(parsedJson);
+  let token: z.infer<typeof CredentialTokenPayloadSchema>;
+  if (nestedPayload.success) {
+    token = nestedPayload.data.token;
+  } else {
+    const topLevelPayload = CredentialTokenPayloadSchema.safeParse(parsedJson);
+    if (!topLevelPayload.success) {
+      throw new CredentialStoreReadError("malformed");
+    }
+    token = topLevelPayload.data;
+  }
+
+  let expiryTimestamp = token.expiry_timestamp;
+  if (expiryTimestamp === undefined && token.expiry) {
+    const parsedExpiry = Date.parse(token.expiry);
+    if (Number.isFinite(parsedExpiry)) {
+      expiryTimestamp = Math.floor(parsedExpiry / 1000);
+    }
+  }
+
+  return {
+    refreshToken: token.refresh_token,
+    ...(token.access_token ? { accessToken: token.access_token } : {}),
+    ...(token.id_token ? { idToken: token.id_token } : {}),
+    ...(token.project_id ? { projectId: token.project_id } : {}),
+    ...(expiryTimestamp !== undefined ? { expiryTimestamp } : {}),
+  };
+}
+
+function classifyCredentialStoreReadError(
+  error: unknown,
+): CredentialStoreReadError {
+  if (error instanceof CredentialStoreReadError) {
+    return error;
+  }
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  const code =
+    error instanceof Error && "code" in error && typeof error.code === "string"
+      ? error.code.toLowerCase()
+      : "";
+
+  if (code === "etimedout" || message.includes("timed out")) {
+    return new CredentialStoreReadError("timed-out");
+  }
+  if (
+    code === "eacces" ||
+    code === "eperm" ||
+    message.includes("permission denied") ||
+    message.includes("access denied")
+  ) {
+    return new CredentialStoreReadError("permission-denied");
+  }
+  if (message.includes("locked")) {
+    return new CredentialStoreReadError("locked");
+  }
+  return new CredentialStoreReadError("unavailable");
+}
+
+function readViaNativeKeyring(): Uint8Array | null {
+  const entry = Entry.withTarget("gemini:antigravity", "gemini", "antigravity");
+  const secret = entry.getSecret();
+  return secret ? Uint8Array.from(secret) : null;
+}
+
+function readViaSecretTool(): Uint8Array | null {
+  const lookupResult = spawnSync(
+    "secret-tool",
+    ["lookup", "service", "gemini", "username", "antigravity"],
+    {
+      encoding: "utf-8",
+      timeout: 10_000,
+    },
+  );
+  if (lookupResult.error) {
+    throw classifyCredentialStoreReadError(lookupResult.error);
+  }
+  if (lookupResult.status !== 0) {
+    const stderr = lookupResult.stderr?.toLowerCase() ?? "";
+    if (
+      stderr.includes("permission denied") ||
+      stderr.includes("access denied")
+    ) {
+      throw new CredentialStoreReadError("permission-denied");
+    }
+    if (stderr.includes("locked")) {
+      throw new CredentialStoreReadError("locked");
+    }
+    return null;
+  }
+
+  const payload = lookupResult.stdout?.trim();
+  return payload ? Buffer.from(payload, "utf-8") : null;
+}
+
+export function readAntigravityCredentialStoreToken(): CredentialStoreToken | null {
+  if (process.platform === "linux") {
+    try {
+      const secret = readViaSecretTool();
+      if (secret) {
+        return parseCredentialStorePayload(decodeCredentialStoreText(secret));
+      }
+    } catch (error) {
+      const secretToolError = classifyCredentialStoreReadError(error);
+      if (secretToolError.code !== "unavailable") {
+        throw secretToolError;
+      }
+    }
+
+    try {
+      const secret = readViaNativeKeyring();
+      return secret
+        ? parseCredentialStorePayload(decodeCredentialStoreText(secret))
+        : null;
+    } catch (error) {
+      throw classifyCredentialStoreReadError(error);
+    }
+  }
+
+  try {
+    const secret = readViaNativeKeyring();
+    return secret
+      ? parseCredentialStorePayload(decodeCredentialStoreText(secret))
+      : null;
+  } catch (error) {
+    throw classifyCredentialStoreReadError(error);
+  }
+}
+
+function isSecretToolAvailable(): boolean {
+  const probeResult = spawnSync("secret-tool", [], {
+    stdio: "ignore",
+    timeout: 3000,
+  });
+  return !probeResult.error;
+}
+
+function writeViaNativeKeyring(payload: string): void {
+  const entry = Entry.withTarget("gemini:antigravity", "gemini", "antigravity");
+  entry.setSecret(Buffer.from(payload, "utf-8"));
+}
+
+function writeViaSecretTool(payload: string): void {
+  const storeResult = spawnSync(
+    "secret-tool",
+    ["store", "--label=gemini", "service", "gemini", "username", "antigravity"],
+    { input: payload, encoding: "utf-8", timeout: 10000 },
+  );
+  if (!storeResult.error && storeResult.status === 0) {
+    return;
+  }
+
+  throw new Error(
+    `Linux secret-tool failed: ${storeResult.stderr || storeResult.error?.message || "unknown error"}`,
+  );
+}
+
+export type CredentialStoreWriteOptions =
+  | {
+      syncGoogleOAuthFiles: true;
+      email: string;
+    }
+  | {
+      syncGoogleOAuthFiles?: false;
+    };
+
+export function writeAntigravityCredentialStoreToken(
+  token: CredentialStoreTokenInput,
+  options: CredentialStoreWriteOptions = {},
+): void {
+  const payload = buildCredentialStorePayload(token);
+  logger.info("Writing Antigravity token to system credential store");
+
+  writeToSystemCredentialStore(payload);
+
+  // The CLI keeps the same payload in a file rather than the credential store,
+  // so it has to be updated here or it stays on the previous account.
+  writeAgyCliToken(payload);
+
+  if (options.syncGoogleOAuthFiles) {
+    try {
+      writeGoogleOAuthCredentials({ ...token, email: options.email });
+    } catch (error) {
+      logger.warn(
+        "Failed to synchronize generic Google OAuth credential files",
+        error,
+      );
+    }
+  }
+}
+
+function credentialStoreItemExists(): boolean {
+  // `find-generic-password` reads only the item's attributes, not its secret, so it does not prompt
+  // even when the ACL is restrictive. Exit status 0 means the item is present.
+  const result = spawnSync(
+    "security",
+    ["find-generic-password", "-s", "gemini", "-a", "antigravity"],
+    { stdio: "ignore" },
+  );
+  return result?.status === 0;
+}
+
+function writeToSystemCredentialStore(payload: string): void {
+  if (process.platform === "darwin") {
+    const value = `go-keyring-base64:${Buffer.from(payload, "utf-8").toString("base64")}`;
+    // `-A` sets the item's access-control list to "all applications". macOS treats writing the ACL
+    // as a change that needs the login-keychain password, and `-U` reapplies it on every update, so
+    // each account switch pops a password prompt. Only pass `-A` when the item does not exist yet;
+    // afterwards update the stored value without touching the ACL, which does not prompt.
+    const alreadyExists = credentialStoreItemExists();
+    const args = alreadyExists
+      ? [
+          "add-generic-password",
+          "-s",
+          "gemini",
+          "-a",
+          "antigravity",
+          "-U",
+          "-w",
+        ]
+      : [
+          "add-generic-password",
+          "-s",
+          "gemini",
+          "-a",
+          "antigravity",
+          "-A",
+          "-U",
+          "-w",
+        ];
+    execFileSync("security", args, {
+      input: `${value}\n`,
+      encoding: "utf-8",
+      stdio: ["pipe", "ignore", "ignore"],
+    });
+    return;
+  }
+
+  if (process.platform === "linux" && isSecretToolAvailable()) {
+    try {
+      writeViaSecretTool(payload);
+      return;
+    } catch (error) {
+      logger.warn(
+        "Linux secret-tool failed; falling back to native keyring",
+        error,
+      );
+    }
+  }
+
+  writeViaNativeKeyring(payload);
+}

@@ -45,6 +45,9 @@ export enum IpcChannels {
   NOTIFICATIONS_SEND = "notifications:send",
   NOTIFICATIONS_GET_PREFERENCES = "notifications:get-preferences",
   NOTIFICATIONS_UPDATE_PREFERENCES = "notifications:update-preferences",
+  TOOLS_CLEAR_CACHE = "tools:clear-cache",
+  TOOLS_GET_DEVICE_PROFILE = "tools:get-device-profile",
+  TOOLS_REGENERATE_DEVICE_PROFILE = "tools:regenerate-device-profile",
 }
 
 export type AccountStatus = "active" | "rate_limited" | "expired" | "disabled";

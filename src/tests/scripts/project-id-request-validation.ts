@@ -1,0 +1,399 @@
+import assert from 'node:assert/strict';
+import { isEmpty, isString } from 'lodash-es';
+
+import { transformClaudeRequestIn } from '../../modules/proxy-gateway/antigravity/ClaudeRequestMapper';
+import { AnthropicService } from '../../modules/proxy-gateway/server/modules/anthropic/anthropic.service';
+import { GenerationConstraintsService } from '@/modules/proxy-gateway/server/shared/services/generation-constraints.service';
+import { ModelRoutingService } from '@/modules/proxy-gateway/server/shared/services/model-routing.service';
+import { ProxyRetryService } from '@/modules/proxy-gateway/server/shared/services/proxy-retry.service';
+import { proxyModelAvailabilityStore } from '@/modules/proxy-gateway/server/shared/services/model-availability.service';
+import { GeminiService as ProxyService } from '../../modules/proxy-gateway/server/modules/gemini/gemini.service';
+import { AccountLeaseService } from '../../modules/proxy-gateway/server/modules/account-lease/account-lease.service';
+
+const mockAccountLease: any = {
+  getNextToken: async () => null,
+  markAsRateLimited: () => undefined,
+  markModelSuccess: () => undefined,
+  markAsForbidden: () => undefined,
+  markFromUpstreamError: () => undefined,
+  recordParityError: () => undefined,
+};
+
+const mockGeminiClient: any = {
+  streamGenerateInternal: async () => undefined,
+  generateInternal: async () => undefined,
+};
+
+class TestableProxyService extends ProxyService {
+  constructor() {
+    super(
+      mockAccountLease,
+      mockGeminiClient,
+      new GenerationConstraintsService(mockAccountLease as never),
+      new ProxyRetryService(
+        mockAccountLease as never,
+        { log: () => {}, warn: () => {} },
+        proxyModelAvailabilityStore,
+      ),
+      new ModelRoutingService(),
+    );
+  }
+
+  public createGeminiInternal(
+    model: string,
+    request: Record<string, unknown>,
+    projectId: string | undefined,
+    requestType: string,
+  ): Record<string, unknown> {
+    return (this as any).createGeminiInternalRequest(model, request, projectId, requestType);
+  }
+}
+
+function getEnv(name: string, fallback?: string): string {
+  const value = process.env[name];
+  if (isString(value) && !isEmpty(value.trim())) {
+    return value;
+  }
+  if (fallback !== undefined) {
+    return fallback;
+  }
+  throw new Error(`Missing required env: ${name}`);
+}
+
+function getEnvFromList(names: string[], fallback?: string): string {
+  for (const name of names) {
+    const value = process.env[name];
+    if (isString(value) && !isEmpty(value.trim())) {
+      return value;
+    }
+  }
+  if (fallback !== undefined) {
+    return fallback;
+  }
+  throw new Error(`Missing required env. Tried: ${names.join(', ')}`);
+}
+
+function getLiveHeaders(apiKey?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (isString(apiKey) && !isEmpty(apiKey.trim())) {
+    headers.Authorization = apiKey.startsWith('Bearer ') ? apiKey : `Bearer ${apiKey}`;
+  }
+  return headers;
+}
+
+async function callLive(
+  baseUrl: string,
+  path: string,
+  body: Record<string, unknown>,
+  timeoutMs: number,
+  apiKey?: string,
+): Promise<{ status: number; text: string }> {
+  const url = `${baseUrl}${path}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: getLiveHeaders(apiKey),
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    return {
+      status: response.status,
+      text,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Failed to call ${url}. Ensure proxy service is running and reachable. Original error: ${message}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function validateMapperProjectField(): Promise<void> {
+  const request = {
+    model: 'claude-sonnet-4-5',
+    stream: false,
+    max_tokens: 128,
+    messages: [{ role: 'user', content: 'hello' }],
+  };
+
+  const emptyProjectBody = transformClaudeRequestIn(request as any, '');
+  assert.ok(!Object.prototype.hasOwnProperty.call(emptyProjectBody, 'project'));
+
+  const blankProjectBody = transformClaudeRequestIn(request as any, '   ');
+  assert.ok(!Object.prototype.hasOwnProperty.call(blankProjectBody, 'project'));
+
+  const validProjectBody = transformClaudeRequestIn(request as any, 'resolved-project-id');
+  assert.equal(validProjectBody.project, 'resolved-project-id');
+}
+
+async function validateProxyInternalBuilder(): Promise<void> {
+  const service = new TestableProxyService();
+
+  const emptyInternalBody = service.createGeminiInternal(
+    'gemini-2.5-flash',
+    { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] },
+    '',
+    'generate-content',
+  );
+  console.log(
+    '[DEBUG] Internal request with empty project_id:',
+    JSON.stringify(emptyInternalBody, null, 2),
+  );
+  assert.ok(!Object.prototype.hasOwnProperty.call(emptyInternalBody, 'project'));
+
+  const validInternalBody = service.createGeminiInternal(
+    'gemini-2.5-flash',
+    { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] },
+    'resolved-project-id',
+    'generate-content',
+  );
+  console.log(
+    '[DEBUG] Internal request with valid project_id:',
+    JSON.stringify(validInternalBody, null, 2),
+  );
+  assert.equal(validInternalBody.project, 'resolved-project-id');
+}
+
+async function validateRuntimeGeminiRequestPath(): Promise<void> {
+  const service = new TestableProxyService();
+  const originalGetNextToken = mockAccountLease.getNextToken;
+  const originalGenerateInternal = mockGeminiClient.generateInternal;
+  let capturedBody: Record<string, unknown> | null = null;
+
+  mockAccountLease.getNextToken = async () => ({
+    id: 'account-1',
+    email: 'project-test@example.com',
+    token: {
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      token_type: 'Bearer',
+      expires_in: 3600,
+      expiry_timestamp: Math.floor(Date.now() / 1000) + 3600,
+      project_id: '',
+      upstream_proxy_url: undefined,
+    },
+  });
+
+  mockGeminiClient.generateInternal = async (body: Record<string, unknown>) => {
+    capturedBody = body;
+    return {
+      candidates: [
+        {
+          content: {
+            parts: [{ text: 'ok' }],
+          },
+          finishReason: 'STOP',
+        },
+      ],
+      usageMetadata: {
+        totalTokenCount: 1,
+      },
+    };
+  };
+
+  try {
+    await service.handleGeminiGenerateContent('models/gemini-2.5-flash', {
+      contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+    } as any);
+  } finally {
+    mockAccountLease.getNextToken = originalGetNextToken;
+    mockGeminiClient.generateInternal = originalGenerateInternal;
+  }
+
+  assert.ok(capturedBody, 'Expected captured Gemini internal request');
+  console.log(
+    '[DEBUG] Runtime captured internal request (from handleGeminiGenerateContent):',
+    JSON.stringify(capturedBody, null, 2),
+  );
+  assert.ok(!Object.prototype.hasOwnProperty.call(capturedBody, 'project'));
+}
+
+async function validateRuntimeAnthropicRequestFromRealAccountLease(): Promise<void> {
+  const originalGenerateInternal = mockGeminiClient.generateInternal;
+
+  let capturedBody: Record<string, unknown> | null = null;
+  let selectedToken: any = null;
+  let observedGetNextTokenOptions: any = null;
+
+  mockGeminiClient.generateInternal = async (body: Record<string, unknown>) => {
+    capturedBody = body;
+    return {
+      candidates: [
+        {
+          content: {
+            parts: [{ text: 'ok' }],
+          },
+          finishReason: 'STOP',
+        },
+      ],
+      usageMetadata: {
+        totalTokenCount: 1,
+      },
+    };
+  };
+
+  const realAccountLease = new AccountLeaseService();
+  await realAccountLease.onModuleInit();
+
+  const AccountLeaseProxy = {
+    getNextToken: async (options?: {
+      sessionKey?: string;
+      excludeAccountIds?: string[];
+      model?: string;
+    }) => {
+      observedGetNextTokenOptions = options ?? null;
+      selectedToken = await realAccountLease.getNextToken(options);
+      return selectedToken;
+    },
+    markAsRateLimited: (accountIdOrEmail: string) =>
+      realAccountLease.markAsRateLimited(accountIdOrEmail),
+    markModelSuccess: (accountIdOrEmail: string, model: string) =>
+      realAccountLease.markModelSuccess(accountIdOrEmail, model),
+    markAsForbidden: (accountIdOrEmail: string) =>
+      realAccountLease.markAsForbidden(accountIdOrEmail),
+    markFromUpstreamError: (args: {
+      accountIdOrEmail: string;
+      status?: number;
+      retryAfter?: string;
+      body?: string;
+      model?: string;
+    }) => realAccountLease.markFromUpstreamError(args),
+    recordParityError: () => realAccountLease.recordParityError(),
+  };
+
+  try {
+    const service = new AnthropicService(
+      AccountLeaseProxy as any,
+      mockGeminiClient as any,
+      new GenerationConstraintsService(AccountLeaseProxy as never),
+      new ProxyRetryService(
+        AccountLeaseProxy as never,
+        { log: () => {}, warn: () => {} },
+        proxyModelAvailabilityStore,
+      ),
+      new ModelRoutingService(),
+    );
+    await service.handleAnthropicMessages({
+      model: 'claude-sonnet-4-5',
+      stream: false,
+      max_tokens: 128,
+      metadata: {
+        session_id: 'project-chain-debug-session',
+      },
+      messages: [{ role: 'user', content: 'hello from real account lease chain' }],
+    } as any);
+  } finally {
+    mockGeminiClient.generateInternal = originalGenerateInternal;
+  }
+
+  assert.ok(selectedToken, 'Expected AccountLeaseService.getNextToken to return a token');
+  assert.ok(capturedBody, 'Expected captured Gemini internal request');
+
+  const captured = capturedBody as Record<string, unknown>;
+  const tokenProjectId = selectedToken?.token?.project_id;
+  const normalizedTokenProjectId =
+    isString(tokenProjectId) && !isEmpty(tokenProjectId.trim()) ? tokenProjectId.trim() : undefined;
+
+  if (normalizedTokenProjectId) {
+    assert.equal(
+      captured['project'],
+      normalizedTokenProjectId,
+      'Expected project field to come from AccountLease.getNextToken().token.project_id',
+    );
+  } else {
+    assert.ok(
+      !Object.prototype.hasOwnProperty.call(captured, 'project'),
+      'Expected project field to be omitted when token project_id is unavailable',
+    );
+  }
+
+  console.log(
+    '[DEBUG] Observed getNextToken options from ProxyService:',
+    JSON.stringify(observedGetNextTokenOptions, null, 2),
+  );
+  console.log(
+    '[DEBUG] Selected token project_id from AccountLeaseService:',
+    tokenProjectId ?? null,
+  );
+  console.log(
+    '[DEBUG] Runtime captured internal request (from handleAnthropicMessages):',
+    JSON.stringify(captured, null, 2),
+  );
+}
+
+async function validateLiveRequests(): Promise<void> {
+  const baseUrl = getEnvFromList(['PROJECT_ID_TEST_BASE_URL', 'PARITY_BASE_URL_A']);
+  const timeoutMs = Number(getEnv('PROJECT_ID_TEST_TIMEOUT_MS', '30000'));
+  const apiKey = getEnvFromList(
+    ['PROJECT_ID_TEST_API_KEY', 'PARITY_API_KEY_A', 'PARITY_API_KEY'],
+    '',
+  );
+
+  const gemini = await callLive(
+    baseUrl,
+    '/v1beta/models/gemini-2.5-flash:generateContent',
+    {
+      contents: [{ role: 'user', parts: [{ text: 'project-id live validation' }] }],
+    },
+    timeoutMs,
+    apiKey,
+  );
+  assert.ok(
+    !gemini.text.toLowerCase().includes('invalid project resource name projects/'),
+    `[gemini-live] still hit invalid empty project path. status=${gemini.status}, body=${gemini.text}`,
+  );
+  console.log(`[PASS] Live Gemini request check (status=${gemini.status})`);
+
+  const anthropic = await callLive(
+    baseUrl,
+    '/v1/messages',
+    {
+      model: 'claude-sonnet-4-5',
+      stream: false,
+      max_tokens: 128,
+      messages: [{ role: 'user', content: 'project-id live validation' }],
+    },
+    timeoutMs,
+    apiKey,
+  );
+  assert.ok(
+    !anthropic.text.toLowerCase().includes('invalid project resource name projects/'),
+    `[anthropic-live] still hit invalid empty project path. status=${anthropic.status}, body=${anthropic.text}`,
+  );
+  console.log(`[PASS] Live Anthropic request check (status=${anthropic.status})`);
+}
+
+async function main(): Promise<void> {
+  await validateMapperProjectField();
+  console.log('[PASS] ClaudeRequestMapper project field behavior');
+
+  await validateProxyInternalBuilder();
+  console.log('[PASS] ProxyService internal request project field behavior');
+
+  await validateRuntimeGeminiRequestPath();
+  console.log('[PASS] Runtime Gemini request path omits empty project');
+
+  await validateRuntimeAnthropicRequestFromRealAccountLease();
+  console.log('[PASS] Runtime Anthropic request uses project_id from AccountLeaseService');
+
+  if (process.argv.includes('--live')) {
+    await validateLiveRequests();
+    console.log('[PASS] Live request validation');
+  }
+
+  console.log('[DONE] Project ID request validation completed');
+}
+
+main().catch((error) => {
+  console.error('[FAIL] Project ID request validation failed');
+  console.error(error);
+  process.exit(1);
+});
