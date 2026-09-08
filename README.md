@@ -1,25 +1,26 @@
 # Antigravity Relay
 
-Desktop account management and session relay for Google Antigravity.
+Desktop account management and session relay for Google Antigravity 2.0.
 
-> **Attribution**: Cloned and adapted from [Antigravity Manager](https://github.com/Draculabo/AntigravityManager) by Draculabo. Antigravity Relay streamlines the codebase by removing standalone proxy server modules and focusing specifically on account pooling, quota monitoring, and session relaying.
+> **Attribution**: Forked and adapted from [Antigravity Manager](https://github.com/Draculabo/AntigravityManager) by Draculabo. Antigravity Relay focuses exclusively on Antigravity 2.0, strips third-party telemetry, and isolates local storage to `~/.antigravity-relay/`.
 
 ---
 
 ## Features
 
-- **Multi-Account Pool**: Connect and manage multiple Google Gemini accounts via OAuth 2.0 loopback authentication.
-- **Quota Monitoring**: Live per-model quota tracking, automatic background polling, and reset timers.
-- **Relay & Remote**: Built-in relay server allowing remote session observation and coordination.
-- **Environment Switching**: One-click switching of active accounts across Antigravity and Antigravity CLI (`agy`).
-- **Isolated & Encrypted Storage**: Account credentials and tokens are stored separately from Antigravity Manager (`~/.antigravity-relay/`) and encrypted using OS Keychain (`AntigravityRelay`) with AES-256-GCM.
+- **Antigravity 2.0 Focused**: Dedicated integration and account switching for Google Antigravity 2.0.
+- **Multi-Account Pool**: Connect and manage multiple Google accounts via OAuth 2.0 loopback authentication.
+- **Live Quota Monitoring**: Real-time per-model quota tracking, background polling, and reset timers.
+- **Session Relay & Remote**: Built-in relay server allowing remote session observation and coordination.
+- **Zero Third-Party Telemetry**: Completely stripped of telemetry, crash beacons, and analytics (no Clarity, no Sentry, no OpenTelemetry).
+- **Isolated & Encrypted Storage**: Dedicated storage (`~/.antigravity-relay/`) encrypted via OS Keychain (`AntigravityRelay`) with AES-256-GCM.
 
 ---
 
 ## Tech Stack
 
 - **Runtime**: Electron 40+, Node.js 22+
-- **Frontend**: React 19, Vite 6, Tailwind CSS 4, Radix UI / shadcn
+- **Frontend**: React 19, Vite 6, Tailwind CSS 4, Radix UI
 - **Backend / IPC**: Electron Forge, oRPC, SQLite (better-sqlite3) via Drizzle ORM
 - **Packaging**: Electron Forge (Vite plugin + Auto-Unpack Natives)
 
@@ -38,6 +39,21 @@ Desktop account management and session relay for Google Antigravity.
 git clone https://github.com/hudiohizari/antigravity-relay.git
 cd antigravity-relay
 pnpm install
+```
+
+### Environment Configuration
+
+Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Configure your Google OAuth credentials in `.env` (or set them as GitHub Secrets for CI/CD release builds):
+
+```env
+ANTIGRAVITY_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+ANTIGRAVITY_OAUTH_CLIENT_SECRET=your-client-secret
 ```
 
 ### Development
@@ -62,7 +78,7 @@ pnpm run make
 
 ---
 
-## Storage & Configuration
+## Storage
 
 - **Database**: `~/.antigravity-relay/cloud_accounts.db`
 - **Config & Logs**: `~/.antigravity-relay/`
