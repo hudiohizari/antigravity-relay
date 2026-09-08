@@ -22,6 +22,9 @@ import { AutoSwitchService } from "../src/main/switcher/auto-switch.service";
 import { SnapshotStore } from "../src/main/snapshots/snapshot-store";
 import { RelayServer } from "../src/main/relay/relay-server";
 import { TunnelManager } from "../src/main/tunnel/tunnel-manager";
+import { SettingsStore } from "../src/main/settings/settings-store";
+import { TrayManager } from "../src/main/tray/tray";
+import { NativeNotifier } from "../src/main/notifications/notifier";
 import { EventEmitter } from "node:events";
 
 // Mock Electron ipcMain and shell
@@ -76,6 +79,9 @@ describe("IPC Boundary and Handler Verification", () => {
   let snapshotStore: SnapshotStore;
   let relayServer: RelayServer;
   let tunnelManager: TunnelManager;
+  let settingsStore: SettingsStore;
+  let trayManager: TrayManager;
+  let notifier: NativeNotifier;
   let mockWin: any;
 
   const mockOAuthConfig: OAuthConfig = {
@@ -137,12 +143,37 @@ describe("IPC Boundary and Handler Verification", () => {
       },
     });
 
+    settingsStore = new SettingsStore({
+      storePath: path.join(tempDir, "settings.json"),
+      machineId: "ipc-test-machine",
+    });
+
     mockWin = {
       isDestroyed: vi.fn().mockReturnValue(false),
+      isMinimized: vi.fn().mockReturnValue(false),
+      restore: vi.fn(),
+      show: vi.fn(),
+      focus: vi.fn(),
+      hide: vi.fn(),
       webContents: {
         send: vi.fn(),
       },
     };
+
+    notifier = new NativeNotifier({
+      settingsStore,
+      getMainWindow: () => mockWin,
+    });
+
+    trayManager = new TrayManager({
+      accountStore,
+      processController,
+      quotaMonitor,
+      switchFlow,
+      relayServer,
+      settingsStore,
+      getMainWindow: () => mockWin,
+    });
 
     registerIpcHandlers({
       accountStore,
@@ -155,6 +186,9 @@ describe("IPC Boundary and Handler Verification", () => {
       snapshotStore,
       relayServer,
       tunnelManager,
+      settingsStore,
+      trayManager,
+      notifier,
       getMainWindow: () => mockWin,
     });
   });
@@ -1117,6 +1151,322 @@ describe("IPC Boundary and Handler Verification", () => {
         IpcChannels.TUNNEL_STATUS_UPDATED,
         expect.any(Object),
       );
+    });
+  });
+
+  describe("Settings, Tray, and Notification IPC Channels", () => {
+    it("should get application settings via settings:get", async () => {
+      const handler = registeredHandlers.get(IpcChannels.SETTINGS_GET)!;
+      const res = await handler({});
+      expect(res.success).toBe(true);
+      expect(res.data).toBeDefined();
+      expect(res.data.version).toBe(1);
+    });
+
+    it("should handle error in settings:get", async () => {
+      vi.spyOn(settingsStore, "get").mockRejectedValueOnce(
+        new Error("Disk failed"),
+      );
+      const handler = registeredHandlers.get(IpcChannels.SETTINGS_GET)!;
+      const res = await handler({});
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Disk failed");
+    });
+
+    it("should update settings via settings:update and update oauthConfig", async () => {
+      const handler = registeredHandlers.get(IpcChannels.SETTINGS_UPDATE)!;
+      const res = await handler(
+        {},
+        {
+          theme: "dark",
+          oauth: {
+            clientId: "new-oauth-client-id",
+            clientSecret: "new-oauth-secret",
+          },
+        },
+      );
+      expect(res.success).toBe(true);
+      expect(res.data.theme).toBe("dark");
+      expect(mockOAuthConfig.clientId).toBe("new-oauth-client-id");
+      expect(mockOAuthConfig.clientSecret).toBe("new-oauth-secret");
+      expect(mockWin.webContents.send).toHaveBeenCalledWith(
+        IpcChannels.SETTINGS_UPDATED,
+        expect.objectContaining({ theme: "dark" }),
+      );
+    });
+
+    it("should reject invalid payload in settings:update", async () => {
+      const handler = registeredHandlers.get(IpcChannels.SETTINGS_UPDATE)!;
+      const res = await handler({}, { theme: "invalid-theme-value" });
+      expect(res.success).toBe(false);
+      expect(res.error).toBeDefined();
+    });
+
+    it("should handle error in settings:update", async () => {
+      vi.spyOn(settingsStore, "update").mockRejectedValueOnce(
+        new Error("Update failed"),
+      );
+      const handler = registeredHandlers.get(IpcChannels.SETTINGS_UPDATE)!;
+      const res = await handler({}, { theme: "light" });
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Update failed");
+    });
+
+    it("should reset settings via settings:reset", async () => {
+      const handler = registeredHandlers.get(IpcChannels.SETTINGS_RESET)!;
+      const res = await handler({});
+      expect(res.success).toBe(true);
+      expect(res.data.theme).toBe("system");
+      expect(mockWin.webContents.send).toHaveBeenCalledWith(
+        IpcChannels.SETTINGS_UPDATED,
+        expect.any(Object),
+      );
+    });
+
+    it("should handle error in settings:reset", async () => {
+      vi.spyOn(settingsStore, "reset").mockRejectedValueOnce(
+        new Error("Reset error"),
+      );
+      const handler = registeredHandlers.get(IpcChannels.SETTINGS_RESET)!;
+      const res = await handler({});
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Reset error");
+    });
+
+    it("should return tray state via tray:get-state", async () => {
+      const handler = registeredHandlers.get(IpcChannels.TRAY_GET_STATE)!;
+      const res = await handler({});
+      expect(res.success).toBe(true);
+      expect(res.data).toBeDefined();
+      expect(res.data.isVisible).toBeDefined();
+    });
+
+    it("should handle error in tray:get-state", async () => {
+      vi.spyOn(trayManager, "getState").mockRejectedValueOnce(
+        new Error("Tray state error"),
+      );
+      const handler = registeredHandlers.get(IpcChannels.TRAY_GET_STATE)!;
+      const res = await handler({});
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Tray state error");
+    });
+
+    it("should update tray menu via tray:update-menu", async () => {
+      const updateSpy = vi
+        .spyOn(trayManager, "updateMenu")
+        .mockResolvedValueOnce();
+      const handler = registeredHandlers.get(IpcChannels.TRAY_UPDATE_MENU)!;
+      const res = await handler({});
+      expect(res.success).toBe(true);
+      expect(updateSpy).toHaveBeenCalled();
+    });
+
+    it("should handle error in tray:update-menu", async () => {
+      vi.spyOn(trayManager, "updateMenu").mockRejectedValueOnce(
+        new Error("Menu update failed"),
+      );
+      const handler = registeredHandlers.get(IpcChannels.TRAY_UPDATE_MENU)!;
+      const res = await handler({});
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Menu update failed");
+    });
+
+    it("should show window via tray:show-window", async () => {
+      const showSpy = vi.spyOn(trayManager, "showWindow");
+      const handler = registeredHandlers.get(IpcChannels.TRAY_SHOW_WINDOW)!;
+      const res = await handler({});
+      expect(res.success).toBe(true);
+      expect(showSpy).toHaveBeenCalled();
+    });
+
+    it("should handle error in tray:show-window", async () => {
+      vi.spyOn(trayManager, "showWindow").mockImplementationOnce(() => {
+        throw new Error("Show failed");
+      });
+      const handler = registeredHandlers.get(IpcChannels.TRAY_SHOW_WINDOW)!;
+      const res = await handler({});
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Show failed");
+    });
+
+    it("should minimize window to tray via tray:minimize-to-tray", async () => {
+      const hideSpy = vi.spyOn(trayManager, "minimizeToTray");
+      const handler = registeredHandlers.get(
+        IpcChannels.TRAY_MINIMIZE_TO_TRAY,
+      )!;
+      const res = await handler({});
+      expect(res.success).toBe(true);
+      expect(hideSpy).toHaveBeenCalled();
+    });
+
+    it("should handle error in tray:minimize-to-tray", async () => {
+      vi.spyOn(trayManager, "minimizeToTray").mockImplementationOnce(() => {
+        throw new Error("Hide failed");
+      });
+      const handler = registeredHandlers.get(
+        IpcChannels.TRAY_MINIMIZE_TO_TRAY,
+      )!;
+      const res = await handler({});
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Hide failed");
+    });
+
+    it("should send native desktop notification via notifications:send", async () => {
+      const sendSpy = vi.spyOn(notifier, "send").mockResolvedValueOnce(true);
+      const handler = registeredHandlers.get(IpcChannels.NOTIFICATIONS_SEND)!;
+      const res = await handler(
+        {},
+        {
+          type: "general_alert",
+          title: "Test Alert",
+          body: "Test message body",
+        },
+      );
+      expect(res.success).toBe(true);
+      expect(sendSpy).toHaveBeenCalled();
+    });
+
+    it("should reject invalid payload in notifications:send", async () => {
+      const handler = registeredHandlers.get(IpcChannels.NOTIFICATIONS_SEND)!;
+      const res = await handler({}, { type: "unknown_type" });
+      expect(res.success).toBe(false);
+      expect(res.error).toBeDefined();
+    });
+
+    it("should handle error in notifications:send", async () => {
+      vi.spyOn(notifier, "send").mockRejectedValueOnce(
+        new Error("OS notification crash"),
+      );
+      const handler = registeredHandlers.get(IpcChannels.NOTIFICATIONS_SEND)!;
+      const res = await handler(
+        {},
+        {
+          type: "service_crash",
+          title: "Crash",
+          body: "Body",
+        },
+      );
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("OS notification crash");
+    });
+
+    it("should get notification preferences via notifications:get-preferences", async () => {
+      const handler = registeredHandlers.get(
+        IpcChannels.NOTIFICATIONS_GET_PREFERENCES,
+      )!;
+      const res = await handler({});
+      expect(res.success).toBe(true);
+      expect(res.data.enabled).toBe(true);
+    });
+
+    it("should handle error in notifications:get-preferences", async () => {
+      vi.spyOn(notifier, "getPreferences").mockRejectedValueOnce(
+        new Error("Prefs error"),
+      );
+      const handler = registeredHandlers.get(
+        IpcChannels.NOTIFICATIONS_GET_PREFERENCES,
+      )!;
+      const res = await handler({});
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Prefs error");
+    });
+
+    it("should update notification preferences via notifications:update-preferences", async () => {
+      const handler = registeredHandlers.get(
+        IpcChannels.NOTIFICATIONS_UPDATE_PREFERENCES,
+      )!;
+      const res = await handler({}, { debounceMs: 9000 });
+      expect(res.success).toBe(true);
+      expect(res.data.debounceMs).toBe(9000);
+    });
+
+    it("should reject invalid payload in notifications:update-preferences", async () => {
+      const handler = registeredHandlers.get(
+        IpcChannels.NOTIFICATIONS_UPDATE_PREFERENCES,
+      )!;
+      const res = await handler({}, { debounceMs: -5 });
+      expect(res.success).toBe(false);
+      expect(res.error).toBeDefined();
+    });
+
+    it("should handle error in notifications:update-preferences", async () => {
+      vi.spyOn(notifier, "updatePreferences").mockRejectedValueOnce(
+        new Error("Update failed"),
+      );
+      const handler = registeredHandlers.get(
+        IpcChannels.NOTIFICATIONS_UPDATE_PREFERENCES,
+      )!;
+      const res = await handler({}, { enabled: false });
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Update failed");
+    });
+
+    it("should trigger notifier on auto-switch and service error events", () => {
+      const switchNotifySpy = vi
+        .spyOn(notifier, "notifyAccountSwitched")
+        .mockResolvedValue(true);
+      const crashNotifySpy = vi
+        .spyOn(notifier, "notifyServiceCrash")
+        .mockResolvedValue(true);
+
+      (switchFlow as any).notifyListeners({
+        success: true,
+        previousAccountId: "old-id",
+        newAccountEmail: "new@example.com",
+      });
+      expect(switchNotifySpy).toHaveBeenCalledWith("old-id", "new@example.com");
+
+      (processController as any).notifyListeners({
+        runningCount: 0,
+        totalCount: 2,
+        services: {
+          antigravity_daemon: {
+            target: "antigravity_daemon",
+            displayName: "Antigravity",
+            state: "error",
+            errorMessage: "Segmentation fault",
+          },
+        },
+      });
+      expect(crashNotifySpy).toHaveBeenCalledWith(
+        "Antigravity",
+        "Segmentation fault",
+      );
+    });
+
+    it("should fallback cleanly when trayManager is not passed to handlers", async () => {
+      registeredHandlers.clear();
+      registerIpcHandlers({
+        accountStore,
+        processController,
+        oauthConfig: mockOAuthConfig,
+        getMainWindow: () => mockWin,
+      });
+
+      const stateHandler = registeredHandlers.get(IpcChannels.TRAY_GET_STATE)!;
+      const stateRes = await stateHandler({});
+      expect(stateRes.success).toBe(true);
+      expect(stateRes.data.isVisible).toBe(false);
+
+      const updateHandler = registeredHandlers.get(
+        IpcChannels.TRAY_UPDATE_MENU,
+      )!;
+      const updateRes = await updateHandler({});
+      expect(updateRes.success).toBe(true);
+
+      const showHandler = registeredHandlers.get(IpcChannels.TRAY_SHOW_WINDOW)!;
+      mockWin.isMinimized.mockReturnValue(true);
+      const showRes = await showHandler({});
+      expect(showRes.success).toBe(true);
+      expect(mockWin.restore).toHaveBeenCalled();
+      expect(mockWin.show).toHaveBeenCalled();
+
+      const hideHandler = registeredHandlers.get(
+        IpcChannels.TRAY_MINIMIZE_TO_TRAY,
+      )!;
+      const hideRes = await hideHandler({});
+      expect(hideRes.success).toBe(true);
+      expect(mockWin.hide).toHaveBeenCalled();
     });
   });
 });

@@ -13,6 +13,16 @@ import { SwitchFlow } from "../switcher/switch-flow";
 import { SnapshotStore } from "../snapshots/snapshot-store";
 import { RelayServer } from "../relay/relay-server";
 import { TunnelManager } from "../tunnel/tunnel-manager";
+import { SettingsStore } from "../settings/settings-store";
+import {
+  PartialAppSettingsSchema,
+  NotificationPreferencesSchema,
+} from "../settings/types";
+import { TrayManager } from "../tray/tray";
+import {
+  NativeNotifier,
+  NotificationPayloadSchema,
+} from "../notifications/notifier";
 
 const AccountIdPayloadSchema = z.object({
   id: z.string().min(1, "Account identifier is required"),
@@ -76,6 +86,9 @@ export interface RegisterIpcHandlersDependencies {
   snapshotStore?: SnapshotStore;
   relayServer?: RelayServer;
   tunnelManager?: TunnelManager;
+  settingsStore?: SettingsStore;
+  trayManager?: TrayManager;
+  notifier?: NativeNotifier;
   getMainWindow?: () => BrowserWindow | null;
 }
 
@@ -103,6 +116,21 @@ export function registerIpcHandlers(
     });
   const relayServer = deps.relayServer || new RelayServer();
   const tunnelManager = deps.tunnelManager || new TunnelManager();
+  const settingsStore =
+    deps.settingsStore ||
+    new SettingsStore({
+      storePath: path.join(
+        path.dirname(accountStore.getStorePath()),
+        "settings.json",
+      ),
+    });
+  const notifier =
+    deps.notifier ||
+    new NativeNotifier({
+      settingsStore,
+      getMainWindow: deps.getMainWindow,
+    });
+  const trayManager = deps.trayManager;
 
   // Wire SwitchFlow hook to UpstreamBridge
   relayServer.getUpstreamBridge().hookSwitchFlow(switchFlow);
@@ -665,6 +693,224 @@ export function registerIpcHandlers(
     const win = deps.getMainWindow ? deps.getMainWindow() : null;
     if (win && !win.isDestroyed()) {
       win.webContents.send(IpcChannels.TUNNEL_STATUS_UPDATED, status);
+    }
+  });
+
+  // --- Settings IPC Channels ---
+
+  // 29. settings:get
+  ipcMain.handle(IpcChannels.SETTINGS_GET, async () => {
+    try {
+      const settings = await settingsStore.get();
+      return { success: true, data: settings };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // 30. settings:update
+  ipcMain.handle(
+    IpcChannels.SETTINGS_UPDATE,
+    async (_event, rawPayload: unknown) => {
+      const parseResult = PartialAppSettingsSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        return {
+          success: false,
+          error: parseResult.error.errors.map((e) => e.message).join(", "),
+        };
+      }
+
+      try {
+        const updated = await settingsStore.update(parseResult.data);
+
+        // Reconcile runtime managers if credentials changed
+        if (parseResult.data.oauth) {
+          if (parseResult.data.oauth.clientId) {
+            oauthConfig.clientId = parseResult.data.oauth.clientId;
+          }
+          if (parseResult.data.oauth.clientSecret !== undefined) {
+            oauthConfig.clientSecret = parseResult.data.oauth.clientSecret;
+          }
+        }
+
+        const win = deps.getMainWindow ? deps.getMainWindow() : null;
+        if (win && !win.isDestroyed()) {
+          win.webContents.send(IpcChannels.SETTINGS_UPDATED, updated);
+        }
+
+        return { success: true, data: updated };
+      } catch (err) {
+        return { success: false, error: (err as Error).message };
+      }
+    },
+  );
+
+  // 31. settings:reset
+  ipcMain.handle(IpcChannels.SETTINGS_RESET, async () => {
+    try {
+      const resetSettings = await settingsStore.reset();
+      const win = deps.getMainWindow ? deps.getMainWindow() : null;
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(IpcChannels.SETTINGS_UPDATED, resetSettings);
+      }
+      return { success: true, data: resetSettings };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // --- System Tray IPC Channels ---
+
+  // 32. tray:get-state
+  ipcMain.handle(IpcChannels.TRAY_GET_STATE, async () => {
+    try {
+      if (trayManager) {
+        const state = await trayManager.getState();
+        return { success: true, data: state };
+      }
+      const active = await accountStore.getActive();
+      const services = await processController.getStatus();
+      return {
+        success: true,
+        data: {
+          isVisible: false,
+          activeAccountEmail: active?.email ?? null,
+          serviceRunningCount: services.runningCount,
+          totalServiceCount: services.totalCount,
+          isBuffering: relayServer.getStatus().isBuffering,
+          lastUpdated: Date.now(),
+        },
+      };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // 33. tray:update-menu
+  ipcMain.handle(IpcChannels.TRAY_UPDATE_MENU, async () => {
+    try {
+      if (trayManager) {
+        await trayManager.updateMenu();
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // 34. tray:show-window
+  ipcMain.handle(IpcChannels.TRAY_SHOW_WINDOW, async () => {
+    try {
+      if (trayManager) {
+        trayManager.showWindow();
+      } else {
+        const win = deps.getMainWindow ? deps.getMainWindow() : null;
+        if (win && !win.isDestroyed()) {
+          if (win.isMinimized()) win.restore();
+          win.show();
+          win.focus();
+        }
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // 35. tray:minimize-to-tray
+  ipcMain.handle(IpcChannels.TRAY_MINIMIZE_TO_TRAY, async () => {
+    try {
+      if (trayManager) {
+        trayManager.minimizeToTray();
+      } else {
+        const win = deps.getMainWindow ? deps.getMainWindow() : null;
+        if (win && !win.isDestroyed()) {
+          win.hide();
+        }
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // --- Native Desktop Notification IPC Channels ---
+
+  // 36. notifications:send
+  ipcMain.handle(
+    IpcChannels.NOTIFICATIONS_SEND,
+    async (_event, rawPayload: unknown) => {
+      const parseResult = NotificationPayloadSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        return {
+          success: false,
+          error: parseResult.error.errors.map((e) => e.message).join(", "),
+        };
+      }
+
+      try {
+        const dispatched = await notifier.send(parseResult.data);
+        return { success: dispatched };
+      } catch (err) {
+        return { success: false, error: (err as Error).message };
+      }
+    },
+  );
+
+  // 37. notifications:get-preferences
+  ipcMain.handle(IpcChannels.NOTIFICATIONS_GET_PREFERENCES, async () => {
+    try {
+      const prefs = await notifier.getPreferences();
+      return { success: true, data: prefs };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // 38. notifications:update-preferences
+  ipcMain.handle(
+    IpcChannels.NOTIFICATIONS_UPDATE_PREFERENCES,
+    async (_event, rawPayload: unknown) => {
+      const parseResult =
+        NotificationPreferencesSchema.partial().safeParse(rawPayload);
+      if (!parseResult.success) {
+        return {
+          success: false,
+          error: parseResult.error.errors.map((e) => e.message).join(", "),
+        };
+      }
+
+      try {
+        const updated = await notifier.updatePreferences(parseResult.data);
+        return { success: true, data: updated };
+      } catch (err) {
+        return { success: false, error: (err as Error).message };
+      }
+    },
+  );
+
+  // --- Background Service Hooks for Notifications & Tray ---
+  switchFlow.onSwitchEvent((result) => {
+    if (result.success) {
+      notifier
+        .notifyAccountSwitched(result.previousAccountId, result.newAccountEmail)
+        .catch(() => {});
+      if (trayManager) {
+        trayManager.updateMenu().catch(() => {});
+      }
+    }
+  });
+
+  processController.onStatusUpdated((status) => {
+    for (const info of Object.values(status.services)) {
+      if (info.state === "error") {
+        notifier
+          .notifyServiceCrash(info.displayName, info.errorMessage)
+          .catch(() => {});
+      }
+    }
+    if (trayManager) {
+      trayManager.updateMenu().catch(() => {});
     }
   });
 }

@@ -312,4 +312,54 @@
   --comp-prompt-input-border: var(--border-default);
   --comp-prompt-input-focus: var(--primitive-color-emerald-500);
   --comp-prompt-send-btn-size: 48px;
+
+  /* Component: Form Inputs & Fields */
+  --comp-input-height: 44px;
+  --comp-input-bg: var(--primitive-color-neutral-950);
+  --comp-input-border: var(--border-default);
+  --comp-input-border-focus: var(--primitive-color-emerald-500);
+  --comp-input-radius: var(--primitive-radius-md);
+  --comp-input-padding-x: var(--primitive-space-3);
+  --comp-input-text: var(--text-primary);
+  --comp-input-placeholder: var(--text-muted);
+  --comp-input-action-btn-size: 44px;
+
+  /* Component: Accessible Toggle Switch */
+  --comp-switch-track-width: 44px;
+  --comp-switch-track-height: 24px;
+  --comp-switch-track-bg-off: var(--primitive-color-neutral-700);
+  --comp-switch-track-bg-on: var(--primitive-color-emerald-600);
+  --comp-switch-track-border: var(--border-default);
+  --comp-switch-thumb-size: 18px;
+  --comp-switch-thumb-bg: #ffffff;
+  --comp-switch-thumb-offset: 3px;
+
+  /* Component: Settings Section Cards */
+  --comp-settings-card-bg: var(--bg-surface);
+  --comp-settings-card-border: var(--border-default);
+  --comp-settings-card-radius: var(--primitive-radius-lg);
+  --comp-settings-card-padding: var(--primitive-space-5);
+  --comp-settings-card-header-gap: var(--primitive-space-1);
+  --comp-settings-field-gap: var(--primitive-space-4);
+  --comp-settings-section-gap: var(--primitive-space-6);
+
+  /* Component: System Tray & Status Indicator */
+  --comp-tray-icon-size-sm: 16px;
+  --comp-tray-icon-size-lg: 32px;
+  --comp-tray-dot-size: 4px;
+  --comp-tray-dot-running: var(--primitive-color-emerald-500);
+  --comp-tray-dot-partial: var(--primitive-color-amber-500);
+  --comp-tray-dot-stopped: var(--primitive-color-neutral-400);
+  --comp-tray-dot-error: var(--primitive-color-red-500);
+
+  /* Component: Save Feedback Banner & Dirty State */
+  --comp-save-banner-bg-success: rgba(16, 185, 129, 0.12);
+  --comp-save-banner-border-success: rgba(16, 185, 129, 0.35);
+  --comp-save-banner-text-success: var(--primitive-color-emerald-400);
+  --comp-save-banner-bg-dirty: rgba(245, 158, 11, 0.12);
+  --comp-save-banner-border-dirty: rgba(245, 158, 11, 0.35);
+  --comp-save-banner-text-dirty: var(--primitive-color-amber-400);
+  --comp-save-banner-bg-error: rgba(239, 68, 68, 0.12);
+  --comp-save-banner-border-error: rgba(239, 68, 68, 0.35);
+  --comp-save-banner-text-error: var(--primitive-color-red-400);
 }

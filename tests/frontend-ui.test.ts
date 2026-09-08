@@ -10,6 +10,7 @@ import { QuotaBar } from "../src/renderer/components/QuotaBar";
 import { AccountCard } from "../src/renderer/components/AccountCard";
 import { AutoSwitchSettings } from "../src/renderer/components/AutoSwitchSettings";
 import { SnapshotModal } from "../src/renderer/components/SnapshotModal";
+import { Settings } from "../src/renderer/pages/Settings";
 import type {
   GoogleAccount,
   QuotaData,
@@ -183,10 +184,13 @@ describe("Frontend Copy Catalogs & Token Architecture", () => {
   });
 
   describe("Desktop UI Component Architecture & Verification", () => {
-    function renderWithI18n(element: React.ReactElement): string {
+    function renderWithI18n(
+      element: React.ReactElement,
+      locale: "en" | "id" = "en",
+    ): string {
       return renderToStaticMarkup(
         React.createElement(I18nProvider, {
-          defaultLocale: "en",
+          defaultLocale: locale,
           children: element,
         }),
       );
@@ -437,6 +441,93 @@ describe("Frontend Copy Catalogs & Token Architecture", () => {
 
       expect(html).toContain("No snapshots found");
       expect(html).toContain("Save an encrypted snapshot");
+    });
+
+    it("should render Settings page with all configuration sections and action bar", () => {
+      const html = renderWithI18n(React.createElement(Settings));
+
+      // Page Title & Subtitle
+      expect(html).toContain("Application Settings");
+      expect(html).toContain(
+        "Manage persistent configurations, OAuth credentials, process discovery, and desktop preferences",
+      );
+
+      // Section 1: General Preferences
+      expect(html).toContain("General Preferences");
+      expect(html).toContain("Theme");
+      expect(html).toContain("Interface Language");
+      expect(html).toContain("Minimize to System Tray on Close");
+      expect(html).toContain("Launch at System Startup");
+
+      // Section 2: Google OAuth Credentials
+      expect(html).toContain("Google OAuth Credentials");
+      expect(html).toContain("Client ID");
+      expect(html).toContain("Client Secret");
+      expect(html).toContain("Encrypted on disk with AES-256-GCM");
+      expect(html).toContain('aria-label="Show client secret"');
+
+      // Section 3: Binary Paths & Process Discovery
+      expect(html).toContain("Binary Paths &amp; Process Discovery");
+      expect(html).toContain("Antigravity Daemon Binary (agy)");
+      expect(html).toContain("Antigravity IDE Executable");
+      expect(html).toContain("Browse...");
+      expect(html).toContain("Auto-Detect");
+
+      // Section 4: Network & Remote Tethering
+      expect(html).toContain("Network &amp; Remote Tethering");
+      expect(html).toContain("Local Relay Server Port");
+      expect(html).toContain("Cloudflare Named Tunnel Token (Optional)");
+      expect(html).toContain('aria-label="Show tunnel token"');
+
+      // Section 5: Desktop Notifications
+      expect(html).toContain("Desktop Notifications");
+      expect(html).toContain("Enable Desktop Notifications");
+      expect(html).toContain("Account Auto-Switch Events");
+      expect(html).toContain("Rate Limit Cooldown Alerts");
+      expect(html).toContain("Service Crashes &amp; Process Alerts");
+
+      // Section 6: Action Bar & Reset Dialog
+      expect(html).toContain("Reset to Defaults");
+      expect(html).toContain("Save Settings");
+      expect(html).toContain("Reset All Settings to Defaults?");
+      expect(html).toContain(
+        "This will restore standard ports, default binary discovery, and clear custom OAuth credentials. Continue?",
+      );
+    });
+
+    it("should render Settings with Indonesian locale correctly", () => {
+      const html = renderWithI18n(React.createElement(Settings), "id");
+
+      expect(html).toContain("Pengaturan Aplikasi");
+      expect(html).toContain("Preferensi Umum");
+      expect(html).toContain("Kredensial OAuth Google");
+      expect(html).toContain("Jalur Biner &amp; Penemuan Proses");
+      expect(html).toContain("Jaringan &amp; Penambatan Jarak Jauh");
+      expect(html).toContain("Pemberitahuan Desktop");
+      expect(html).toContain("Simpan Pengaturan");
+      expect(html).toContain("Kembalikan ke Default");
+    });
+
+    it("should enforce WCAG 2.2 AA touch targets, focus outlines, and ARIA switch roles in Settings", () => {
+      const html = renderWithI18n(React.createElement(Settings));
+
+      // Minimum 44px touch targets
+      expect(html).toContain("min-h-[44px]");
+      expect(html).toContain("min-w-[44px]");
+
+      // High-contrast emerald focus outlines
+      expect(html).toContain("focus-visible:ring-[var(--border-focus)]");
+
+      // Semantic Switch roles & states
+      expect(html).toContain('role="switch"');
+      expect(html).toContain('aria-checked="true"');
+
+      // Accessible Secret show/hide toggles
+      expect(html).toContain('aria-pressed="false"');
+
+      // Screen-reader live region
+      expect(html).toContain('role="status"');
+      expect(html).toContain('aria-live="polite"');
     });
   });
 });

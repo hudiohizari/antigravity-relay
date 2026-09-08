@@ -19,6 +19,9 @@ export default defineConfig({
         "src/main/switcher/**",
         "src/main/snapshots/**",
         "src/main/tunnel/**",
+        "src/main/settings/**",
+        "src/main/tray/**",
+        "src/main/notifications/**",
       ],
       thresholds: {
         lines: 100,

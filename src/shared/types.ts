@@ -34,6 +34,17 @@ export enum IpcChannels {
   TUNNEL_GET_URL = "tunnel:get-url",
   SESSIONS_GET_ACTIVE = "sessions:get-active",
   SESSIONS_REVOKE = "sessions:revoke",
+  SETTINGS_GET = "settings:get",
+  SETTINGS_UPDATE = "settings:update",
+  SETTINGS_RESET = "settings:reset",
+  SETTINGS_UPDATED = "settings:updated",
+  TRAY_GET_STATE = "tray:get-state",
+  TRAY_UPDATE_MENU = "tray:update-menu",
+  TRAY_SHOW_WINDOW = "tray:show-window",
+  TRAY_MINIMIZE_TO_TRAY = "tray:minimize-to-tray",
+  NOTIFICATIONS_SEND = "notifications:send",
+  NOTIFICATIONS_GET_PREFERENCES = "notifications:get-preferences",
+  NOTIFICATIONS_UPDATE_PREFERENCES = "notifications:update-preferences",
 }
 
 export type AccountStatus = "active" | "rate_limited" | "expired" | "disabled";
@@ -354,4 +365,81 @@ export interface RemoteEvent {
   type: RemoteEventType | string;
   payload: Record<string, unknown>;
   timestamp: number;
+}
+
+// Application Settings & Preferences
+export interface OAuthSettings {
+  clientId: string;
+  clientSecret?: string;
+  isCustom: boolean;
+}
+
+export interface BinaryPaths {
+  agyDaemonPath: string;
+  ideExecutablePath: string;
+  autoDetected: boolean;
+}
+
+export interface NetworkSettings {
+  relayPort: number;
+  relayHost: string;
+  cloudflareNamedToken?: string;
+  tunnelToken?: string;
+}
+
+export interface NotificationPreferences {
+  enabled: boolean;
+  notifyOnAutoSwitch: boolean;
+  notifyOnRateLimit: boolean;
+  notifyOnProcessCrash: boolean;
+  debounceMs: number;
+}
+
+export type SupportedLocale = "en" | "id";
+
+export interface AppSettings {
+  version: 1;
+  theme: "dark" | "light" | "system";
+  locale: SupportedLocale;
+  launchOnStartup: boolean;
+  minimizeToTrayOnClose: boolean;
+  oauth: OAuthSettings;
+  binaryPaths: BinaryPaths;
+  network: NetworkSettings;
+  notifications: NotificationPreferences;
+  updatedAt: number;
+}
+
+// System Tray Dynamic State
+export interface SystemTrayState {
+  isVisible: boolean;
+  activeAccountEmail: string | null;
+  serviceRunningCount: number;
+  totalServiceCount: number;
+  isBuffering: boolean;
+  lastUpdated: number;
+}
+
+// Native Desktop Notifications
+export type NotificationType =
+  | "account_switched"
+  | "rate_limit_cooldown"
+  | "service_crash"
+  | "general_alert";
+
+export interface NotificationPayload {
+  type: NotificationType;
+  title: string;
+  body: string;
+  silent?: boolean;
+  urgency?: "normal" | "critical" | "low";
+  timestamp?: number;
+}
+
+export interface EncryptedFieldEnvelope {
+  cipher: "aes-256-gcm";
+  iv: string;
+  authTag: string;
+  ciphertext: string;
+  salt: string;
 }

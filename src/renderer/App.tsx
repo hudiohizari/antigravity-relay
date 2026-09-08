@@ -8,10 +8,16 @@ import { useSnapshots } from "./hooks/useSnapshots";
 import { useRateLimits } from "./hooks/useRateLimits";
 import { AccountList } from "./pages/AccountList";
 import { RemoteControl } from "./pages/RemoteControl";
-import { AutoSwitchSettings } from "./components/AutoSwitchSettings";
+import { Settings } from "./pages/Settings";
 import { SnapshotModal } from "./components/SnapshotModal";
 import { StatusBar } from "./components/StatusBar";
-import { Globe, Radio, Settings, Users, Camera } from "lucide-react";
+import {
+  Globe,
+  Radio,
+  Settings as SettingsIcon,
+  Users,
+  Camera,
+} from "lucide-react";
 
 export const App: React.FC = () => {
   const { t, locale, setLocale } = useTranslation();
@@ -52,17 +58,8 @@ export const App: React.FC = () => {
     [fetchAccounts, t],
   );
 
-  const {
-    config: switcherConfig,
-    isSavingConfig,
-    isSwitching,
-    switchingAccountId,
-    lastSwitchResult,
-    poolExhaustedReason,
-    fetchConfig,
-    updateConfig,
-    manualSwitch,
-  } = useSwitcher(handleSwitchComplete);
+  const { isSwitching, switchingAccountId, fetchConfig, manualSwitch } =
+    useSwitcher(handleSwitchComplete);
 
   const handleQuotaUpdated = useCallback(() => {
     fetchAccounts();
@@ -219,7 +216,7 @@ export const App: React.FC = () => {
               : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           }`}
         >
-          <Settings className="w-4 h-4" aria-hidden="true" />
+          <SettingsIcon className="w-4 h-4" aria-hidden="true" />
           <span>{t("nav.settings")}</span>
         </button>
       </nav>
@@ -255,27 +252,7 @@ export const App: React.FC = () => {
 
         {activeTab === "remote" && <RemoteControl />}
 
-        {activeTab === "settings" && (
-          <div className="flex-1 p-4 sm:p-6 overflow-y-auto">
-            {switcherConfig ? (
-              <AutoSwitchSettings
-                config={switcherConfig}
-                accounts={accounts}
-                isSaving={isSavingConfig}
-                isSwitching={isSwitching}
-                switchingAccountId={switchingAccountId}
-                lastSwitchResult={lastSwitchResult}
-                poolExhaustedReason={poolExhaustedReason}
-                onSaveConfig={updateConfig}
-                onManualSwitch={handleManualSwitch}
-              />
-            ) : (
-              <div className="p-8 text-center text-xs text-[var(--text-muted)]">
-                {t("common.status.loading")}
-              </div>
-            )}
-          </div>
-        )}
+        {activeTab === "settings" && <Settings />}
       </main>
 
       {/* Dual Service Sticky Status Bar */}

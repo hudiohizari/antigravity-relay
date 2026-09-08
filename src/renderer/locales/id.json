@@ -263,5 +263,109 @@
     "emptyDescription": "Pindai kode QR penyandingan di atas dengan ponsel cerdas Anda untuk menghubungkan sesi jarak jauh pertama.",
     "revokedToast": "Sesi untuk {device} berhasil dicabut",
     "revokeFailed": "Gagal mencabut sesi: {error}"
+  },
+  "settings": {
+    "title": "Pengaturan Aplikasi",
+    "subtitle": "Kelola konfigurasi persisten, kredensial OAuth, penemuan proses, dan preferensi desktop",
+    "general": {
+      "title": "Preferensi Umum",
+      "description": "Perilaku jendela aplikasi, tampilan visual, dan lokalisasi",
+      "themeLabel": "Tema",
+      "themeDark": "Gelap",
+      "themeLight": "Terang",
+      "themeSystem": "Sinkronisasi Sistem",
+      "languageLabel": "Bahasa Antarmuka",
+      "languageEn": "English (US)",
+      "languageId": "Bahasa Indonesia",
+      "closeToTrayLabel": "Minimalkan ke Baki Sistem Saat Ditutup",
+      "closeToTrayDescription": "Biarkan server relay dan rotasi otomatis tetap aktif di latar belakang saat jendela ditutup",
+      "launchAtLoginLabel": "Jalankan Saat Sistem Menyala",
+      "launchAtLoginDescription": "Secara otomatis memulai Antigravity Relay saat masuk ke sesi desktop"
+    },
+    "oauth": {
+      "title": "Kredensial OAuth Google",
+      "description": "Konfigurasi kredensial klien loopback OAuth 2.0 untuk proyek Google Cloud kustom",
+      "clientIdLabel": "ID Klien",
+      "clientIdPlaceholder": "Masukkan ID Klien OAuth Google (.apps.googleusercontent.com)",
+      "clientSecretLabel": "Rahasia Klien",
+      "clientSecretPlaceholder": "Masukkan Rahasia Klien OAuth Google",
+      "showSecret": "Tampilkan rahasia klien",
+      "hideSecret": "Sembunyikan rahasia klien",
+      "encryptedBadge": "Terenkripsi pada disk dengan AES-256-GCM"
+    },
+    "binaryPaths": {
+      "title": "Jalur Biner & Penemuan Proses",
+      "description": "Konfigurasikan jalur berkas eksekusi untuk daemon server bahasa lokal dan antarmuka editor",
+      "daemonPathLabel": "Biner Daemon Antigravity (agy)",
+      "daemonPathPlaceholder": "/usr/local/bin/agy atau jalur biner kustom",
+      "idePathLabel": "Eksekusi IDE Antigravity",
+      "idePathPlaceholder": "/Applications/Antigravity.app atau jalur IDE kustom",
+      "browse": "Telusuri...",
+      "autoDetect": "Deteksi Otomatis",
+      "detecting": "Mendeteksi...",
+      "detectedSuccess": "Terdeteksi di {path}",
+      "detectedNotFound": "Biner tidak ditemukan pada jalur pencarian default",
+      "statusValid": "Jalur eksekusi terverifikasi",
+      "statusInvalid": "Berkas tidak ditemukan atau tidak dapat dieksekusi"
+    },
+    "network": {
+      "title": "Jaringan & Penambatan Jarak Jauh",
+      "description": "Port proksi Fastify lokal dan token terowongan Cloudflare bernama opsional",
+      "relayPortLabel": "Port Server Relay Lokal",
+      "relayPortPlaceholder": "4040",
+      "relayPortHelp": "Port default adalah 4040. Memerlukan mulai ulang layanan jika diubah.",
+      "tunnelTokenLabel": "Token Terowongan Bernama Cloudflare (Opsional)",
+      "tunnelTokenPlaceholder": "eyJh...",
+      "tunnelTokenHelp": "Kosongkan untuk menggunakan terowongan cepat trycloudflare.com sementara.",
+      "showToken": "Tampilkan token terowongan",
+      "hideToken": "Sembunyikan token terowongan"
+    },
+    "notifications": {
+      "title": "Pemberitahuan Desktop",
+      "description": "Konfigurasikan peringatan sistem operasi native untuk peristiwa latar belakang otonom",
+      "masterLabel": "Aktifkan Pemberitahuan Desktop",
+      "masterDescription": "Izinkan Antigravity Relay mengirim pemberitahuan desktop OS native",
+      "autoSwitchLabel": "Peristiwa Rotasi Akun Otomatis",
+      "autoSwitchDescription": "Beri tahu saat rotasi kredensial berhasil atau gagal",
+      "rateLimitsLabel": "Peringatan Waktu Tunggu Batas Kecepatan",
+      "rateLimitsDescription": "Beri tahu saat akun mengalami kehabisan kuota HTTP 429",
+      "serviceErrorsLabel": "Kerusakan Layanan & Peringatan Proses",
+      "serviceErrorsDescription": "Beri tahu saat daemon agy atau proses IDE keluar tiba-tiba"
+    },
+    "actions": {
+      "save": "Simpan Pengaturan",
+      "saving": "Menyimpan pengaturan...",
+      "saved": "Pengaturan berhasil disimpan",
+      "reset": "Kembalikan ke Default",
+      "resetConfirmTitle": "Kembalikan Semua Pengaturan ke Default?",
+      "resetConfirmMessage": "Ini akan memulihkan port standar, penemuan biner default, dan menghapus kredensial OAuth kustom. Lanjutkan?",
+      "resetConfirmButton": "Kembalikan ke Default",
+      "discard": "Buang Perubahan",
+      "unsavedChanges": "Ada perubahan yang belum disimpan",
+      "saveSuccess": "Pengaturan disimpan dan diterapkan ke layanan aktif",
+      "saveError": "Gagal menyimpan pengaturan: {error}"
+    }
+  },
+  "tray": {
+    "appName": "Antigravity Relay",
+    "servicesRunning": "Layanan: {count} dari {total} berjalan",
+    "activeAccount": "Aktif: {email}",
+    "noActiveAccount": "Tidak Ada Akun Aktif",
+    "switchAccount": "Ganti Akun Aktif",
+    "openDashboard": "Tampilkan Dasbor",
+    "restartServices": "Mulai Ulang Layanan",
+    "restartingServices": "Memulai ulang layanan...",
+    "quitApp": "Keluar dari Antigravity Relay",
+    "tooltip": "Antigravity Relay - {count}/2 Layanan Aktif"
+  },
+  "notifications": {
+    "autoSwitchTitle": "Antigravity Relay - Akun Dirotasi",
+    "autoSwitchBody": "Beralih dari {previous} ke {next}",
+    "autoSwitchFailedTitle": "Antigravity Relay - Rotasi Gagal",
+    "autoSwitchFailedBody": "Semua akun habis atau tidak tersedia: {reason}",
+    "rateLimitTitle": "Antigravity Relay - Batas Kecepatan Terdeteksi",
+    "rateLimitBody": "{email} menerima HTTP 429. Ditempatkan dalam masa tenang selama {minutes}m",
+    "serviceCrashTitle": "Antigravity Relay - Kerusakan Layanan",
+    "serviceCrashBody": "{service} keluar secara tidak terduga (PID {pid}, kode keluar {code})"
   }
 }

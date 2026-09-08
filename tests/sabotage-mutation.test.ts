@@ -43,6 +43,122 @@ import {
   SpawnFunction,
 } from "../src/main/tunnel/tunnel-manager";
 import { EventEmitter } from "node:events";
+import { SettingsStore } from "../src/main/settings/settings-store";
+import { AppSettings, DEFAULT_APP_SETTINGS } from "../src/main/settings/types";
+import { TrayManager } from "../src/main/tray/tray";
+import { NativeNotifier } from "../src/main/notifications/notifier";
+
+const {
+  MockTray,
+  MockMenu,
+  MockNotification,
+  mockTrayInstances,
+  mockNotificationInstances,
+  setAppQuitCalled,
+} = vi.hoisted(() => {
+  const mockTrayInstances: any[] = [];
+  const mockNotificationInstances: any[] = [];
+  let appQuitCalled = false;
+
+  class MockTray {
+    public toolTip = "";
+    public contextMenu: any = null;
+    public clickListener: Function | null = null;
+    public isDestroyedFlag = false;
+
+    constructor(public image: any) {
+      mockTrayInstances.push(this);
+    }
+
+    setToolTip(tip: string) {
+      this.toolTip = tip;
+    }
+
+    setContextMenu(menu: any) {
+      this.contextMenu = menu;
+    }
+
+    on(event: string, cb: Function) {
+      if (event === "click") {
+        this.clickListener = cb;
+      }
+      return this;
+    }
+
+    destroy() {
+      this.isDestroyedFlag = true;
+    }
+
+    isDestroyed() {
+      return this.isDestroyedFlag;
+    }
+  }
+
+  class MockMenu {
+    public items: any[];
+    constructor(items: any[]) {
+      this.items = items;
+    }
+
+    static buildFromTemplate(template: any[]) {
+      return new MockMenu(template);
+    }
+  }
+
+  class MockNotification {
+    public options: any;
+    public listeners = new Map<string, Function>();
+    public show = vi.fn();
+    public on = vi.fn((event: string, cb: Function) => {
+      this.listeners.set(event, cb);
+      return this;
+    });
+
+    constructor(options: any) {
+      this.options = options;
+      mockNotificationInstances.push(this);
+    }
+
+    static isSupported = vi.fn(() => true);
+  }
+
+  return {
+    MockTray,
+    MockMenu,
+    MockNotification,
+    mockTrayInstances,
+    mockNotificationInstances,
+    getAppQuitCalled: () => appQuitCalled,
+    setAppQuitCalled: (v: boolean) => {
+      appQuitCalled = v;
+    },
+  };
+});
+
+vi.mock("electron", () => {
+  return {
+    app: {
+      quit: vi.fn(() => {
+        setAppQuitCalled(true);
+      }),
+      getPath: vi.fn((name: string) => `/mock/path/${name}`),
+    },
+    Tray: MockTray,
+    Menu: MockMenu,
+    Notification: MockNotification,
+    nativeImage: {
+      createFromPath: vi.fn((p: string) => ({
+        path: p,
+        setTemplateImage: vi.fn(),
+      })),
+      createFromDataURL: vi.fn((data: string) => ({
+        data,
+        setTemplateImage: vi.fn(),
+      })),
+    },
+    BrowserWindow: vi.fn(),
+  };
+});
 
 describe("Shift-Left Sabotage & Mutation Vectors", () => {
   describe("Cryptographic Envelope Tampering and Mutation Vectors", () => {
@@ -1556,6 +1672,764 @@ describe("Shift-Left Sabotage & Mutation Vectors", () => {
         expect(tunnel.extractUrl("https://evil-trycloudflare.com")).toBeNull();
         expect(tunnel.extractUrl("https://notcloudflare.org")).toBeNull();
         expect(tunnel.extractUrl("no url here")).toBeNull();
+      });
+    });
+  });
+
+  describe("Dashboard UI & Desktop Integration Sabotage & Mutation Vectors", () => {
+    describe("Settings Persistence & Secrets Encryption Sabotage Vectors", () => {
+      let tempDir: string;
+      let storePath: string;
+
+      beforeEach(async () => {
+        tempDir = await fs.promises.mkdtemp(
+          path.join(os.tmpdir(), "sabotage-settings-"),
+        );
+        storePath = path.join(tempDir, "settings.json");
+      });
+
+      afterEach(async () => {
+        try {
+          await fs.promises.rm(tempDir, { recursive: true, force: true });
+        } catch {
+          // Suppress
+        }
+      });
+
+      it("should reject single-bit flipped ciphertext in settings and quarantine corrupted file", async () => {
+        const store = new SettingsStore({
+          storePath,
+          machineId: "hardened-desktop-machine-id",
+        });
+
+        const initialSettings: AppSettings = {
+          ...DEFAULT_APP_SETTINGS,
+          oauth: {
+            clientId: "client-id-123.apps.googleusercontent.com",
+            clientSecret: "very-confidential-client-secret-value",
+            isCustom: true,
+          },
+          updatedAt: Date.now(),
+        };
+        await store.save(initialSettings);
+
+        const rawContent = await fs.promises.readFile(storePath, "utf8");
+        const parsed = JSON.parse(rawContent);
+        expect(parsed.oauth.clientSecret.ciphertext).toBeDefined();
+
+        // Mutate ciphertext: flip a byte
+        const cipherBuf = Buffer.from(
+          parsed.oauth.clientSecret.ciphertext,
+          "hex",
+        );
+        cipherBuf[0] ^= 0xff;
+        parsed.oauth.clientSecret.ciphertext = cipherBuf.toString("hex");
+        await fs.promises.writeFile(storePath, JSON.stringify(parsed, null, 2));
+
+        const readerStore = new SettingsStore({
+          storePath,
+          machineId: "hardened-desktop-machine-id",
+        });
+
+        await expect(readerStore.get()).rejects.toThrow(StoreTamperException);
+
+        // Verify corrupted file quarantined
+        const files = await fs.promises.readdir(tempDir);
+        const backup = files.find((f) => f.includes(".corrupted."));
+        expect(backup).toBeDefined();
+      });
+
+      it("should reject modified authentication tag on encrypted secret without crashing", async () => {
+        const store = new SettingsStore({
+          storePath,
+          machineId: "hardened-desktop-machine-id",
+        });
+
+        await store.save({
+          ...DEFAULT_APP_SETTINGS,
+          oauth: {
+            clientId: "test-id",
+            clientSecret: "secret-token",
+            isCustom: true,
+          },
+        });
+
+        const raw = JSON.parse(await fs.promises.readFile(storePath, "utf8"));
+        const tagBuf = Buffer.from(raw.oauth.clientSecret.authTag, "hex");
+        tagBuf[tagBuf.length - 1] ^= 0x55;
+        raw.oauth.clientSecret.authTag = tagBuf.toString("hex");
+        await fs.promises.writeFile(storePath, JSON.stringify(raw, null, 2));
+
+        const readerStore = new SettingsStore({
+          storePath,
+          machineId: "hardened-desktop-machine-id",
+        });
+
+        await expect(readerStore.get()).rejects.toThrow(StoreTamperException);
+      });
+
+      it("should reject corrupted IV in settings envelope", async () => {
+        const store = new SettingsStore({
+          storePath,
+          machineId: "hardened-desktop-machine-id",
+        });
+
+        await store.save({
+          ...DEFAULT_APP_SETTINGS,
+          oauth: {
+            clientId: "test-id",
+            clientSecret: "secret-token",
+            isCustom: true,
+          },
+        });
+
+        const raw = JSON.parse(await fs.promises.readFile(storePath, "utf8"));
+        raw.oauth.clientSecret.iv = Buffer.alloc(12, 0).toString("hex");
+        await fs.promises.writeFile(storePath, JSON.stringify(raw, null, 2));
+
+        const readerStore = new SettingsStore({
+          storePath,
+          machineId: "hardened-desktop-machine-id",
+        });
+
+        await expect(readerStore.get()).rejects.toThrow(StoreTamperException);
+      });
+
+      it("should reject secret decryption when machineId diverges (cross-machine tampering)", async () => {
+        const store1 = new SettingsStore({
+          storePath,
+          machineId: "original-hardware-id-aaa",
+        });
+
+        await store1.save({
+          ...DEFAULT_APP_SETTINGS,
+          oauth: {
+            clientId: "test-id",
+            clientSecret: "machine-bound-secret",
+            isCustom: true,
+          },
+        });
+
+        const store2 = new SettingsStore({
+          storePath,
+          machineId: "alien-hardware-id-bbb",
+        });
+
+        await expect(store2.get()).rejects.toThrow(StoreTamperException);
+      });
+
+      it("should reject corrupted non-JSON content in settings file and create backup", async () => {
+        await fs.promises.writeFile(
+          storePath,
+          "GARBAGE_NON_JSON_CORRUPTED_BITS",
+        );
+
+        const store = new SettingsStore({ storePath });
+        await expect(store.get()).rejects.toThrow(StoreTamperException);
+
+        const files = await fs.promises.readdir(tempDir);
+        const backup = files.find((f) => f.includes(".corrupted."));
+        expect(backup).toBeDefined();
+      });
+
+      it("should reject invalid schema mutation (out of bounds relayPort) and leave disk intact", async () => {
+        const store = new SettingsStore({ storePath });
+        const initial = await store.get();
+        expect(initial.network.relayPort).toBe(4040);
+
+        // Mutate invalid port (e.g. 999999 > 65535 or negative)
+        await expect(
+          store.update({
+            network: {
+              ...initial.network,
+              relayPort: 999999,
+            },
+          }),
+        ).rejects.toThrow();
+
+        const afterFailedUpdate = await store.get();
+        expect(afterFailedUpdate.network.relayPort).toBe(4040);
+      });
+
+      it("should serialize concurrent updates via write mutex to prevent corrupting disk", async () => {
+        const store = new SettingsStore({ storePath });
+        await store.get();
+
+        const writes = Array.from({ length: 10 }, (_, i) =>
+          store.update({
+            network: {
+              relayPort: 4040 + i,
+              relayHost: "127.0.0.1",
+            },
+          }),
+        );
+
+        const results = await Promise.all(writes);
+        expect(results.length).toBe(10);
+
+        const finalSettings = await store.get();
+        expect(finalSettings.network.relayPort).toBeGreaterThanOrEqual(4040);
+        expect(finalSettings.network.relayPort).toBeLessThanOrEqual(4049);
+
+        // Verify file on disk is valid JSON
+        const diskContent = await fs.promises.readFile(storePath, "utf8");
+        expect(() => JSON.parse(diskContent)).not.toThrow();
+      });
+    });
+
+    describe("System Tray Dynamic State Synchronization Sabotage Vectors", () => {
+      let mockAccountStore: any;
+      let mockProcessController: any;
+      let mockQuotaMonitor: any;
+      let mockSwitchFlow: any;
+      let mockRelayServer: any;
+      let mockSettingsStore: any;
+      let processCallbacks: Function[] = [];
+      let switchCallbacks: Function[] = [];
+      let quotaCallbacks: Function[] = [];
+
+      beforeEach(() => {
+        mockTrayInstances.length = 0;
+        processCallbacks = [];
+        switchCallbacks = [];
+        quotaCallbacks = [];
+
+        mockAccountStore = {
+          getActive: vi.fn().mockResolvedValue({
+            id: "acc-1",
+            email: "engineer@company.com",
+            status: "active",
+          }),
+          getAll: vi.fn().mockResolvedValue([
+            { id: "acc-1", email: "engineer@company.com", status: "active" },
+            { id: "acc-2", email: "personal@gmail.com", status: "standby" },
+          ]),
+          setActive: vi.fn().mockResolvedValue(true),
+        };
+
+        mockProcessController = {
+          getStatus: vi.fn().mockResolvedValue({
+            runningCount: 2,
+            totalCount: 2,
+            services: {
+              antigravity_daemon: { state: "running", pid: 1234 },
+              antigravity_ide: { state: "running", pid: 5678 },
+            },
+          }),
+          onStatusUpdated: vi.fn((cb: Function) => {
+            processCallbacks.push(cb);
+            return () => {
+              processCallbacks = processCallbacks.filter((c) => c !== cb);
+            };
+          }),
+        };
+
+        mockQuotaMonitor = {
+          pollAll: vi.fn().mockResolvedValue({}),
+          onQuotaUpdated: vi.fn((cb: Function) => {
+            quotaCallbacks.push(cb);
+            return () => {
+              quotaCallbacks = quotaCallbacks.filter((c) => c !== cb);
+            };
+          }),
+        };
+
+        mockSwitchFlow = {
+          executeSwitch: vi.fn().mockResolvedValue({ success: true }),
+          onSwitchEvent: vi.fn((cb: Function) => {
+            switchCallbacks.push(cb);
+            return () => {
+              switchCallbacks = switchCallbacks.filter((c) => c !== cb);
+            };
+          }),
+        };
+
+        mockRelayServer = {
+          onStatusUpdated: vi.fn(() => () => {}),
+        };
+
+        mockSettingsStore = {
+          get: vi.fn().mockResolvedValue({ minimizeToTrayOnClose: true }),
+          onSettingsUpdated: vi.fn(() => () => {}),
+        };
+      });
+
+      it("should dynamically rebuild context menu when service count transitions (2/2 -> 1/2 -> 0/2)", async () => {
+        const trayManager = new TrayManager({
+          accountStore: mockAccountStore,
+          processController: mockProcessController,
+          quotaMonitor: mockQuotaMonitor,
+          switchFlow: mockSwitchFlow,
+          relayServer: mockRelayServer,
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => null,
+        });
+
+        await trayManager.init();
+        const tray = mockTrayInstances[0];
+        expect(tray).toBeDefined();
+
+        // Initial 2/2 services
+        let menuItems = tray.contextMenu.items;
+        const serviceItem = menuItems.find(
+          (item: any) => item.label && item.label.includes("Services:"),
+        );
+        expect(serviceItem.label).toContain("2/2 running");
+
+        // Mutate service count to 1/2 running
+        mockProcessController.getStatus.mockResolvedValueOnce({
+          runningCount: 1,
+          totalCount: 2,
+          services: {
+            antigravity_daemon: { state: "running", pid: 1234 },
+            antigravity_ide: { state: "stopped" },
+          },
+        });
+
+        // Trigger listener
+        for (const cb of processCallbacks) {
+          cb();
+        }
+        await new Promise((r) => setTimeout(r, 20));
+
+        menuItems = tray.contextMenu.items;
+        const updatedItem = menuItems.find(
+          (item: any) => item.label && item.label.includes("Services:"),
+        );
+        expect(updatedItem.label).toContain("1/2 running");
+      });
+
+      it("should dynamically update active account email display when rotation occurs", async () => {
+        const trayManager = new TrayManager({
+          accountStore: mockAccountStore,
+          processController: mockProcessController,
+          quotaMonitor: mockQuotaMonitor,
+          switchFlow: mockSwitchFlow,
+          relayServer: mockRelayServer,
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => null,
+        });
+
+        await trayManager.init();
+        const tray = mockTrayInstances[0];
+
+        let menuItems = tray.contextMenu.items;
+        let activeItem = menuItems.find(
+          (item: any) => item.label && item.label.includes("Active:"),
+        );
+        expect(activeItem.label).toContain("engineer@company.com");
+
+        // Mutate active account
+        mockAccountStore.getActive.mockResolvedValueOnce({
+          id: "acc-2",
+          email: "personal@gmail.com",
+          status: "active",
+        });
+
+        for (const cb of switchCallbacks) {
+          cb();
+        }
+        await new Promise((r) => setTimeout(r, 20));
+
+        menuItems = tray.contextMenu.items;
+        activeItem = menuItems.find(
+          (item: any) => item.label && item.label.includes("Active:"),
+        );
+        expect(activeItem.label).toContain("personal@gmail.com");
+      });
+
+      it("should route quick-switch submenu click directly to SwitchFlow without opening main window", async () => {
+        const showWindowSpy = vi.fn();
+        const trayManager = new TrayManager({
+          accountStore: mockAccountStore,
+          processController: mockProcessController,
+          quotaMonitor: mockQuotaMonitor,
+          switchFlow: mockSwitchFlow,
+          relayServer: mockRelayServer,
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => null,
+        });
+        trayManager.showWindow = showWindowSpy;
+
+        await trayManager.init();
+        const tray = mockTrayInstances[0];
+
+        const switchSubmenu = tray.contextMenu.items.find(
+          (item: any) => item.label === "Switch Active Account",
+        );
+        expect(switchSubmenu).toBeDefined();
+        expect(switchSubmenu.submenu).toBeDefined();
+
+        // Find the standby account in submenu
+        const standbyAccountItem = switchSubmenu.submenu.find(
+          (item: any) => item.label === "personal@gmail.com",
+        );
+        expect(standbyAccountItem).toBeDefined();
+
+        // Simulate user clicking standby account in tray submenu
+        await standbyAccountItem.click();
+
+        // Verify SwitchFlow was invoked with the right account ID and manual_request
+        expect(mockSwitchFlow.executeSwitch).toHaveBeenCalledWith(
+          "acc-2",
+          "manual_request",
+        );
+        // Verify showWindow was NOT called (operation remains in background)
+        expect(showWindowSpy).not.toHaveBeenCalled();
+      });
+
+      it("should safely unsubscribe all event listeners on destroy", async () => {
+        const trayManager = new TrayManager({
+          accountStore: mockAccountStore,
+          processController: mockProcessController,
+          quotaMonitor: mockQuotaMonitor,
+          switchFlow: mockSwitchFlow,
+          relayServer: mockRelayServer,
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => null,
+        });
+
+        await trayManager.init();
+        expect(processCallbacks.length).toBeGreaterThan(0);
+        expect(switchCallbacks.length).toBeGreaterThan(0);
+
+        trayManager.destroy();
+        expect(processCallbacks.length).toBe(0);
+        expect(switchCallbacks.length).toBe(0);
+        expect(mockTrayInstances[0].isDestroyed()).toBe(true);
+      });
+    });
+
+    describe("Window Close-to-Tray Lifecycle Interception Sabotage Vectors", () => {
+      let mockAccountStore: any;
+      let mockProcessController: any;
+      let mockSettingsStore: any;
+
+      beforeEach(() => {
+        mockTrayInstances.length = 0;
+        setAppQuitCalled(false);
+
+        mockAccountStore = {
+          getActive: vi.fn().mockResolvedValue(null),
+          getAll: vi.fn().mockResolvedValue([]),
+        };
+
+        mockProcessController = {
+          getStatus: vi
+            .fn()
+            .mockResolvedValue({ runningCount: 0, totalCount: 2 }),
+          onStatusUpdated: vi.fn(() => () => {}),
+        };
+
+        mockSettingsStore = {
+          get: vi.fn().mockResolvedValue({ minimizeToTrayOnClose: true }),
+          onSettingsUpdated: vi.fn(() => () => {}),
+        };
+      });
+
+      it("should intercept window close with preventDefault() and hide window when closeToTray is true", async () => {
+        const trayManager = new TrayManager({
+          accountStore: mockAccountStore,
+          processController: mockProcessController,
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => null,
+        });
+        await trayManager.init();
+
+        let closeHandler: Function | null = null;
+        let windowHidden = false;
+
+        const mockWindow: any = {
+          on: vi.fn((event: string, cb: Function) => {
+            if (event === "close") {
+              closeHandler = cb;
+            }
+          }),
+          hide: vi.fn(() => {
+            windowHidden = true;
+          }),
+        };
+
+        trayManager.setupCloseInterception(mockWindow);
+        expect(closeHandler).toBeDefined();
+
+        let preventDefaultCalled = false;
+        const mockEvent = {
+          preventDefault: () => {
+            preventDefaultCalled = true;
+          },
+        };
+
+        // Trigger close while isQuitting is false
+        closeHandler!(mockEvent);
+
+        expect(preventDefaultCalled).toBe(true);
+        expect(windowHidden).toBe(true);
+      });
+
+      it("should allow window close when isQuitting flag is true (bypass interception)", async () => {
+        const trayManager = new TrayManager({
+          accountStore: mockAccountStore,
+          processController: mockProcessController,
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => null,
+          isQuitting: () => true,
+        });
+        await trayManager.init();
+
+        let closeHandler: Function | null = null;
+        let windowHidden = false;
+
+        const mockWindow: any = {
+          on: vi.fn((event: string, cb: Function) => {
+            if (event === "close") {
+              closeHandler = cb;
+            }
+          }),
+          hide: vi.fn(() => {
+            windowHidden = true;
+          }),
+        };
+
+        trayManager.setupCloseInterception(mockWindow);
+
+        let preventDefaultCalled = false;
+        const mockEvent = {
+          preventDefault: () => {
+            preventDefaultCalled = true;
+          },
+        };
+
+        // Trigger close while isQuitting is true
+        closeHandler!(mockEvent);
+
+        expect(preventDefaultCalled).toBe(false);
+        expect(windowHidden).toBe(false);
+      });
+
+      it("should allow window close when minimizeToTrayOnClose preference is disabled", async () => {
+        const trayManager = new TrayManager({
+          accountStore: mockAccountStore,
+          processController: mockProcessController,
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => null,
+        });
+        await trayManager.init();
+        trayManager.setCloseToTrayEnabled(false);
+
+        let closeHandler: Function | null = null;
+        const mockWindow: any = {
+          on: vi.fn((event: string, cb: Function) => {
+            if (event === "close") {
+              closeHandler = cb;
+            }
+          }),
+          hide: vi.fn(),
+        };
+
+        trayManager.setupCloseInterception(mockWindow);
+
+        let preventDefaultCalled = false;
+        const mockEvent = {
+          preventDefault: () => {
+            preventDefaultCalled = true;
+          },
+        };
+
+        closeHandler!(mockEvent);
+
+        expect(preventDefaultCalled).toBe(false);
+        expect(mockWindow.hide).not.toHaveBeenCalled();
+      });
+
+      it("should restore, un-minimize, show, and focus window on showWindow call", () => {
+        const mockWindow: any = {
+          isDestroyed: vi.fn().mockReturnValue(false),
+          isMinimized: vi.fn().mockReturnValue(true),
+          restore: vi.fn(),
+          show: vi.fn(),
+          focus: vi.fn(),
+        };
+
+        const trayManager = new TrayManager({
+          accountStore: mockAccountStore,
+          processController: mockProcessController,
+          getMainWindow: () => mockWindow,
+        });
+
+        trayManager.showWindow();
+
+        expect(mockWindow.restore).toHaveBeenCalled();
+        expect(mockWindow.show).toHaveBeenCalled();
+        expect(mockWindow.focus).toHaveBeenCalled();
+      });
+    });
+
+    describe("Native Desktop Notification Debounce & Preference Gating Sabotage Vectors", () => {
+      let mockSettingsStore: any;
+      let mockWindow: any;
+
+      beforeEach(() => {
+        mockNotificationInstances.length = 0;
+        mockWindow = {
+          isDestroyed: vi.fn().mockReturnValue(false),
+          isMinimized: vi.fn().mockReturnValue(true),
+          restore: vi.fn(),
+          show: vi.fn(),
+          focus: vi.fn(),
+        };
+
+        mockSettingsStore = {
+          get: vi.fn().mockResolvedValue({
+            notifications: {
+              enabled: true,
+              notifyOnAutoSwitch: true,
+              notifyOnRateLimit: true,
+              notifyOnProcessCrash: true,
+              debounceMs: 5000,
+            },
+          }),
+          onSettingsUpdated: vi.fn(() => () => {}),
+        };
+      });
+
+      it("should kill sliding debounce window mutant by dropping rapid dispatches of same category", async () => {
+        const notifier = new NativeNotifier({
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => mockWindow,
+        });
+        await notifier.getPreferences();
+
+        // First dispatch succeeds
+        const res1 = await notifier.send({
+          type: "account_switched",
+          title: "Switch 1",
+          body: "Body 1",
+        });
+        expect(res1).toBe(true);
+        expect(mockNotificationInstances.length).toBe(1);
+
+        // Immediate second dispatch of SAME category within debounce window -> MUST drop
+        const res2 = await notifier.send({
+          type: "account_switched",
+          title: "Switch 2",
+          body: "Body 2",
+        });
+        expect(res2).toBe(false);
+        expect(mockNotificationInstances.length).toBe(1);
+      });
+
+      it("should kill cross-category suppression mutant by allowing different categories during debounce", async () => {
+        const notifier = new NativeNotifier({
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => mockWindow,
+        });
+        await notifier.getPreferences();
+
+        // Dispatch category A: service_crash
+        const resA = await notifier.send({
+          type: "service_crash",
+          title: "Crash Alert",
+          body: "Daemon crashed",
+        });
+        expect(resA).toBe(true);
+
+        // Immediately dispatch category B: rate_limit_cooldown -> MUST NOT be blocked by category A
+        const resB = await notifier.send({
+          type: "rate_limit_cooldown",
+          title: "Rate Limit Alert",
+          body: "429 cooldown",
+        });
+        expect(resB).toBe(true);
+        expect(mockNotificationInstances.length).toBe(2);
+      });
+
+      it("should kill master disable mutant by dropping all notifications when enabled is false", async () => {
+        mockSettingsStore.get.mockResolvedValue({
+          notifications: {
+            enabled: false,
+            notifyOnAutoSwitch: true,
+            notifyOnRateLimit: true,
+            notifyOnProcessCrash: true,
+            debounceMs: 5000,
+          },
+        });
+
+        const notifier = new NativeNotifier({
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => mockWindow,
+        });
+        await notifier.getPreferences();
+
+        const res = await notifier.send({
+          type: "service_crash",
+          title: "Crash",
+          body: "Crashed",
+        });
+        expect(res).toBe(false);
+        expect(mockNotificationInstances.length).toBe(0);
+      });
+
+      it("should kill granular preference mutant by suppressing only the opted-out category", async () => {
+        mockSettingsStore.get.mockResolvedValue({
+          notifications: {
+            enabled: true,
+            notifyOnAutoSwitch: false, // Opted out
+            notifyOnRateLimit: true,
+            notifyOnProcessCrash: true,
+            debounceMs: 5000,
+          },
+        });
+
+        const notifier = new NativeNotifier({
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => mockWindow,
+        });
+        await notifier.getPreferences();
+
+        // auto_switch is opted out -> drops
+        const resSwitch = await notifier.send({
+          type: "account_switched",
+          title: "Switched",
+          body: "Switched",
+        });
+        expect(resSwitch).toBe(false);
+
+        // rate_limit is active -> succeeds
+        const resLimit = await notifier.send({
+          type: "rate_limit_cooldown",
+          title: "Limit",
+          body: "Limit",
+        });
+        expect(resLimit).toBe(true);
+      });
+
+      it("should focus and restore main window when notification banner is clicked", async () => {
+        const notifier = new NativeNotifier({
+          settingsStore: mockSettingsStore,
+          getMainWindow: () => mockWindow,
+        });
+        await notifier.getPreferences();
+
+        await notifier.send({
+          type: "general_alert",
+          title: "Clickable Alert",
+          body: "Click to focus",
+        });
+
+        const lastInstance =
+          mockNotificationInstances[mockNotificationInstances.length - 1];
+        expect(lastInstance).toBeDefined();
+
+        const clickCb = lastInstance.listeners.get("click");
+        expect(clickCb).toBeDefined();
+
+        // Simulate user click on notification banner
+        clickCb();
+
+        expect(mockWindow.restore).toHaveBeenCalled();
+        expect(mockWindow.show).toHaveBeenCalled();
+        expect(mockWindow.focus).toHaveBeenCalled();
       });
     });
   });

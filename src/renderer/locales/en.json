@@ -263,5 +263,109 @@
     "emptyDescription": "Scan the pairing QR code above with your smartphone to tether your first remote session.",
     "revokedToast": "Session for {device} has been revoked",
     "revokeFailed": "Failed to revoke session: {error}"
+  },
+  "settings": {
+    "title": "Application Settings",
+    "subtitle": "Manage persistent configurations, OAuth credentials, process discovery, and desktop preferences",
+    "general": {
+      "title": "General Preferences",
+      "description": "Application window behavior, appearance, and localization",
+      "themeLabel": "Theme",
+      "themeDark": "Dark",
+      "themeLight": "Light",
+      "themeSystem": "System Synchronized",
+      "languageLabel": "Interface Language",
+      "languageEn": "English (US)",
+      "languageId": "Bahasa Indonesia",
+      "closeToTrayLabel": "Minimize to System Tray on Close",
+      "closeToTrayDescription": "Keep relay server and auto-switching active in background when window is closed",
+      "launchAtLoginLabel": "Launch at System Startup",
+      "launchAtLoginDescription": "Automatically start Antigravity Relay when logging into desktop session"
+    },
+    "oauth": {
+      "title": "Google OAuth Credentials",
+      "description": "Configure OAuth 2.0 loopback client credentials for custom Google Cloud projects",
+      "clientIdLabel": "Client ID",
+      "clientIdPlaceholder": "Enter Google OAuth Client ID (.apps.googleusercontent.com)",
+      "clientSecretLabel": "Client Secret",
+      "clientSecretPlaceholder": "Enter Google OAuth Client Secret",
+      "showSecret": "Show client secret",
+      "hideSecret": "Hide client secret",
+      "encryptedBadge": "Encrypted on disk with AES-256-GCM"
+    },
+    "binaryPaths": {
+      "title": "Binary Paths & Process Discovery",
+      "description": "Configure executable paths for local language server daemon and editor interfaces",
+      "daemonPathLabel": "Antigravity Daemon Binary (agy)",
+      "daemonPathPlaceholder": "/usr/local/bin/agy or custom binary path",
+      "idePathLabel": "Antigravity IDE Executable",
+      "idePathPlaceholder": "/Applications/Antigravity.app or custom IDE path",
+      "browse": "Browse...",
+      "autoDetect": "Auto-Detect",
+      "detecting": "Detecting...",
+      "detectedSuccess": "Detected at {path}",
+      "detectedNotFound": "Binary not found in default search paths",
+      "statusValid": "Executable path verified",
+      "statusInvalid": "File not found or not executable"
+    },
+    "network": {
+      "title": "Network & Remote Tethering",
+      "description": "Local Fastify proxy port and optional Cloudflare named tunnel token",
+      "relayPortLabel": "Local Relay Server Port",
+      "relayPortPlaceholder": "4040",
+      "relayPortHelp": "Default port is 4040. Requires service restart when updated.",
+      "tunnelTokenLabel": "Cloudflare Named Tunnel Token (Optional)",
+      "tunnelTokenPlaceholder": "eyJh...",
+      "tunnelTokenHelp": "Leave empty to use ephemeral trycloudflare.com quick tunnels.",
+      "showToken": "Show tunnel token",
+      "hideToken": "Hide tunnel token"
+    },
+    "notifications": {
+      "title": "Desktop Notifications",
+      "description": "Configure native operating system alerts for autonomous background events",
+      "masterLabel": "Enable Desktop Notifications",
+      "masterDescription": "Allow Antigravity Relay to dispatch native OS desktop notifications",
+      "autoSwitchLabel": "Account Auto-Switch Events",
+      "autoSwitchDescription": "Notify when credential rotations succeed or fail",
+      "rateLimitsLabel": "Rate Limit Cooldown Alerts",
+      "rateLimitsDescription": "Notify when an account encounters HTTP 429 quota burnout",
+      "serviceErrorsLabel": "Service Crashes & Process Alerts",
+      "serviceErrorsDescription": "Notify when background agy daemon or IDE process exits unexpectedly"
+    },
+    "actions": {
+      "save": "Save Settings",
+      "saving": "Saving settings...",
+      "saved": "Settings saved successfully",
+      "reset": "Reset to Defaults",
+      "resetConfirmTitle": "Reset All Settings to Defaults?",
+      "resetConfirmMessage": "This will restore standard ports, default binary discovery, and clear custom OAuth credentials. Continue?",
+      "resetConfirmButton": "Reset to Defaults",
+      "discard": "Discard Changes",
+      "unsavedChanges": "You have unsaved changes",
+      "saveSuccess": "Settings saved and applied to active services",
+      "saveError": "Failed to save settings: {error}"
+    }
+  },
+  "tray": {
+    "appName": "Antigravity Relay",
+    "servicesRunning": "Services: {count} of {total} running",
+    "activeAccount": "Active: {email}",
+    "noActiveAccount": "No Active Account",
+    "switchAccount": "Switch Active Account",
+    "openDashboard": "Show Dashboard",
+    "restartServices": "Restart Services",
+    "restartingServices": "Restarting services...",
+    "quitApp": "Quit Antigravity Relay",
+    "tooltip": "Antigravity Relay - {count}/2 Services Active"
+  },
+  "notifications": {
+    "autoSwitchTitle": "Antigravity Relay - Account Rotated",
+    "autoSwitchBody": "Switched from {previous} to {next}",
+    "autoSwitchFailedTitle": "Antigravity Relay - Rotation Failed",
+    "autoSwitchFailedBody": "All accounts depleted or unavailable: {reason}",
+    "rateLimitTitle": "Antigravity Relay - Rate Limit Detected",
+    "rateLimitBody": "{email} received HTTP 429. Placed on cooldown for {minutes}m",
+    "serviceCrashTitle": "Antigravity Relay - Service Crash",
+    "serviceCrashBody": "{service} exited unexpectedly (PID {pid}, exit code {code})"
   }
 }

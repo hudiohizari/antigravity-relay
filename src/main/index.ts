@@ -11,6 +11,9 @@ import { AutoSwitchService } from "./switcher/auto-switch.service";
 import { SnapshotStore } from "./snapshots/snapshot-store";
 import { RelayServer } from "./relay/relay-server";
 import { TunnelManager } from "./tunnel/tunnel-manager";
+import { SettingsStore } from "./settings/settings-store";
+import { TrayManager } from "./tray/tray";
+import { NativeNotifier } from "./notifications/notifier";
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -20,6 +23,45 @@ let processController: ProcessController | null = null;
 let quotaMonitor: QuotaMonitor | null = null;
 let relayServer: RelayServer | null = null;
 let tunnelManager: TunnelManager | null = null;
+let settingsStore: SettingsStore | null = null;
+let trayManager: TrayManager | null = null;
+let notifier: NativeNotifier | null = null;
+let isQuitting = false;
+
+async function performGracefulShutdown(): Promise<void> {
+  isQuitting = true;
+  if (processController) {
+    processController.stopHeartbeat();
+    try {
+      await Promise.allSettled([
+        processController.stopService("antigravity_daemon"),
+        processController.stopService("antigravity_ide"),
+      ]);
+    } catch {
+      // Suppress shutdown errors
+    }
+  }
+  if (quotaMonitor) {
+    quotaMonitor.stop();
+  }
+  if (relayServer) {
+    try {
+      await relayServer.stop();
+    } catch {
+      // Suppress shutdown errors
+    }
+  }
+  if (tunnelManager) {
+    try {
+      await tunnelManager.stop();
+    } catch {
+      // Suppress shutdown errors
+    }
+  }
+  if (trayManager) {
+    trayManager.destroy();
+  }
+}
 
 const createWindow = (): void => {
   mainWindow = new BrowserWindow({
@@ -37,6 +79,10 @@ const createWindow = (): void => {
     },
   });
 
+  if (trayManager) {
+    trayManager.setupCloseInterception(mainWindow);
+  }
+
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
@@ -50,9 +96,13 @@ const createWindow = (): void => {
   });
 };
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const storePath = path.join(app.getPath("userData"), "accounts.enc.json");
   const accountStore = new AccountStore({ storePath });
+
+  const settingsPath = path.join(app.getPath("userData"), "settings.json");
+  settingsStore = new SettingsStore({ storePath: settingsPath });
+  const appSettings = await settingsStore.get();
 
   processController = new ProcessController();
   processController.startHeartbeat(5000);
@@ -84,13 +134,40 @@ app.whenReady().then(() => {
 
   const oauthConfig: OAuthConfig = {
     clientId:
+      appSettings.oauth.clientId ||
       process.env.GOOGLE_CLIENT_ID ||
       "antigravity-relay.apps.googleusercontent.com",
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    clientSecret:
+      appSettings.oauth.clientSecret || process.env.GOOGLE_CLIENT_SECRET,
   };
 
-  relayServer = new RelayServer();
+  relayServer = new RelayServer({
+    config: {
+      port: appSettings.network.relayPort || 4040,
+      host: appSettings.network.relayHost || "127.0.0.1",
+    },
+  });
   tunnelManager = new TunnelManager();
+
+  notifier = new NativeNotifier({
+    settingsStore,
+    getMainWindow: () => mainWindow,
+  });
+
+  trayManager = new TrayManager({
+    accountStore,
+    processController,
+    quotaMonitor,
+    switchFlow,
+    relayServer,
+    settingsStore,
+    getMainWindow: () => mainWindow,
+    isQuitting: () => isQuitting,
+    onQuit: async () => {
+      await performGracefulShutdown();
+    },
+  });
+  await trayManager.init();
 
   registerIpcHandlers({
     accountStore,
@@ -103,13 +180,22 @@ app.whenReady().then(() => {
     snapshotStore,
     relayServer,
     tunnelManager,
+    settingsStore,
+    trayManager,
+    notifier,
     getMainWindow: () => mainWindow,
   });
 
   createWindow();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
@@ -122,16 +208,5 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  if (processController) {
-    processController.stopHeartbeat();
-  }
-  if (quotaMonitor) {
-    quotaMonitor.stop();
-  }
-  if (relayServer) {
-    relayServer.stop().catch(() => {});
-  }
-  if (tunnelManager) {
-    tunnelManager.stop().catch(() => {});
-  }
+  performGracefulShutdown().catch(() => {});
 });

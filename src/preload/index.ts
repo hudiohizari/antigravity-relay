@@ -16,6 +16,10 @@ import {
   Session,
   TunnelStatus,
   TunnelConfig,
+  AppSettings,
+  SystemTrayState,
+  NotificationPayload,
+  NotificationPreferences,
 } from "../shared/types";
 
 export interface ElectronAPI {
@@ -110,6 +114,51 @@ export interface ElectronAPI {
   onTunnelStatusUpdated: (
     callback: (status: TunnelStatus) => void,
   ) => () => void;
+
+  // Settings
+  getSettings: () => Promise<{
+    success: boolean;
+    data?: AppSettings;
+    error?: string;
+  }>;
+  updateSettings: (settings: Partial<AppSettings>) => Promise<{
+    success: boolean;
+    data?: AppSettings;
+    error?: string;
+  }>;
+  resetSettings: () => Promise<{
+    success: boolean;
+    data?: AppSettings;
+    error?: string;
+  }>;
+  onSettingsUpdated: (callback: (settings: AppSettings) => void) => () => void;
+
+  // System Tray
+  getTrayState: () => Promise<{
+    success: boolean;
+    data?: SystemTrayState;
+    error?: string;
+  }>;
+  updateTrayMenu: () => Promise<{ success: boolean; error?: string }>;
+  showWindow: () => Promise<{ success: boolean; error?: string }>;
+  minimizeToTray: () => Promise<{ success: boolean; error?: string }>;
+
+  // Native Notifications
+  sendNotification: (
+    payload: NotificationPayload,
+  ) => Promise<{ success: boolean; error?: string }>;
+  getNotificationPreferences: () => Promise<{
+    success: boolean;
+    data?: NotificationPreferences;
+    error?: string;
+  }>;
+  updateNotificationPreferences: (
+    prefs: Partial<NotificationPreferences>,
+  ) => Promise<{
+    success: boolean;
+    data?: NotificationPreferences;
+    error?: string;
+  }>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -230,6 +279,35 @@ const electronAPI: ElectronAPI = {
       );
     };
   },
+
+  // Settings
+  getSettings: () => ipcRenderer.invoke(IpcChannels.SETTINGS_GET),
+  updateSettings: (settings: Partial<AppSettings>) =>
+    ipcRenderer.invoke(IpcChannels.SETTINGS_UPDATE, settings),
+  resetSettings: () => ipcRenderer.invoke(IpcChannels.SETTINGS_RESET),
+  onSettingsUpdated: (callback: (settings: AppSettings) => void) => {
+    const subscription = (_event: IpcRendererEvent, settings: AppSettings) => {
+      callback(settings);
+    };
+    ipcRenderer.on(IpcChannels.SETTINGS_UPDATED, subscription);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.SETTINGS_UPDATED, subscription);
+    };
+  },
+
+  // System Tray
+  getTrayState: () => ipcRenderer.invoke(IpcChannels.TRAY_GET_STATE),
+  updateTrayMenu: () => ipcRenderer.invoke(IpcChannels.TRAY_UPDATE_MENU),
+  showWindow: () => ipcRenderer.invoke(IpcChannels.TRAY_SHOW_WINDOW),
+  minimizeToTray: () => ipcRenderer.invoke(IpcChannels.TRAY_MINIMIZE_TO_TRAY),
+
+  // Native Notifications
+  sendNotification: (payload: NotificationPayload) =>
+    ipcRenderer.invoke(IpcChannels.NOTIFICATIONS_SEND, payload),
+  getNotificationPreferences: () =>
+    ipcRenderer.invoke(IpcChannels.NOTIFICATIONS_GET_PREFERENCES),
+  updateNotificationPreferences: (prefs: Partial<NotificationPreferences>) =>
+    ipcRenderer.invoke(IpcChannels.NOTIFICATIONS_UPDATE_PREFERENCES, prefs),
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);
