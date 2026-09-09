@@ -24,6 +24,9 @@ const en = {
     all_running: "All services running",
     all_stopped: "All services stopped",
     partial_running: "{{running}}/{{total}} services running",
+    not_installed_short: "Not Installed",
+    tunnel_not_installed_tooltip:
+      "cloudflared CLI is not installed on this computer",
   },
   action: {
     stop: "Stop",
@@ -142,6 +145,27 @@ const en = {
     pid: "Process PID: {{pid}}",
     startFailed: "Failed to start Cloudflare tunnel: {{error}}",
     stopFailed: "Failed to stop Cloudflare tunnel: {{error}}",
+    notInstalledBadge: "Not Installed",
+    missingBannerTitle: "cloudflared CLI Not Found",
+    missingBannerDesc:
+      "Cloudflare Quick Tunnel requires the cloudflared executable to establish public secure tunnels for mobile remote access.",
+    installCommandLabel: "Recommended installation command for {{platform}}:",
+    installCommandLabelGeneric: "Installation command:",
+    copyCommand: "Copy",
+    copied: "Copied",
+    commandCopied: "Command copied to clipboard",
+    checkAgain: "Check Again",
+    checking: "Checking...",
+    binaryDetectedSuccess: "cloudflared CLI found at {{path}}",
+    binaryStillMissing:
+      "cloudflared is still not found in PATH or standard directories",
+    officialDocs: "Official Documentation",
+    startDisabledReason:
+      "Cannot start tunnel because cloudflared executable is not installed on this system",
+    missingTooltip:
+      "cloudflared executable is missing. Please install it to enable remote tunneling.",
+    binaryNotInstalledTooltip:
+      "cloudflared CLI is not installed on this computer",
   },
   pairing: {
     title: "Mobile Pairing & QR Access",

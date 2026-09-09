@@ -60,3 +60,14 @@ export async function getTunnelUrl(): Promise<string | null> {
   const result = await ipc.client.tunnel.getUrl();
   return result.publicUrl;
 }
+
+export async function checkTunnelBinary(forceRefresh?: boolean): Promise<{
+  isInstalled: boolean;
+  binaryPath: string | null;
+  platform: "darwin" | "win32" | "linux";
+  error?: string;
+}> {
+  return ipc.client.tunnel.checkBinary(
+    forceRefresh !== undefined ? { forceRefresh } : undefined,
+  );
+}

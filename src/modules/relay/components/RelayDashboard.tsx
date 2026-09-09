@@ -34,6 +34,7 @@ import {
   restartTunnel,
   stopTunnel,
   getTunnelUrl,
+  checkTunnelBinary,
 } from "../actions/relay";
 import { ipc } from "@/ipc/manager";
 import type { Session } from "../types";
@@ -138,6 +139,8 @@ export const RelayDashboard: React.FC = () => {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState(false);
+  const [isCheckingBinary, setIsCheckingBinary] = useState(false);
   const [sessionToRevoke, setSessionToRevoke] = useState<Session | null>(null);
 
   // Live clock ticker for durations
@@ -374,9 +377,72 @@ export const RelayDashboard: React.FC = () => {
   const isRestarting = restartTunnelMutation.isPending;
   const isStopping = stopTunnelMutation.isPending;
 
+  const installCommand = useMemo(() => {
+    const platform =
+      tunnelStatus?.platform ||
+      (typeof navigator !== "undefined"
+        ? /Macintosh|Mac OS/i.test(navigator.userAgent)
+          ? "darwin"
+          : /Windows/i.test(navigator.userAgent)
+            ? "win32"
+            : /Linux/i.test(navigator.userAgent)
+              ? "linux"
+              : undefined
+        : undefined);
+    if (platform === "darwin") return "brew install cloudflared";
+    if (platform === "win32")
+      return "winget install --id Cloudflare.cloudflared";
+    if (platform === "linux") return "sudo apt install cloudflared";
+    return "brew install cloudflared";
+  }, [tunnelStatus?.platform]);
+
+  const handleCopyInstallCommand = useCallback(async () => {
+    await navigator.clipboard.writeText(installCommand);
+    setCopiedCommand(true);
+    toast({
+      title: t("tunnel.title"),
+      description: t("tunnel.commandCopied"),
+    });
+    setTimeout(() => setCopiedCommand(false), 2000);
+  }, [installCommand, t, toast]);
+
+  const handleCheckAgain = useCallback(async () => {
+    setIsCheckingBinary(true);
+    try {
+      const result = await checkTunnelBinary(true);
+      await Promise.all([
+        refetchTunnel(),
+        queryClient.invalidateQueries({ queryKey: ["tunnel"] }),
+      ]);
+      if (result.isInstalled) {
+        toast({
+          title: t("tunnel.title"),
+          description: t("tunnel.binaryDetectedSuccess", {
+            path: result.binaryPath || "",
+          }),
+        });
+      } else {
+        toast({
+          title: t("tunnel.title"),
+          description: t("tunnel.binaryStillMissing"),
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: t("common.error"),
+        description: err?.message || String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsCheckingBinary(false);
+    }
+  }, [queryClient, refetchTunnel, t, toast]);
+
   const handleStartTunnel = useCallback(() => {
+    if (tunnelStatus?.isBinaryInstalled === false) return;
     startTunnelMutation.mutate({ targetPort: relayStatus?.port || 4040 });
-  }, [relayStatus?.port, startTunnelMutation]);
+  }, [relayStatus?.port, startTunnelMutation, tunnelStatus?.isBinaryInstalled]);
 
   const handleRestartTunnel = useCallback(() => {
     restartTunnelMutation.mutate({ targetPort: relayStatus?.port || 4040 });
@@ -450,6 +516,14 @@ export const RelayDashboard: React.FC = () => {
 
   // Tunnel state info
   const tunnelStateInfo = useMemo(() => {
+    if (tunnelStatus?.isBinaryInstalled === false) {
+      return {
+        label: t("tunnel.notInstalledBadge"),
+        color:
+          "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-800",
+        dot: "bg-amber-500",
+      };
+    }
     const s = tunnelStatus?.state;
     if (s === "connected") {
       return {
@@ -489,7 +563,7 @@ export const RelayDashboard: React.FC = () => {
         "bg-zinc-500/15 text-zinc-600 border-zinc-300 dark:text-zinc-400 dark:border-zinc-800",
       dot: "bg-zinc-400",
     };
-  }, [tunnelStatus?.state, t]);
+  }, [tunnelStatus?.isBinaryInstalled, tunnelStatus?.state, t]);
 
   const bufferCount = relayStatus?.upstream?.bufferedCommandCount || 0;
 
@@ -694,6 +768,115 @@ export const RelayDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* Missing Binary Guidance Alert */}
+              {tunnelStatus?.isBinaryInstalled === false && (
+                <div
+                  role="region"
+                  aria-labelledby="tunnel-missing-title"
+                  aria-describedby="cf-binary-missing-notice"
+                  className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs space-y-3 dark:border-amber-500/30 dark:bg-amber-500/10"
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle
+                      className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <h4
+                      id="tunnel-missing-title"
+                      className="text-xs sm:text-sm font-semibold text-amber-950 dark:text-amber-100"
+                    >
+                      {t("tunnel.missingBannerTitle")}
+                    </h4>
+                  </div>
+                  <p
+                    id="cf-binary-missing-notice"
+                    className="text-xs text-amber-900/90 dark:text-amber-200/90 leading-relaxed"
+                  >
+                    {t("tunnel.missingBannerDesc")}
+                  </p>
+
+                  <div className="space-y-1.5 pt-1">
+                    <div className="text-[11px] font-medium text-amber-950 dark:text-amber-100">
+                      {tunnelStatus?.platform
+                        ? t("tunnel.installCommandLabel", {
+                            platform:
+                              tunnelStatus.platform === "darwin"
+                                ? "macOS (Homebrew)"
+                                : tunnelStatus.platform === "win32"
+                                  ? "Windows (Winget)"
+                                  : "Linux (APT / Snap)",
+                          })
+                        : t("tunnel.installCommandLabelGeneric")}
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 rounded-md bg-muted/60 dark:bg-muted/30 border border-border">
+                      <div className="min-w-0 flex-1 overflow-x-auto py-1 px-2 font-mono text-xs select-all text-foreground">
+                        <code>{installCommand}</code>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCopyInstallCommand}
+                        className="min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-auto shrink-0 gap-1.5 px-3"
+                      >
+                        {copiedCommand ? (
+                          <Check className="h-4 w-4 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                        <span className="text-xs">
+                          {copiedCommand
+                            ? t("tunnel.copied")
+                            : t("tunnel.copyCommand")}
+                        </span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isCheckingBinary}
+                      onClick={handleCheckAgain}
+                      aria-busy={isCheckingBinary}
+                      className="min-h-[44px] sm:min-h-[36px] gap-2 px-3 border-amber-400/40 text-amber-900 dark:text-amber-200 hover:bg-amber-500/10 dark:border-amber-500/30"
+                    >
+                      <RotateCw
+                        className={cn(
+                          "h-4 w-4",
+                          isCheckingBinary && "animate-spin",
+                        )}
+                      />
+                      <span>
+                        {isCheckingBinary
+                          ? t("tunnel.checking")
+                          : t("tunnel.checkAgain")}
+                      </span>
+                    </Button>
+
+                    <a
+                      href="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        if (window.electron?.openExternalUrl) {
+                          e.preventDefault();
+                          window.electron.openExternalUrl(
+                            "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
+                          );
+                        }
+                      }}
+                      className="inline-flex items-center justify-center sm:justify-start gap-1.5 min-h-[44px] sm:min-h-[36px] px-2 text-xs font-medium text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                    >
+                      <span>{t("tunnel.officialDocs")}</span>
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                    </a>
+                  </div>
+                </div>
+              )}
+
               {/* Tunnel Control Buttons */}
               {tunnelStatus?.state === "connected" ||
               tunnelStatus?.state === "starting" ||
@@ -742,9 +925,30 @@ export const RelayDashboard: React.FC = () => {
                   <Button
                     size="sm"
                     variant="default"
-                    disabled={isStarting}
+                    disabled={
+                      isStarting || tunnelStatus?.isBinaryInstalled === false
+                    }
+                    aria-disabled={
+                      tunnelStatus?.isBinaryInstalled === false
+                        ? "true"
+                        : undefined
+                    }
+                    aria-describedby={
+                      tunnelStatus?.isBinaryInstalled === false
+                        ? "cf-binary-missing-notice"
+                        : undefined
+                    }
+                    title={
+                      tunnelStatus?.isBinaryInstalled === false
+                        ? t("tunnel.startDisabledReason")
+                        : undefined
+                    }
                     onClick={handleStartTunnel}
-                    className="w-full sm:w-auto min-h-[40px] px-4 gap-2"
+                    className={cn(
+                      "w-full sm:w-auto min-h-[40px] px-4 gap-2",
+                      tunnelStatus?.isBinaryInstalled === false &&
+                        "opacity-50 cursor-not-allowed",
+                    )}
                   >
                     {isStarting ? (
                       <Loader2 className="h-4 w-4 animate-spin" />

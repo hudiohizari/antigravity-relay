@@ -19,6 +19,19 @@ const TunnelStartInputSchema = z
   })
   .optional();
 
+const TunnelCheckBinaryInputSchema = z
+  .object({
+    forceRefresh: z.boolean().optional(),
+  })
+  .optional();
+
+const TunnelCheckBinaryOutputSchema = z.object({
+  isInstalled: z.boolean(),
+  binaryPath: z.string().nullable(),
+  platform: z.enum(["darwin", "win32", "linux"]),
+  error: z.string().optional(),
+});
+
 const RevokeSessionInputSchema = z.object({
   sessionId: z.string().min(1),
 });
@@ -105,5 +118,14 @@ export const tunnelRouter = os.router({
       return {
         publicUrl: RelayController.getInstance().tunnelManager.getPublicUrl(),
       };
+    }),
+
+  checkBinary: os
+    .input(TunnelCheckBinaryInputSchema)
+    .output(TunnelCheckBinaryOutputSchema)
+    .handler(async ({ input }) => {
+      return RelayController.getInstance().tunnelManager.checkBinary(
+        input?.forceRefresh,
+      );
     }),
 });

@@ -6,6 +6,17 @@ import {
   TunnelState,
   DEFAULT_TUNNEL_CONFIG,
 } from "./types";
+import { BinaryResolver, BinaryResolutionResult } from "./binary-resolver";
+
+export class CloudflaredNotFoundError extends Error {
+  public readonly code = "CLOUDFLARED_NOT_FOUND";
+
+  constructor(message = "cloudflared binary not found") {
+    super(message);
+    this.name = "CloudflaredNotFoundError";
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
 
 export interface ChildProcessLike extends EventEmitter {
   pid?: number;
@@ -26,6 +37,7 @@ export interface TunnelManagerOptions {
   spawnFn?: SpawnFunction;
   escalationTimeoutMs?: number;
   connectionTimeoutMs?: number;
+  binaryResolver?: BinaryResolver;
 }
 
 export function isMissingBinaryError(err: unknown): boolean {
@@ -49,6 +61,7 @@ export function isMissingBinaryError(err: unknown): boolean {
 }
 
 export class TunnelManager {
+  public readonly binaryResolver: BinaryResolver;
   private config: TunnelConfig;
   private readonly spawnFn: SpawnFunction;
   private readonly escalationTimeoutMs: number;
@@ -77,9 +90,14 @@ export class TunnelManager {
         spawn(cmd, args, opts as any) as unknown as ChildProcessLike);
     this.escalationTimeoutMs = options?.escalationTimeoutMs ?? 3000;
     this.connectionTimeoutMs = options?.connectionTimeoutMs ?? 5000;
+    this.binaryResolver = options?.binaryResolver ?? new BinaryResolver();
   }
 
   public getStatus(): TunnelStatus {
+    const binaryInfo = this.binaryResolver.resolveSync({
+      binaryPath: this.config.binaryPath,
+    });
+
     return {
       state: this.state,
       publicUrl: this.publicUrl,
@@ -88,7 +106,24 @@ export class TunnelManager {
       reconnectAttempts: this.reconnectAttempts,
       lastError: this.lastError,
       protocol: "quic",
+      isBinaryInstalled: binaryInfo.isInstalled,
+      binaryPath: binaryInfo.binaryPath,
+      platform: binaryInfo.platform,
     };
+  }
+
+  public async checkBinary(
+    optionsOrForceRefresh?: boolean | { forceRefresh?: boolean },
+  ): Promise<BinaryResolutionResult> {
+    const forceRefresh =
+      typeof optionsOrForceRefresh === "boolean"
+        ? optionsOrForceRefresh
+        : optionsOrForceRefresh?.forceRefresh;
+
+    return this.binaryResolver.resolve({
+      binaryPath: this.config.binaryPath,
+      forceRefresh,
+    });
   }
 
   public getPublicUrl(): string | null {
@@ -111,11 +146,21 @@ export class TunnelManager {
       this.config = { ...this.config, ...overrides };
     }
 
+    const binaryInfo = this.binaryResolver.resolveSync({
+      binaryPath: this.config.binaryPath,
+    });
+
+    if (!binaryInfo.isInstalled) {
+      this.lastError = "cloudflared binary not found";
+      this.transitionState("error");
+      throw new CloudflaredNotFoundError("cloudflared binary not found");
+    }
+
     this.isStopping = false;
     this.reconnectAttempts = 0;
     this.clearReconnectTimer();
 
-    return this.launchSubprocess();
+    return this.launchSubprocess(binaryInfo.binaryPath || "cloudflared");
   }
 
   public async restart(
@@ -203,12 +248,21 @@ export class TunnelManager {
 
   // --- Private Subprocess Management ---
 
-  private async launchSubprocess(): Promise<TunnelStatus> {
+  private async launchSubprocess(
+    resolvedBinary?: string,
+  ): Promise<TunnelStatus> {
     this.transitionState(
       this.reconnectAttempts > 0 ? "reconnecting" : "starting",
     );
 
-    const binary = this.config.binaryPath || "cloudflared";
+    let binary = resolvedBinary;
+    if (!binary) {
+      const binaryInfo = this.binaryResolver.resolveSync({
+        binaryPath: this.config.binaryPath,
+      });
+      binary = binaryInfo.binaryPath || this.config.binaryPath || "cloudflared";
+    }
+
     const args: string[] = [];
 
     if (this.config.namedTunnelToken) {
@@ -223,8 +277,9 @@ export class TunnelManager {
     }
 
     try {
+      const augmentedEnv = this.binaryResolver.getAugmentedEnv(process.env);
       const proc = this.spawnFn(binary, args, {
-        env: process.env,
+        env: augmentedEnv,
         stdio: ["ignore", "pipe", "pipe"],
       });
 
@@ -347,6 +402,15 @@ export class TunnelManager {
     this.transitionState("reconnecting");
 
     this.reconnectTimer = setTimeout(() => {
+      const binaryInfo = this.binaryResolver.resolveSync({
+        binaryPath: this.config.binaryPath,
+      });
+      if (!binaryInfo.isInstalled) {
+        this.lastError = "cloudflared binary not found";
+        this.transitionState("error");
+        return;
+      }
+
       this.launchSubprocess().catch(() => {
         // Suppress failure, will retry or transition to error
       });

@@ -48,6 +48,7 @@ interface ManagedService {
   isPending: boolean;
   toggle: () => void;
   url?: string | null;
+  isBinaryInstalled?: boolean;
 }
 
 function useClassicService() {
@@ -163,12 +164,16 @@ function useTunnelService() {
     },
   });
 
+  const isBinaryInstalled = tunnelStatus?.isBinaryInstalled ?? true;
   const isRunning = tunnelStatus?.state === "connected";
   const isStartingOrReconnecting =
     tunnelStatus?.state === "starting" ||
     tunnelStatus?.state === "reconnecting";
 
   const toggle = () => {
+    if (!isBinaryInstalled) {
+      return;
+    }
     if (isRunning || isStartingOrReconnecting) {
       stopMutation.mutate();
     } else {
@@ -184,13 +189,15 @@ function useTunnelService() {
     isPending: startMutation.isPending || stopMutation.isPending,
     toggle,
     url,
+    isBinaryInstalled,
   };
 }
 
 function ServiceRow({ service }: { service: ManagedService }) {
   const { t } = useTranslation();
   const Icon = service.icon;
-  const isBusy = service.isLoading || service.isPending;
+  const isMissingBinary = service.isBinaryInstalled === false;
+  const isBusy = service.isLoading || service.isPending || isMissingBinary;
 
   return (
     <div className="flex min-h-[48px] items-center justify-between gap-2.5 rounded-md px-2.5 py-2 hover:bg-accent/60 transition-colors">
@@ -198,9 +205,11 @@ function ServiceRow({ service }: { service: ManagedService }) {
         <div
           className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
-            service.isRunning
-              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-              : "bg-red-500/15 text-red-600 dark:text-red-400",
+            isMissingBinary
+              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+              : service.isRunning
+                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                : "bg-red-500/15 text-red-600 dark:text-red-400",
           )}
         >
           <Icon className="h-4 w-4" />
@@ -216,16 +225,22 @@ function ServiceRow({ service }: { service: ManagedService }) {
               <span
                 className={cn(
                   "h-1.5 w-1.5 rounded-full",
-                  service.isRunning ? "bg-emerald-500" : "bg-red-500",
+                  isMissingBinary
+                    ? "bg-amber-500"
+                    : service.isRunning
+                      ? "bg-emerald-500"
+                      : "bg-red-500",
                 )}
               />
             )}
             <span>
               {service.isLoading
                 ? t("status.checking_short")
-                : service.isRunning
-                  ? t("status.running_short")
-                  : t("status.stopped_short")}
+                : isMissingBinary
+                  ? t("status.not_installed_short")
+                  : service.isRunning
+                    ? t("status.running_short")
+                    : t("status.stopped_short")}
             </span>
           </div>
           {service.isRunning && service.url && (
@@ -255,11 +270,17 @@ function ServiceRow({ service }: { service: ManagedService }) {
         size="sm"
         onClick={service.toggle}
         disabled={isBusy}
+        aria-disabled={isMissingBinary ? "true" : undefined}
+        title={
+          isMissingBinary ? t("tunnel.binaryNotInstalledTooltip") : undefined
+        }
         className={cn(
           "h-8 shrink-0 rounded-md border px-2.5 text-xs font-semibold min-w-[68px]",
-          service.isRunning
-            ? "border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
-            : "border-emerald-200 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-900/60 dark:text-emerald-400 dark:hover:bg-emerald-950/40",
+          isMissingBinary
+            ? "border-border text-muted-foreground opacity-50 cursor-not-allowed"
+            : service.isRunning
+              ? "border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+              : "border-emerald-200 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-900/60 dark:text-emerald-400 dark:hover:bg-emerald-950/40",
         )}
       >
         {service.isPending ? (

@@ -67,6 +67,9 @@ describe("StatusBar Component", () => {
       publicUrl: null,
       startedAt: null,
       reconnectAttempts: 0,
+      isBinaryInstalled: true,
+      binaryPath: "/usr/local/bin/cloudflared",
+      platform: "darwin",
     });
   });
 
@@ -173,6 +176,9 @@ describe("StatusBar Component", () => {
       publicUrl: "https://test.trycloudflare.com",
       startedAt: Date.now(),
       reconnectAttempts: 0,
+      isBinaryInstalled: true,
+      binaryPath: "/usr/local/bin/cloudflared",
+      platform: "darwin",
     });
 
     render(
@@ -309,6 +315,9 @@ describe("StatusBar Component", () => {
       publicUrl: "https://test.trycloudflare.com",
       startedAt: Date.now(),
       reconnectAttempts: 0,
+      isBinaryInstalled: true,
+      binaryPath: "/usr/local/bin/cloudflared",
+      platform: "darwin",
     });
 
     render(
@@ -375,6 +384,9 @@ describe("StatusBar Component", () => {
       publicUrl: "https://demo.trycloudflare.com",
       startedAt: Date.now(),
       reconnectAttempts: 0,
+      isBinaryInstalled: true,
+      binaryPath: "/usr/local/bin/cloudflared",
+      platform: "darwin",
     });
 
     render(
@@ -390,5 +402,56 @@ describe("StatusBar Component", () => {
     expect(tunnelLink.getAttribute("href")).toBe(
       "https://demo.trycloudflare.com",
     );
+  });
+
+  it("renders amber warning dot, icon, status label, and disabled toggle button when binary is not installed", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      pid: null,
+      publicUrl: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+      isBinaryInstalled: false,
+      binaryPath: null,
+      platform: "darwin",
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <StatusBar defaultOpen={true} />
+      </QueryClientProvider>,
+    );
+
+    const notInstalledLabel = await screen.findByText(
+      "status.not_installed_short",
+    );
+    expect(notInstalledLabel).toBeDefined();
+
+    // Check amber status dot
+    const statusDot = notInstalledLabel.previousElementSibling;
+    expect(statusDot?.className).toContain("bg-amber-500");
+
+    // Check service icon container
+    const tunnelRow = notInstalledLabel.closest(".flex.min-h-\\[48px\\]");
+    expect(tunnelRow).toBeDefined();
+    const iconContainer = tunnelRow?.querySelector(".h-8.w-8");
+    expect(iconContainer?.className).toContain("bg-amber-500/15");
+    expect(iconContainer?.className).toContain("text-amber-600");
+
+    // Check toggle button
+    const toggleButton = tunnelRow?.querySelector("button");
+    expect(toggleButton).toBeDefined();
+    expect(toggleButton?.hasAttribute("disabled")).toBe(true);
+    expect(toggleButton?.getAttribute("aria-disabled")).toBe("true");
+    expect(toggleButton?.getAttribute("title")).toBe(
+      "tunnel.binaryNotInstalledTooltip",
+    );
+
+    // Clicking disabled button must not call startTunnel or stopTunnel
+    if (toggleButton) {
+      fireEvent.click(toggleButton);
+    }
+    expect(relayActions.startTunnel).not.toHaveBeenCalled();
+    expect(relayActions.stopTunnel).not.toHaveBeenCalled();
   });
 });

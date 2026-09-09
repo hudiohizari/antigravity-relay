@@ -346,6 +346,9 @@ export interface TunnelStatus {
   reconnectAttempts: number;
   lastError?: string;
   protocol?: string;
+  isBinaryInstalled: boolean;
+  binaryPath: string | null;
+  platform: "darwin" | "win32" | "linux";
 }
 
 // Remote Command & Event Protocol

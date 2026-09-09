@@ -1,3 +1,5 @@
+import https from "node:https";
+import dns from "node:dns";
 import { z } from "zod";
 import axios, { type AxiosProxyConfig, type AxiosRequestConfig } from "axios";
 import { ConfigManager } from "@/modules/config/ipc/manager";
@@ -217,6 +219,58 @@ function parseAxiosProxyUrl(proxyUrl: string): AxiosProxyConfig {
   };
 }
 
+const fallbackDnsResolver = new dns.promises.Resolver();
+fallbackDnsResolver.setServers(["8.8.8.8", "1.1.1.1"]);
+
+function fallbackLookup(
+  hostname: string,
+  options: dns.LookupOptions | unknown,
+  callback: (
+    err: NodeJS.ErrnoException | null,
+    address: string | dns.LookupAddress[],
+    family?: number,
+  ) => void,
+): void {
+  const actualOptions = (
+    typeof options === "function" ? {} : options
+  ) as dns.LookupOptions;
+  const actualCallback =
+    typeof options === "function" ? (options as typeof callback) : callback;
+
+  dns.lookup(hostname, actualOptions, async (err, address, family) => {
+    if (!err && address) {
+      actualCallback(null, address, family);
+      return;
+    }
+    try {
+      const addresses = await fallbackDnsResolver.resolve4(hostname);
+      if (addresses.length > 0) {
+        if (
+          actualOptions &&
+          typeof actualOptions === "object" &&
+          actualOptions.all
+        ) {
+          actualCallback(
+            null,
+            addresses.map((addr) => ({ address: addr, family: 4 })),
+          );
+          return;
+        }
+        actualCallback(null, addresses[0], 4);
+        return;
+      }
+    } catch {
+      // Fallback failed, keep original error
+    }
+    actualCallback(err, address, family);
+  });
+}
+
+const resilientHttpsAgent = new https.Agent({
+  lookup: fallbackLookup,
+  keepAlive: true,
+});
+
 async function requestGoogleApi(
   url: string,
   options: GoogleApiRequestOptions,
@@ -224,6 +278,7 @@ async function requestGoogleApi(
   const response = await axios.request<unknown>({
     data: options.data,
     headers: options.headers,
+    httpsAgent: options.proxy ? undefined : resilientHttpsAgent,
     method: options.method,
     proxy: options.proxy,
     signal: options.signal,

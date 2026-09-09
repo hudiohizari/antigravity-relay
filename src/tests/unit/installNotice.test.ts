@@ -37,4 +37,20 @@ describe("install notice policy", () => {
       }),
     ).toBe(false);
   });
+
+  it("resolves and returns notice text for all supported languages including tr and id", async () => {
+    const { resolveInstallNoticeLanguage, getInstallNoticeText } =
+      await import("@/modules/app-shell/utils/installNotice");
+
+    expect(resolveInstallNoticeLanguage({ locale: "tr-TR" })).toBe("tr");
+    expect(resolveInstallNoticeLanguage({ locale: "id-ID" })).toBe("id");
+    expect(resolveInstallNoticeLanguage({ locale: "fr-FR" })).toBe("fr");
+    expect(resolveInstallNoticeLanguage({ locale: "vi-VN" })).toBe("vi");
+    expect(resolveInstallNoticeLanguage({ locale: "ru-RU" })).toBe("ru");
+    expect(resolveInstallNoticeLanguage({ locale: "zh-CN" })).toBe("zh-CN");
+    expect(resolveInstallNoticeLanguage({ locale: "en-US" })).toBe("en");
+
+    expect(getInstallNoticeText("tr").buttons.length).toBe(2);
+    expect(getInstallNoticeText("id").buttons.length).toBe(2);
+  });
 });

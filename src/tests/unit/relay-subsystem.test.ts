@@ -191,6 +191,9 @@ describe("Relay Subsystems", () => {
         startedAt: Date.now(),
         reconnectAttempts: 0,
         protocol: "quic",
+        isBinaryInstalled: true,
+        binaryPath: "/usr/local/bin/cloudflared",
+        platform: "darwin",
       };
 
       vi.spyOn(controller.tunnelManager, "restart").mockResolvedValueOnce(
@@ -202,6 +205,24 @@ describe("Relay Subsystems", () => {
       expect(controller.tunnelManager.restart).toHaveBeenCalledWith({
         targetPort: 8080,
       });
+    });
+
+    it("routes checkBinary call through tunnelManager.checkBinary", async () => {
+      const client = createRouterClient(tunnelRouter);
+      const controller = RelayController.getInstance();
+      const mockResult = {
+        isInstalled: true,
+        binaryPath: "/opt/homebrew/bin/cloudflared",
+        platform: "darwin" as const,
+      };
+
+      vi.spyOn(controller.tunnelManager, "checkBinary").mockResolvedValueOnce(
+        mockResult,
+      );
+
+      const res = await client.checkBinary({ forceRefresh: true });
+      expect(res).toEqual(mockResult);
+      expect(controller.tunnelManager.checkBinary).toHaveBeenCalledWith(true);
     });
   });
 });

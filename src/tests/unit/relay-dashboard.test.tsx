@@ -39,6 +39,10 @@ vi.mock("react-i18next", () => ({
         return `Device ID: ${params.id} (click to copy)`;
       if (key === "sessions.copyDeviceIdAria" && params?.id)
         return `Copy device ID ${params.id}`;
+      if (key === "tunnel.installCommandLabel" && params?.platform)
+        return `Recommended installation command for ${params.platform}:`;
+      if (key === "tunnel.binaryDetectedSuccess" && params?.path)
+        return `cloudflared CLI found at ${params.path}`;
       return key;
     },
   }),
@@ -71,6 +75,7 @@ vi.mock("@/modules/relay/actions/relay", () => ({
   restartTunnel: vi.fn(),
   stopTunnel: vi.fn(),
   getTunnelUrl: vi.fn(),
+  checkTunnelBinary: vi.fn(),
 }));
 
 describe("RelayDashboard Component", () => {
@@ -117,6 +122,9 @@ describe("RelayDashboard Component", () => {
       publicUrl: "https://test-subdomain.trycloudflare.com",
       startedAt: Date.now() - 30000,
       reconnectAttempts: 0,
+      isBinaryInstalled: true,
+      binaryPath: "/usr/local/bin/cloudflared",
+      platform: "darwin",
     });
 
     vi.mocked(relayActions.getTunnelUrl).mockResolvedValue(
@@ -129,6 +137,9 @@ describe("RelayDashboard Component", () => {
       publicUrl: "https://test-subdomain.trycloudflare.com",
       startedAt: Date.now(),
       reconnectAttempts: 0,
+      isBinaryInstalled: true,
+      binaryPath: "/usr/local/bin/cloudflared",
+      platform: "darwin",
     });
 
     vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
@@ -207,6 +218,9 @@ describe("RelayDashboard Component", () => {
       pid: null,
       startedAt: null,
       reconnectAttempts: 0,
+      isBinaryInstalled: true,
+      binaryPath: "/usr/local/bin/cloudflared",
+      platform: "darwin",
     });
     vi.mocked(relayActions.getTunnelUrl).mockResolvedValue(null);
 
@@ -240,6 +254,9 @@ describe("RelayDashboard Component", () => {
       startedAt: null,
       reconnectAttempts: 0,
       lastError: "cloudflared binary not found",
+      isBinaryInstalled: false,
+      binaryPath: null,
+      platform: "darwin",
     });
     vi.mocked(relayActions.getTunnelUrl).mockResolvedValue(null);
 
@@ -403,6 +420,9 @@ describe("RelayDashboard Component", () => {
       pid: 12345,
       startedAt: Date.now(),
       reconnectAttempts: 0,
+      isBinaryInstalled: true,
+      binaryPath: "/usr/local/bin/cloudflared",
+      platform: "darwin",
     });
 
     render(
@@ -429,6 +449,9 @@ describe("RelayDashboard Component", () => {
       pid: null,
       startedAt: null,
       reconnectAttempts: 0,
+      isBinaryInstalled: true,
+      binaryPath: "/usr/local/bin/cloudflared",
+      platform: "darwin",
     });
 
     render(
@@ -630,5 +653,285 @@ describe("RelayDashboard Component", () => {
     // 1 of 2 active should be rendered in the header badge
     const ratioBadge = await screen.findByText("1 of 2 active");
     expect(ratioBadge).toBeDefined();
+  });
+
+  it("renders amber status badge, missing binary alert banner, and disabled Start Tunnel button when binary is not installed", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+      isBinaryInstalled: false,
+      binaryPath: null,
+      platform: "darwin",
+    });
+    vi.mocked(relayActions.getTunnelUrl).mockResolvedValue(null);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    // Amber status badge in Quick Tunnel header
+    const notInstalledBadge = await screen.findByText(
+      "tunnel.notInstalledBadge",
+    );
+    expect(notInstalledBadge).toBeDefined();
+    const badgeContainer = notInstalledBadge.closest(".border-amber-300");
+    expect(badgeContainer?.className).toContain("bg-amber-500/15");
+    expect(badgeContainer?.className).toContain("text-amber-600");
+
+    // Missing binary alert banner region
+    const alertRegion = screen.getByRole("region", {
+      name: "tunnel.missingBannerTitle",
+    });
+    expect(alertRegion).toBeDefined();
+    expect(screen.getByText("tunnel.missingBannerDesc")).toBeDefined();
+
+    // macOS recommended install command and copy button
+    expect(
+      screen.getByText(
+        "Recommended installation command for macOS (Homebrew):",
+      ),
+    ).toBeDefined();
+    expect(screen.getByText("brew install cloudflared")).toBeDefined();
+
+    // Official documentation link
+    const docsLink = screen.getByRole("link", {
+      name: "tunnel.officialDocs",
+    });
+    expect(docsLink).toBeDefined();
+    expect(docsLink.getAttribute("href")).toBe(
+      "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
+    );
+
+    // Start Tunnel button disabled with aria attributes
+    const startBtn = screen.getByRole("button", { name: "tunnel.start" });
+    expect(startBtn.hasAttribute("disabled")).toBe(true);
+    expect(startBtn.getAttribute("aria-disabled")).toBe("true");
+    expect(startBtn.getAttribute("aria-describedby")).toBe(
+      "cf-binary-missing-notice",
+    );
+    expect(startBtn.getAttribute("title")).toBe("tunnel.startDisabledReason");
+
+    // Clicking disabled start button does not invoke startTunnel
+    fireEvent.click(startBtn);
+    expect(relayActions.startTunnel).not.toHaveBeenCalled();
+  });
+
+  it("renders platform-tailored installation commands for Windows and Linux", async () => {
+    // Windows platform test
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+      isBinaryInstalled: false,
+      binaryPath: null,
+      platform: "win32",
+    });
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        "Recommended installation command for Windows (Winget):",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText("winget install --id Cloudflare.cloudflared"),
+    ).toBeDefined();
+    unmount();
+
+    // Linux platform test
+    const linuxQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+      isBinaryInstalled: false,
+      binaryPath: null,
+      platform: "linux",
+    });
+
+    render(
+      <QueryClientProvider client={linuxQueryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        "Recommended installation command for Linux (APT / Snap):",
+      ),
+    ).toBeDefined();
+    expect(screen.getByText("sudo apt install cloudflared")).toBeDefined();
+  });
+
+  it("copies install command to clipboard and displays feedback when Copy button is clicked", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+      isBinaryInstalled: false,
+      binaryPath: null,
+      platform: "darwin",
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("brew install cloudflared");
+
+    const copyBtn = screen.getByRole("button", { name: "tunnel.copyCommand" });
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        "brew install cloudflared",
+      );
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "tunnel.title",
+          description: "tunnel.commandCopied",
+        }),
+      );
+    });
+  });
+
+  it("triggers checkTunnelBinary and displays success toast when Check Again discovers binary", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+      isBinaryInstalled: false,
+      binaryPath: null,
+      platform: "darwin",
+    });
+
+    vi.mocked(relayActions.checkTunnelBinary).mockResolvedValue({
+      isInstalled: true,
+      binaryPath: "/opt/homebrew/bin/cloudflared",
+      platform: "darwin",
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const checkAgainBtn = await screen.findByRole("button", {
+      name: "tunnel.checkAgain",
+    });
+    fireEvent.click(checkAgainBtn);
+
+    await waitFor(() => {
+      expect(relayActions.checkTunnelBinary).toHaveBeenCalledWith(true);
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "tunnel.title",
+          description: "cloudflared CLI found at /opt/homebrew/bin/cloudflared",
+        }),
+      );
+    });
+  });
+
+  it("triggers checkTunnelBinary and displays warning toast when Check Again reveals binary is still missing", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+      isBinaryInstalled: false,
+      binaryPath: null,
+      platform: "darwin",
+    });
+
+    vi.mocked(relayActions.checkTunnelBinary).mockResolvedValue({
+      isInstalled: false,
+      binaryPath: null,
+      platform: "darwin",
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const checkAgainBtn = await screen.findByRole("button", {
+      name: "tunnel.checkAgain",
+    });
+    fireEvent.click(checkAgainBtn);
+
+    await waitFor(() => {
+      expect(relayActions.checkTunnelBinary).toHaveBeenCalledWith(true);
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "tunnel.title",
+          description: "tunnel.binaryStillMissing",
+          variant: "destructive",
+        }),
+      );
+    });
+  });
+
+  it("handles error during Check Again and shows error toast", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+      isBinaryInstalled: false,
+      binaryPath: null,
+      platform: "darwin",
+    });
+
+    vi.mocked(relayActions.checkTunnelBinary).mockRejectedValue(
+      new Error("IPC binary probe timeout"),
+    );
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const checkAgainBtn = await screen.findByRole("button", {
+      name: "tunnel.checkAgain",
+    });
+    fireEvent.click(checkAgainBtn);
+
+    await waitFor(() => {
+      expect(relayActions.checkTunnelBinary).toHaveBeenCalledWith(true);
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "common.error",
+          description: "IPC binary probe timeout",
+          variant: "destructive",
+        }),
+      );
+    });
   });
 });

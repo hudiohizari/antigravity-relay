@@ -6,8 +6,11 @@ import os from "node:os";
 import {
   TunnelManager,
   ChildProcessLike,
+  CloudflaredNotFoundError,
+  isMissingBinaryError,
 } from "@/modules/tunnel/tunnel-manager";
 import { TunnelConfigStore } from "@/modules/tunnel/tunnel-config";
+import { BinaryResolver } from "@/modules/tunnel/binary-resolver";
 
 class MockChildProcess extends EventEmitter implements ChildProcessLike {
   public pid = 12345;
@@ -175,7 +178,7 @@ describe("Cloudflare Tunnel Subprocess Supervisor", () => {
       );
       expect(status.pid).toBe(12345);
 
-      expect(spawnedCommands[0].cmd).toBe("cloudflared");
+      expect(spawnedCommands[0].cmd).toContain("cloudflared");
       expect(spawnedCommands[0].args).toContain("--url");
       expect(spawnedCommands[0].args).toContain("http://127.0.0.1:4040");
     });
@@ -563,7 +566,7 @@ describe("Cloudflare Tunnel Subprocess Supervisor", () => {
           "stderr",
           "https://second.trycloudflare.com\n",
         );
-      }, 10);
+      }, 25);
       const status = await restartPromise;
       expect(status.state).toBe("connected");
       const lastSpawn = spawnedCommands[spawnedCommands.length - 1];
@@ -612,6 +615,513 @@ describe("Cloudflare Tunnel Subprocess Supervisor", () => {
       const status = await restartPromise;
       expect(status.state).toBe("connected");
       await stubbornRestartManager.stop();
+    });
+  });
+
+  describe("Binary Resolver and Circuit Breaker Integration", () => {
+    it("reports isBinaryInstalled, binaryPath, and platform in getStatus when binary is available", () => {
+      const mockResolver = new BinaryResolver({
+        platform: "darwin",
+        env: { PATH: "/usr/local/bin" },
+        statSync: () => ({ isFile: () => true }),
+        accessSync: () => {},
+      });
+
+      const mgr = new TunnelManager({
+        binaryResolver: mockResolver,
+      });
+
+      const status = mgr.getStatus();
+      expect(status.isBinaryInstalled).toBe(true);
+      expect(status.binaryPath).toContain("cloudflared");
+      expect(status.platform).toBe("darwin");
+    });
+
+    it("reports isBinaryInstalled as false when binary is missing", () => {
+      const mockResolver = new BinaryResolver({
+        platform: "darwin",
+        env: { PATH: "/usr/bin:/bin" },
+        statSync: () => {
+          throw new Error("ENOENT");
+        },
+        accessSync: () => {
+          throw new Error("ENOENT");
+        },
+      });
+
+      const mgr = new TunnelManager({
+        binaryResolver: mockResolver,
+      });
+
+      const status = mgr.getStatus();
+      expect(status.isBinaryInstalled).toBe(false);
+      expect(status.binaryPath).toBeNull();
+      expect(status.platform).toBe("darwin");
+    });
+
+    it("trips pre-flight circuit breaker on start() and rejects with CloudflaredNotFoundError without spawning", async () => {
+      const mockSpawn = vi.fn();
+      const mockResolver = new BinaryResolver({
+        platform: "darwin",
+        env: { PATH: "" },
+        statSync: () => {
+          throw new Error("ENOENT");
+        },
+        accessSync: () => {
+          throw new Error("ENOENT");
+        },
+        stat: async () => {
+          throw new Error("ENOENT");
+        },
+        access: async () => {
+          throw new Error("ENOENT");
+        },
+      });
+
+      const mgr = new TunnelManager({
+        spawnFn: mockSpawn,
+        binaryResolver: mockResolver,
+      });
+
+      await expect(mgr.start()).rejects.toThrow(CloudflaredNotFoundError);
+
+      expect(mockSpawn).not.toHaveBeenCalled();
+      const status = mgr.getStatus();
+      expect(status.state).toBe("error");
+      expect(status.lastError).toBe("cloudflared binary not found");
+      expect(status.isBinaryInstalled).toBe(false);
+    });
+
+    it("trips pre-flight circuit breaker on restart() and rejects with CloudflaredNotFoundError without spawning", async () => {
+      const mockSpawn = vi.fn();
+      const mockResolver = new BinaryResolver({
+        platform: "darwin",
+        env: { PATH: "" },
+        statSync: () => {
+          throw new Error("ENOENT");
+        },
+        accessSync: () => {
+          throw new Error("ENOENT");
+        },
+        stat: async () => {
+          throw new Error("ENOENT");
+        },
+        access: async () => {
+          throw new Error("ENOENT");
+        },
+      });
+
+      const mgr = new TunnelManager({
+        spawnFn: mockSpawn,
+        binaryResolver: mockResolver,
+      });
+
+      await expect(mgr.restart()).rejects.toThrow(CloudflaredNotFoundError);
+
+      expect(mockSpawn).not.toHaveBeenCalled();
+      expect(mgr.getStatus().state).toBe("error");
+      expect(mgr.getStatus().lastError).toBe("cloudflared binary not found");
+    });
+
+    it("passes augmented PATH environment variable to spawned child process", async () => {
+      let capturedOptions: Record<string, unknown> | undefined;
+      const mockProc = new MockChildProcess();
+
+      const mockResolver = new BinaryResolver({
+        platform: "darwin",
+        env: { PATH: "/usr/bin:/bin" },
+        statSync: (p) => {
+          if (p === "/opt/homebrew/bin/cloudflared") {
+            return { isFile: () => true };
+          }
+          throw new Error("Not found");
+        },
+        accessSync: () => {},
+        stat: async (p) => {
+          if (p === "/opt/homebrew/bin/cloudflared") {
+            return { isFile: () => true };
+          }
+          throw new Error("Not found");
+        },
+        access: async () => {},
+      });
+
+      const mgr = new TunnelManager({
+        binaryResolver: mockResolver,
+        spawnFn: (_cmd, _args, opts) => {
+          capturedOptions = opts;
+          setTimeout(() => {
+            mockProc.simulateOutput(
+              "stderr",
+              "https://augmented-env.trycloudflare.com\n",
+            );
+          }, 10);
+          return mockProc;
+        },
+      });
+
+      await mgr.start();
+
+      expect(capturedOptions).toBeDefined();
+      const spawnedEnv = (capturedOptions?.env as NodeJS.ProcessEnv) || {};
+      expect(spawnedEnv.PATH).toContain("/opt/homebrew/bin");
+      expect(spawnedEnv.PATH).toContain("/usr/local/bin");
+      await mgr.stop();
+    });
+
+    it("supports checkBinary with forceRefresh parameter", async () => {
+      const mockResolver = new BinaryResolver({
+        platform: "darwin",
+        env: { PATH: "/usr/local/bin" },
+        statSync: () => ({ isFile: () => true }),
+        accessSync: () => {},
+        stat: async () => ({ isFile: () => true }),
+        access: async () => {},
+      });
+
+      const spy = vi.spyOn(mockResolver, "resolve");
+      const mgr = new TunnelManager({ binaryResolver: mockResolver });
+
+      const result = await mgr.checkBinary(true);
+      expect(result.isInstalled).toBe(true);
+      expect(spy).toHaveBeenCalledWith({
+        binaryPath: undefined,
+        forceRefresh: true,
+      });
+
+      await mgr.checkBinary({ forceRefresh: true });
+      expect(spy).toHaveBeenCalledWith({
+        binaryPath: undefined,
+        forceRefresh: true,
+      });
+
+      await mgr.checkBinary({ forceRefresh: false });
+      expect(spy).toHaveBeenCalledWith({
+        binaryPath: undefined,
+        forceRefresh: false,
+      });
+
+      await mgr.checkBinary();
+      expect(spy).toHaveBeenCalledWith({
+        binaryPath: undefined,
+        forceRefresh: undefined,
+      });
+    });
+
+    it("falls back to default binary name when binaryPath is null in launchSubprocess", async () => {
+      const mockResolver = new BinaryResolver({
+        platform: "darwin",
+        env: { PATH: "/usr/local/bin" },
+        statSync: () => ({ isFile: () => true }),
+        accessSync: () => {},
+      });
+      vi.spyOn(mockResolver, "resolveSync").mockReturnValue({
+        isInstalled: true,
+        binaryPath: null,
+        platform: "darwin",
+      });
+
+      let spawnedCmd = "";
+      const fallbackManager = new TunnelManager({
+        binaryResolver: mockResolver,
+        spawnFn: (cmd) => {
+          spawnedCmd = cmd;
+          const p = new MockChildProcess();
+          setTimeout(
+            () =>
+              p.simulateOutput(
+                "stderr",
+                "https://fallback-cmd.trycloudflare.com\n",
+              ),
+            5,
+          );
+          return p;
+        },
+      });
+
+      await fallbackManager.start();
+      expect(spawnedCmd).toBe("cloudflared");
+      await fallbackManager.stop();
+    });
+
+    it("aborts reconnection if binary is uninstalled during backoff timer", async () => {
+      const mockResolver = new BinaryResolver({
+        platform: "darwin",
+        env: { PATH: "/usr/local/bin" },
+        statSync: () => ({ isFile: () => true }),
+        accessSync: () => {},
+      });
+
+      let nextPid = 55500;
+      let activeProc: MockChildProcess | null = null;
+      const reconnectManager = new TunnelManager({
+        config: { autoRestart: true, maxRetries: 3, retryBackoffMs: 20 },
+        binaryResolver: mockResolver,
+        spawnFn: () => {
+          activeProc = new MockChildProcess();
+          activeProc.pid = nextPid++;
+          setTimeout(
+            () =>
+              activeProc!.simulateOutput(
+                "stderr",
+                "https://reconnect-abort.trycloudflare.com\n",
+              ),
+            5,
+          );
+          return activeProc;
+        },
+      });
+
+      await reconnectManager.start();
+      expect(reconnectManager.getStatus().state).toBe("connected");
+
+      // Now mock resolver to report uninstalled when timer triggers
+      vi.spyOn(mockResolver, "resolveSync").mockReturnValue({
+        isInstalled: false,
+        binaryPath: null,
+        platform: "darwin",
+        error: "Uninstalled",
+      });
+
+      // Trigger crash to start backoff
+      activeProc!.simulateCrash(1);
+      expect(reconnectManager.getStatus().state).toBe("reconnecting");
+
+      // Wait for backoff timer to fire
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(reconnectManager.getStatus().state).toBe("error");
+      expect(reconnectManager.getStatus().lastError).toBe(
+        "cloudflared binary not found",
+      );
+    });
+
+    it("suppresses spawn error when launchSubprocess fails during backoff reconnect", async () => {
+      let spawnCount = 0;
+      let activeProc: MockChildProcess | null = null;
+      const failingReconnectManager = new TunnelManager({
+        config: { autoRestart: true, maxRetries: 3, retryBackoffMs: 20 },
+        spawnFn: () => {
+          spawnCount++;
+          if (spawnCount > 1) {
+            throw new Error("Spawn failure during reconnect");
+          }
+          activeProc = new MockChildProcess();
+          setTimeout(
+            () =>
+              activeProc!.simulateOutput(
+                "stderr",
+                "https://failing-reconnect.trycloudflare.com\n",
+              ),
+            5,
+          );
+          return activeProc;
+        },
+      });
+
+      await failingReconnectManager.start();
+      activeProc!.simulateCrash(1);
+      expect(failingReconnectManager.getStatus().state).toBe("reconnecting");
+
+      await new Promise((r) => setTimeout(r, 60));
+      expect(failingReconnectManager.getStatus().lastError).toBe(
+        "Spawn failure during reconnect",
+      );
+    });
+  });
+
+  describe("isMissingBinaryError and Error Handling Edge Cases", () => {
+    it("handles null, undefined, falsy, and non-object values", () => {
+      expect(isMissingBinaryError(null)).toBe(false);
+      expect(isMissingBinaryError(undefined)).toBe(false);
+      expect(isMissingBinaryError("")).toBe(false);
+      expect(isMissingBinaryError(0)).toBe(false);
+      expect(isMissingBinaryError(false)).toBe(false);
+    });
+
+    it("detects ENOENT from code or message strings", () => {
+      expect(isMissingBinaryError({ code: "ENOENT" })).toBe(true);
+      expect(isMissingBinaryError("spawn cloudflared ENOENT")).toBe(true);
+      expect(isMissingBinaryError("executable missing from system")).toBe(true);
+      expect(isMissingBinaryError("binary not found")).toBe(true);
+      expect(
+        isMissingBinaryError(new Error("cloudflared not found in PATH")),
+      ).toBe(true);
+    });
+
+    it("returns false for unrelated errors and empty objects", () => {
+      expect(isMissingBinaryError(new Error("Connection reset by peer"))).toBe(
+        false,
+      );
+      expect(isMissingBinaryError({})).toBe(false);
+      expect(isMissingBinaryError({ code: "EACCES" })).toBe(false);
+      expect(isMissingBinaryError({ code: "EACCES", message: "denied" })).toBe(
+        false,
+      );
+    });
+
+    it("handles process failure with string and object without message while stopping", () => {
+      const mgr = new TunnelManager();
+      (mgr as any).isStopping = true;
+      (mgr as any).handleProcessFailure(new Error("Error during stop"));
+      expect(mgr.getStatus().lastError).toBe("Error during stop");
+
+      (mgr as any).handleProcessFailure({});
+      expect(mgr.getStatus().lastError).toBe("[object Object]");
+    });
+
+    it("handles process failure with string and object without message when not stopping", () => {
+      const mgr = new TunnelManager({ config: { autoRestart: false } });
+      (mgr as any).isStopping = false;
+      (mgr as any).handleProcessFailure("Simple string error");
+      expect(mgr.getStatus().lastError).toBe("Simple string error");
+
+      (mgr as any).handleProcessFailure({});
+      expect(mgr.getStatus().lastError).toBe("[object Object]");
+    });
+
+    it("handles process exit with code 0 while running without stopping", () => {
+      const mgr = new TunnelManager({ config: { autoRestart: false } });
+      (mgr as any).isStopping = false;
+      (mgr as any).handleProcessExit(0, null);
+      expect(mgr.getStatus().state).toBe("error");
+    });
+
+    it("handles process exit cleanly when state is error due to missing binary in PATH", () => {
+      const mgr = new TunnelManager();
+      (mgr as any).state = "error";
+      (mgr as any).lastError = "cloudflared executable not found in PATH";
+      const proc = new MockChildProcess();
+      (mgr as any).currentProcess = proc;
+      (mgr as any).pid = 999;
+
+      (mgr as any).handleProcessExit(1, null);
+      expect((mgr as any).currentProcess).toBeNull();
+      expect((mgr as any).pid).toBeNull();
+    });
+
+    it("handles process output and exit when PID is undefined", async () => {
+      const procWithoutPid = new MockChildProcess();
+      (procWithoutPid as any).pid = undefined;
+
+      const noPidManager = new TunnelManager({
+        spawnFn: () => procWithoutPid,
+      });
+
+      const startPromise = noPidManager.start();
+      setTimeout(() => {
+        procWithoutPid.simulateOutput(
+          "stderr",
+          "https://no-pid.trycloudflare.com\n",
+        );
+      }, 5);
+
+      const status = await startPromise;
+      expect(status.pid).toBeNull();
+      await noPidManager.stop();
+    });
+
+    it("resolves binary from binaryInfo.binaryPath when launchSubprocess has no args", async () => {
+      const mockResolver = new BinaryResolver({
+        statSync: () => ({ isFile: () => true }),
+        accessSync: () => {},
+      });
+      vi.spyOn(mockResolver, "resolveSync").mockReturnValue({
+        isInstalled: true,
+        binaryPath: "/opt/resolved/cloudflared",
+        platform: "darwin",
+      });
+
+      let spawnedCmd = "";
+      const mgr = new TunnelManager({
+        binaryResolver: mockResolver,
+        spawnFn: (cmd) => {
+          spawnedCmd = cmd;
+          const p = new MockChildProcess();
+          setTimeout(
+            () =>
+              p.simulateOutput(
+                "stderr",
+                "https://launch-sub.trycloudflare.com\n",
+              ),
+            5,
+          );
+          return p;
+        },
+      });
+
+      await (mgr as any).launchSubprocess();
+      expect(spawnedCmd).toBe("/opt/resolved/cloudflared");
+      await mgr.stop();
+    });
+
+    it("resolves binary from config.binaryPath when binaryPath is null in launchSubprocess", async () => {
+      const mockResolver = new BinaryResolver({
+        statSync: () => ({ isFile: () => true }),
+        accessSync: () => {},
+      });
+      vi.spyOn(mockResolver, "resolveSync").mockReturnValue({
+        isInstalled: true,
+        binaryPath: null,
+        platform: "darwin",
+      });
+
+      let spawnedCmd = "";
+      const mgr = new TunnelManager({
+        config: { binaryPath: "/opt/configured/cloudflared" },
+        binaryResolver: mockResolver,
+        spawnFn: (cmd) => {
+          spawnedCmd = cmd;
+          const p = new MockChildProcess();
+          setTimeout(
+            () =>
+              p.simulateOutput(
+                "stderr",
+                "https://launch-sub2.trycloudflare.com\n",
+              ),
+            5,
+          );
+          return p;
+        },
+      });
+
+      await (mgr as any).launchSubprocess();
+      expect(spawnedCmd).toBe("/opt/configured/cloudflared");
+      await mgr.stop();
+    });
+
+    it("resolves binary to cloudflared when both binaryPath and config.binaryPath are null in launchSubprocess", async () => {
+      const mockResolver = new BinaryResolver({
+        statSync: () => ({ isFile: () => true }),
+        accessSync: () => {},
+      });
+      vi.spyOn(mockResolver, "resolveSync").mockReturnValue({
+        isInstalled: true,
+        binaryPath: null,
+        platform: "darwin",
+      });
+
+      let spawnedCmd = "";
+      const mgr = new TunnelManager({
+        binaryResolver: mockResolver,
+        spawnFn: (cmd) => {
+          spawnedCmd = cmd;
+          const p = new MockChildProcess();
+          setTimeout(
+            () =>
+              p.simulateOutput(
+                "stderr",
+                "https://launch-sub3.trycloudflare.com\n",
+              ),
+            5,
+          );
+          return p;
+        },
+      });
+
+      await (mgr as any).launchSubprocess();
+      expect(spawnedCmd).toBe("cloudflared");
+      await mgr.stop();
     });
   });
 });
