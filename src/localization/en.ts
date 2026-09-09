@@ -561,6 +561,7 @@ const en = {
       importing: "Importing the confirmed accounts…",
       summary: "Local account scan summary",
       accounts: "Accounts",
+      accountList: "Discovered local accounts",
       validationFailures: "Verification failures",
       discoveryFailures: "Source failures",
       merged: "Merged",

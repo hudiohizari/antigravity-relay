@@ -6,8 +6,10 @@ import { AntigravityDatabaseDiscoverySource } from "@/modules/cloud-account/loca
 import { AntigravityKeyringDiscoverySource } from "@/modules/cloud-account/local-import/sources/antigravity-keyring.source";
 import { LegacyAgentDiscoverySource } from "@/modules/cloud-account/local-import/sources/legacy-agent.source";
 import { AntigravityCliDiscoverySource } from "@/modules/cloud-account/local-import/sources/antigravity-cli.source";
+import crypto from "node:crypto";
 import { LocalAccountDiscoveryService } from "@/modules/cloud-account/local-import/local-account-discovery.service";
 import { ProtobufUtils } from "@/shared/serialization/protobuf";
+import { encryptWithKey } from "@/shared/security/crypto";
 
 const temporaryDirectories: string[] = [];
 
@@ -338,6 +340,322 @@ describe("LegacyAgentDiscoverySource", () => {
     expect(result.candidates).toEqual([]);
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].code).toBe("missing");
+  });
+
+  it("discovers accounts from Antigravity Manager SQLite database when no JSON index files exist", async () => {
+    const agentDir = createTemporaryDirectory();
+    const dbPath = path.join(agentDir, "cloud_accounts.db");
+    fs.writeFileSync(dbPath, "mock-sqlite-database");
+
+    const mockDb = {
+      pragma: vi.fn(),
+      prepare: vi.fn(() => ({
+        all: vi.fn(() => [
+          {
+            id: "mgr-acc-1",
+            email: "sqlite-migrated@example.com",
+            token_json: JSON.stringify({
+              access_token: "mgr-access",
+              refresh_token: "mgr-refresh",
+              id_token: "mgr-id",
+              project_id: "mgr-project",
+              expiry_timestamp: 1_850_000_000,
+            }),
+            status: "active",
+          },
+        ]),
+      })),
+      close: vi.fn(),
+    };
+
+    const source = new LegacyAgentDiscoverySource({
+      agentDir,
+      managerOptions: {
+        databasePath: dbPath,
+        openDatabase: () => mockDb as any,
+      },
+    });
+
+    const result = await source.discover();
+
+    expect(result.candidates).toEqual([
+      {
+        source: {
+          id: "legacy-agent",
+          location: dbPath,
+        },
+        credential: {
+          accessToken: "mgr-access",
+          refreshToken: "mgr-refresh",
+          idToken: "mgr-id",
+          projectId: "mgr-project",
+          expiryTimestamp: 1_850_000_000,
+        },
+        emailHint: "sqlite-migrated@example.com",
+      },
+    ]);
+    expect(result.failures).toEqual([]);
+    expect(result.inspectedLocations).toBe(3); // 2 JSON index paths + 1 DB path
+  });
+
+  it("coexists with legacy JSON backups and aggregates accounts from both sources", async () => {
+    const agentDir = createTemporaryDirectory();
+    fs.mkdirSync(path.join(agentDir, "backups"));
+    fs.writeFileSync(
+      path.join(agentDir, "antigravity_accounts.json"),
+      JSON.stringify({
+        accounts: {
+          "account-json": {
+            email: "json-user@example.com",
+            backup_file: "account-json.json",
+          },
+        },
+      }),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(agentDir, "backups", "account-json.json"),
+      JSON.stringify({
+        token: {
+          access_token: "json-access",
+          refresh_token: "json-refresh",
+        },
+      }),
+      "utf-8",
+    );
+
+    const dbPath = path.join(agentDir, "cloud_accounts.db");
+    fs.writeFileSync(dbPath, "mock-sqlite-database");
+
+    const mockDb = {
+      pragma: vi.fn(),
+      prepare: vi.fn(() => ({
+        all: vi.fn(() => [
+          {
+            id: "db-acc-1",
+            email: "db-user@example.com",
+            token_json: JSON.stringify({
+              access_token: "db-access",
+              refresh_token: "db-refresh",
+            }),
+          },
+        ]),
+      })),
+      close: vi.fn(),
+    };
+
+    const source = new LegacyAgentDiscoverySource({
+      agentDir,
+      managerOptions: {
+        databasePath: dbPath,
+        openDatabase: () => mockDb as any,
+      },
+    });
+
+    const result = await source.discover();
+
+    expect(result.candidates).toHaveLength(2);
+    expect(result.candidates.map((c) => c.credential.refreshToken)).toEqual([
+      "json-refresh",
+      "db-refresh",
+    ]);
+    expect(result.failures).toEqual([]);
+    expect(result.inspectedLocations).toBe(4); // 2 index paths + 1 backup path + 1 DB path
+  });
+
+  it("emits missing failure if and only if neither JSON index nor SQLite database exist", async () => {
+    const agentDir = createTemporaryDirectory();
+    const source = new LegacyAgentDiscoverySource({ agentDir });
+
+    const result = await source.discover();
+
+    expect(result.candidates).toEqual([]);
+    expect(result.failures).toEqual([
+      {
+        source: { id: "legacy-agent" },
+        code: "missing",
+        message: "The local credential source was not found.",
+      },
+    ]);
+  });
+
+  it("isolates corrupted SQLite database row while retaining valid accounts", async () => {
+    const agentDir = createTemporaryDirectory();
+    const dbPath = path.join(agentDir, "cloud_accounts.db");
+    fs.writeFileSync(dbPath, "mock-sqlite-database");
+
+    const mockDb = {
+      pragma: vi.fn(),
+      prepare: vi.fn(() => ({
+        all: vi.fn(() => [
+          {
+            id: "valid-account",
+            email: "valid@example.com",
+            token_json: JSON.stringify({
+              refresh_token: "valid-refresh",
+            }),
+          },
+          {
+            id: "corrupt-row-1",
+            email: "corrupt@example.com",
+            token_json: "{not-valid-json",
+          },
+        ]),
+      })),
+      close: vi.fn(),
+    };
+
+    const source = new LegacyAgentDiscoverySource({
+      agentDir,
+      managerOptions: {
+        databasePath: dbPath,
+        openDatabase: () => mockDb as any,
+      },
+    });
+
+    const result = await source.discover();
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].credential.refreshToken).toBe("valid-refresh");
+    expect(result.failures).toEqual([
+      {
+        source: {
+          id: "legacy-agent",
+          location: `${dbPath}#corrupt-row-1`,
+        },
+        code: "malformed",
+        message: "The local credential data is malformed.",
+      },
+    ]);
+  });
+
+  it("records scoped locked failure when SQLite database exists but master key is missing or undecryptable", async () => {
+    const key = crypto.randomBytes(32);
+    const agentDir = createTemporaryDirectory();
+    const dbPath = path.join(agentDir, "cloud_accounts.db");
+    fs.writeFileSync(dbPath, "mock-sqlite-database");
+
+    const encryptedToken = encryptWithKey(
+      key,
+      JSON.stringify({ refresh_token: "locked-refresh" }),
+    );
+
+    const mockDb = {
+      pragma: vi.fn(),
+      prepare: vi.fn(() => ({
+        all: vi.fn(() => [
+          {
+            id: "locked-acc",
+            email: "locked@example.com",
+            token_json: encryptedToken,
+          },
+        ]),
+      })),
+      close: vi.fn(),
+    };
+
+    const source = new LegacyAgentDiscoverySource({
+      agentDir,
+      managerOptions: {
+        databasePath: dbPath,
+        masterKeyPaths: [path.join(agentDir, "missing.mk")],
+        openDatabase: () => mockDb as any,
+        keytar: { getPassword: async () => null },
+        getRelayDecryptionKeys: () => [],
+      },
+    });
+
+    const result = await source.discover();
+
+    expect(result.candidates).toEqual([]);
+    expect(result.failures).toEqual([
+      {
+        source: {
+          id: "legacy-agent",
+          location: dbPath,
+        },
+        code: "locked",
+        message: "The local credential source is locked or busy.",
+      },
+    ]);
+  });
+
+  it("deduplicates identical refresh tokens and groups email collisions across IDE and Legacy Manager", async () => {
+    const agentDir = createTemporaryDirectory();
+    const dbPath = path.join(agentDir, "cloud_accounts.db");
+    fs.writeFileSync(dbPath, "mock-sqlite-database");
+
+    const mockDb = {
+      pragma: vi.fn(),
+      prepare: vi.fn(() => ({
+        all: vi.fn(() => [
+          {
+            id: "acc-alpha",
+            email: "dev@example.com",
+            token_json: JSON.stringify({
+              refresh_token: "token-alpha",
+              access_token: "manager-alpha-access",
+            }),
+          },
+          {
+            id: "acc-beta",
+            email: "dev@example.com",
+            token_json: JSON.stringify({
+              refresh_token: "token-beta",
+              access_token: "manager-beta-access",
+            }),
+          },
+        ]),
+      })),
+      close: vi.fn(),
+    };
+
+    const ideDependencies = {
+      existsSync: () => true,
+      getDbPaths: () => ["ide.vscdb"],
+      readTokenInfoFromPath: () => ({
+        accessToken: "ide-alpha-access",
+        refreshToken: "token-alpha",
+      }),
+    };
+
+    const service = new LocalAccountDiscoveryService({
+      digestKey: Buffer.alloc(32, 11),
+      sources: [
+        new AntigravityDatabaseDiscoverySource("ide", ideDependencies),
+        new LegacyAgentDiscoverySource({
+          agentDir,
+          managerOptions: {
+            databasePath: dbPath,
+            openDatabase: () => mockDb as any,
+          },
+        }),
+      ],
+    });
+
+    const session = await service.discover();
+
+    expect(session.result.accounts).toHaveLength(2);
+    expect(session.result.duplicateCount).toBe(1);
+
+    const mergedAlpha = session.result.accounts.find((acc) =>
+      acc.sources.some((s) => s.id === "antigravity-ide-db"),
+    );
+    expect(mergedAlpha).toBeDefined();
+    expect(mergedAlpha?.sources).toEqual([
+      { id: "antigravity-ide-db", location: "ide.vscdb" },
+      { id: "legacy-agent", location: dbPath },
+    ]);
+
+    expect(session.result.emailCollisionGroups).toEqual([
+      {
+        email: "dev@example.com",
+        fingerprints: expect.arrayContaining([
+          mergedAlpha!.fingerprint,
+          expect.any(String),
+        ]),
+      },
+    ]);
   });
 });
 

@@ -419,6 +419,7 @@ const zhCn = {
       importing: "正在导入已确认的账号…",
       summary: "本地账号扫描摘要",
       accounts: "可导入账号",
+      accountList: "发现的本地账号",
       validationFailures: "验证失败",
       discoveryFailures: "来源失败",
       merged: "已合并",

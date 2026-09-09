@@ -107,6 +107,36 @@ function CountBadge({ label, count }: { label: string; count: number }) {
   );
 }
 
+interface DeduplicatedAccountSource {
+  id: LocalAccountImportPreview["sourceSummaries"][number]["id"];
+  locations: string[];
+}
+
+function deduplicateAccountSources(
+  sources: LocalAccountImportPreview["accounts"][number]["sources"],
+): DeduplicatedAccountSource[] {
+  const map = new Map<
+    LocalAccountImportPreview["sourceSummaries"][number]["id"],
+    string[]
+  >();
+
+  for (const source of sources) {
+    const existing = map.get(source.id);
+    if (existing) {
+      if (source.location && !existing.includes(source.location)) {
+        existing.push(source.location);
+      }
+    } else {
+      map.set(source.id, source.location ? [source.location] : []);
+    }
+  }
+
+  return Array.from(map.entries()).map(([id, locations]) => ({
+    id,
+    locations,
+  }));
+}
+
 function PreviewContent({ preview }: { preview: LocalAccountImportPreview }) {
   const { t } = useTranslation();
   return (
@@ -138,7 +168,12 @@ function PreviewContent({ preview }: { preview: LocalAccountImportPreview }) {
           {t("cloud.localImport.noAccounts")}
         </div>
       ) : (
-        <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+        <div
+          className="max-h-56 space-y-2 overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-md"
+          tabIndex={0}
+          role="region"
+          aria-label={t("cloud.localImport.accountList")}
+        >
           {preview.accounts.map((account) => (
             <div key={account.fingerprint} className="rounded-md border p-3">
               <div className="flex min-w-0 items-start justify-between gap-3">
@@ -158,12 +193,16 @@ function PreviewContent({ preview }: { preview: LocalAccountImportPreview }) {
                 />
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {account.sources.map((source) => (
+                {deduplicateAccountSources(account.sources).map((source) => (
                   <Badge
-                    key={`${source.id}:${source.location ?? ""}`}
+                    key={source.id}
                     variant="secondary"
                     className="max-w-full font-normal"
-                    title={source.location}
+                    title={
+                      source.locations.length > 0
+                        ? source.locations.join(", ")
+                        : undefined
+                    }
                   >
                     <span className="truncate">
                       {getSourceLabel(source.id, t)}

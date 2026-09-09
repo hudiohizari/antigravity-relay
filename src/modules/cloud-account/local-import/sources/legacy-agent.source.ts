@@ -1,21 +1,26 @@
-import fs from 'fs';
-import path from 'path';
-import { uniq } from 'lodash-es';
-import { z } from 'zod';
-import { getAgentDir } from '@/shared/platform/paths';
-import { ProtobufUtils } from '@/shared/serialization/protobuf';
+import fs from "fs";
+import path from "path";
+import { uniq } from "lodash-es";
+import { z } from "zod";
+import { getAgentDir } from "@/shared/platform/paths";
+import { ProtobufUtils } from "@/shared/serialization/protobuf";
+import {
+  AntigravityManagerImportAdapter,
+  type AntigravityManagerImportAdapterOptions,
+  normalizeEmailHint,
+} from "@/modules/cloud-account/persistence/antigravity-manager-import-adapter";
 import {
   createLocalAccountDiscoveryFailure,
   createLocalAccountDiscoveryFailureByCode,
-} from '../discovery-errors';
+} from "../discovery-errors";
 import type {
   DiscoveredCredential,
   LocalAccountDiscoverySource,
   LocalAccountSourceResult,
-} from '../types';
+} from "../types";
 
-const LEGACY_INDEX_FILENAMES = ['antigravity_accounts.json', 'accounts.json'];
-const LEGACY_PROTOBUF_KEY = 'jetskiStateSync.agentManagerInitState';
+const LEGACY_INDEX_FILENAMES = ["antigravity_accounts.json", "accounts.json"];
+const LEGACY_PROTOBUF_KEY = "jetskiStateSync.agentManagerInitState";
 
 const LegacyAccountPointerSchema = z
   .object({
@@ -50,23 +55,17 @@ const LegacyBackupSchema = z
   })
   .passthrough();
 
-interface LegacyAgentDiscoverySourceOptions {
+export interface LegacyAgentDiscoverySourceOptions {
   agentDir?: string;
-}
-
-function normalizeEmailHint(email: string | undefined): string | undefined {
-  const normalized = email?.trim();
-  if (!normalized || normalized.toLowerCase() === 'unknown') {
-    return undefined;
-  }
-  return normalized;
+  managerAdapter?: AntigravityManagerImportAdapter;
+  managerOptions?: AntigravityManagerImportAdapterOptions;
 }
 
 function getLegacyAccountPointers(
   value: unknown,
 ): Array<z.infer<typeof LegacyAccountPointerSchema>> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new SyntaxError('Malformed legacy account index');
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new SyntaxError("Malformed legacy account index");
   }
 
   const envelope = z
@@ -91,16 +90,19 @@ function resolveBackupPath(agentDir: string, rawPath: string): string | null {
   const candidates = uniq([
     path.isAbsolute(rawPath) ? rawPath : path.join(agentDir, rawPath),
     path.join(agentDir, fileName),
-    path.join(agentDir, 'backups', fileName),
-    path.join(agentDir, 'accounts', fileName),
+    path.join(agentDir, "backups", fileName),
+    path.join(agentDir, "accounts", fileName),
   ]);
   return (
     candidates.find((candidate) => {
-      const relativePath = path.relative(resolvedAgentDir, path.resolve(candidate));
+      const relativePath = path.relative(
+        resolvedAgentDir,
+        path.resolve(candidate),
+      );
       const isInsideAgentDir =
-        relativePath === '' ||
+        relativePath === "" ||
         (!relativePath.startsWith(`..${path.sep}`) &&
-          relativePath !== '..' &&
+          relativePath !== ".." &&
           !path.isAbsolute(relativePath));
       return isInsideAgentDir && fs.existsSync(candidate);
     }) ?? null
@@ -116,20 +118,23 @@ function extractCredential(value: unknown): DiscoveredCredential {
       ...(token.access_token ? { accessToken: token.access_token } : {}),
       ...(token.id_token ? { idToken: token.id_token } : {}),
       ...(token.project_id ? { projectId: token.project_id } : {}),
-      ...(token.expiry_timestamp !== undefined ? { expiryTimestamp: token.expiry_timestamp } : {}),
+      ...(token.expiry_timestamp !== undefined
+        ? { expiryTimestamp: token.expiry_timestamp }
+        : {}),
     };
   }
 
-  const encodedState = backup[LEGACY_PROTOBUF_KEY] ?? backup.data?.[LEGACY_PROTOBUF_KEY];
+  const encodedState =
+    backup[LEGACY_PROTOBUF_KEY] ?? backup.data?.[LEGACY_PROTOBUF_KEY];
   if (!encodedState) {
-    throw new SyntaxError('Malformed legacy credential backup');
+    throw new SyntaxError("Malformed legacy credential backup");
   }
 
   const tokenInfo = ProtobufUtils.extractOAuthTokenInfo(
-    new Uint8Array(Buffer.from(encodedState, 'base64')),
+    new Uint8Array(Buffer.from(encodedState, "base64")),
   );
   if (!tokenInfo) {
-    throw new SyntaxError('Malformed legacy OAuth protobuf');
+    throw new SyntaxError("Malformed legacy OAuth protobuf");
   }
   return {
     refreshToken: tokenInfo.refreshToken,
@@ -139,16 +144,28 @@ function extractCredential(value: unknown): DiscoveredCredential {
 }
 
 export class LegacyAgentDiscoverySource implements LocalAccountDiscoverySource {
-  readonly id = 'legacy-agent' as const;
+  readonly id = "legacy-agent" as const;
   private readonly agentDir: string;
+  private readonly managerAdapter: AntigravityManagerImportAdapter;
 
   constructor(options: LegacyAgentDiscoverySourceOptions = {}) {
     this.agentDir = options.agentDir ?? getAgentDir();
+    this.managerAdapter =
+      options.managerAdapter ??
+      new AntigravityManagerImportAdapter(
+        options.managerOptions ??
+          (options.agentDir
+            ? {
+                databasePath: path.join(options.agentDir, "cloud_accounts.db"),
+                masterKeyPaths: [path.join(options.agentDir, ".mk")],
+              }
+            : undefined),
+      );
   }
 
   async discover(): Promise<LocalAccountSourceResult> {
-    const candidates: LocalAccountSourceResult['candidates'] = [];
-    const failures: LocalAccountSourceResult['failures'] = [];
+    const candidates: LocalAccountSourceResult["candidates"] = [];
+    const failures: LocalAccountSourceResult["failures"] = [];
     let inspectedLocations = 0;
     let foundIndex = false;
 
@@ -162,7 +179,9 @@ export class LegacyAgentDiscoverySource implements LocalAccountDiscoverySource {
 
       let accountPointers: Array<z.infer<typeof LegacyAccountPointerSchema>>;
       try {
-        accountPointers = getLegacyAccountPointers(JSON.parse(fs.readFileSync(indexPath, 'utf-8')));
+        accountPointers = getLegacyAccountPointers(
+          JSON.parse(fs.readFileSync(indexPath, "utf-8")),
+        );
       } catch (error) {
         failures.push(
           createLocalAccountDiscoveryFailure(
@@ -177,7 +196,8 @@ export class LegacyAgentDiscoverySource implements LocalAccountDiscoverySource {
       }
 
       for (const accountPointer of accountPointers) {
-        const configuredPath = accountPointer.backup_file ?? accountPointer.data_file;
+        const configuredPath =
+          accountPointer.backup_file ?? accountPointer.data_file;
         if (!configuredPath) {
           failures.push(
             createLocalAccountDiscoveryFailureByCode(
@@ -185,7 +205,7 @@ export class LegacyAgentDiscoverySource implements LocalAccountDiscoverySource {
                 id: this.id,
                 location: indexPath,
               },
-              'malformed',
+              "malformed",
             ),
           );
           continue;
@@ -200,7 +220,7 @@ export class LegacyAgentDiscoverySource implements LocalAccountDiscoverySource {
                 id: this.id,
                 location: configuredPath,
               },
-              'missing',
+              "missing",
             ),
           );
           continue;
@@ -212,7 +232,9 @@ export class LegacyAgentDiscoverySource implements LocalAccountDiscoverySource {
               id: this.id,
               location: backupPath,
             },
-            credential: extractCredential(JSON.parse(fs.readFileSync(backupPath, 'utf-8'))),
+            credential: extractCredential(
+              JSON.parse(fs.readFileSync(backupPath, "utf-8")),
+            ),
             emailHint: normalizeEmailHint(accountPointer.email),
           });
         } catch (error) {
@@ -229,13 +251,24 @@ export class LegacyAgentDiscoverySource implements LocalAccountDiscoverySource {
       }
     }
 
-    if (!foundIndex) {
+    const dbPath = this.managerAdapter.getDatabasePath();
+    inspectedLocations += 1;
+    let foundDatabase = false;
+
+    if (this.managerAdapter.databaseExists()) {
+      foundDatabase = true;
+      const dbResult = await this.managerAdapter.importAccounts();
+      candidates.push(...dbResult.candidates);
+      failures.push(...dbResult.failures);
+    }
+
+    if (!foundIndex && !foundDatabase) {
       failures.push(
         createLocalAccountDiscoveryFailureByCode(
           {
             id: this.id,
           },
-          'missing',
+          "missing",
         ),
       );
     }

@@ -60,8 +60,11 @@ export function classifyLocalAccountDiscoveryError(
     code === "locked" ||
     code === "sqlite_busy" ||
     code === "sqlite_locked" ||
+    code === "sqlite_cantopen" ||
+    message.includes("sqlite_cantopen") ||
     message.includes("database is locked") ||
-    message.includes("keyring is locked")
+    message.includes("keyring is locked") ||
+    message.includes("unable to open database file")
   ) {
     return "locked";
   }

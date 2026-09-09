@@ -117,6 +117,14 @@ export function getSecurityStatus(): SecurityStatus {
   return getMasterKeyManager().getSecurityStatus();
 }
 
+export function getDecryptionKeys(): Array<{ key: Buffer; source: KeySource }> {
+  try {
+    return getMasterKeyManager().getDecryptionKeys();
+  } catch {
+    return [];
+  }
+}
+
 export async function encrypt(text: string): Promise<string> {
   const { key } = getMasterKeyManager().getPrimaryKey();
   return encryptWithKey(key, text);
