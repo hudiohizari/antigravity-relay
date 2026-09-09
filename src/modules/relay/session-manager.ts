@@ -19,6 +19,7 @@ export class SessionManager {
 
   private sessions: Map<string, Session> = new Map();
   private sessionsByToken: Map<string, string> = new Map();
+  private sessionsByDeviceId: Map<string, string> = new Map();
   private sockets: Map<string, SocketLike> = new Map();
   private messageBuffer: BufferedMessage[] = [];
   private revokeListeners: Set<(sessionId: string) => void> = new Set();
@@ -33,6 +34,7 @@ export class SessionManager {
     userAgent?: string;
     token?: string;
     sessionId?: string;
+    deviceId?: string;
   }): Session {
     const sessionId = options?.sessionId ?? generateSessionId();
     const token = options?.token ?? generateSessionToken();
@@ -41,6 +43,7 @@ export class SessionManager {
     const session: Session = {
       sessionId,
       token,
+      deviceId: options?.deviceId,
       clientIp: options?.clientIp ?? "127.0.0.1",
       userAgent: options?.userAgent ?? "AntigravityRemote/1.0",
       connectedAt: now,
@@ -56,9 +59,20 @@ export class SessionManager {
   public registerSession(session: Session): void {
     this.sessions.set(session.sessionId, session);
     this.sessionsByToken.set(session.token, session.sessionId);
+    if (session.deviceId) {
+      this.sessionsByDeviceId.set(session.deviceId, session.sessionId);
+    }
   }
 
   public getSession(sessionId: string): Session | undefined {
+    return this.sessions.get(sessionId);
+  }
+
+  public getSessionByDeviceId(deviceId: string): Session | undefined {
+    const sessionId = this.sessionsByDeviceId.get(deviceId);
+    if (!sessionId) {
+      return undefined;
+    }
     return this.sessions.get(sessionId);
   }
 
@@ -109,7 +123,10 @@ export class SessionManager {
     return this.sockets.get(sessionId);
   }
 
-  public unbindSocket(sessionId: string): void {
+  public unbindSocket(sessionId: string, socket?: SocketLike): void {
+    if (socket && this.sockets.get(sessionId) !== socket) {
+      return;
+    }
     this.sockets.delete(sessionId);
     this.setSessionSocketState(sessionId, "disconnected");
   }
@@ -139,6 +156,9 @@ export class SessionManager {
 
     this.closeSessionSocket(sessionId, 4401, "Session revoked");
     this.sessionsByToken.delete(session.token);
+    if (session.deviceId) {
+      this.sessionsByDeviceId.delete(session.deviceId);
+    }
     this.sessions.delete(sessionId);
 
     // Remove any buffered messages from this session
@@ -244,6 +264,7 @@ export class SessionManager {
     }
     this.sessions.clear();
     this.sessionsByToken.clear();
+    this.sessionsByDeviceId.clear();
     this.sockets.clear();
     this.messageBuffer = [];
   }

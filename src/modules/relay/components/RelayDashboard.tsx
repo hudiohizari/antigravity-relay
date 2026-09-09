@@ -299,10 +299,10 @@ export const RelayDashboard: React.FC = () => {
   const pairingUrl = useMemo(() => {
     if (isTunnelConnected && publicUrl) {
       const base = publicUrl.endsWith("/") ? publicUrl.slice(0, -1) : publicUrl;
-      return `${base}/?pair=${pairingToken}`;
+      return `${base}/?pair=${pairingToken}&useWebSocket=true`;
     }
     const port = relayStatus?.port || 4040;
-    return `http://${recommendedIp}:${port}/?pair=${pairingToken}`;
+    return `http://${recommendedIp}:${port}/?pair=${pairingToken}&useWebSocket=true`;
   }, [
     isTunnelConnected,
     publicUrl,
@@ -569,10 +569,10 @@ export const RelayDashboard: React.FC = () => {
                 </div>
                 <Badge
                   variant="outline"
-                  className={`gap-1.5 px-2.5 py-1 text-xs font-medium ${upstreamInfo.color}`}
+                  className={`shrink-0 whitespace-nowrap gap-1.5 px-2.5 py-0.5 text-xs font-medium ${upstreamInfo.color}`}
                 >
                   <span
-                    className={`h-2 w-2 rounded-full ${upstreamInfo.dot}`}
+                    className={`h-2 w-2 rounded-full shrink-0 ${upstreamInfo.dot}`}
                   />
                   {upstreamInfo.label}
                 </Badge>
@@ -1011,6 +1011,9 @@ export const RelayDashboard: React.FC = () => {
                   <tbody className="divide-y">
                     {sessions.map((sess) => {
                       const parsed = parseDeviceUserAgent(sess.userAgent);
+                      const isConnected =
+                        sess.socketState === "connected" ||
+                        now - sess.lastActiveAt <= 45000;
                       const durationStr = formatDuration(
                         now - sess.connectedAt,
                       );
@@ -1038,7 +1041,7 @@ export const RelayDashboard: React.FC = () => {
                                     variant="outline"
                                     className={cn(
                                       "gap-1 px-1.5 py-0 text-[10px] font-normal",
-                                      sess.socketState === "connected"
+                                      isConnected
                                         ? "border-emerald-300 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400"
                                         : "border-zinc-300 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400",
                                     )}
@@ -1046,12 +1049,12 @@ export const RelayDashboard: React.FC = () => {
                                     <span
                                       className={cn(
                                         "h-1.5 w-1.5 rounded-full",
-                                        sess.socketState === "connected"
+                                        isConnected
                                           ? "bg-emerald-500"
                                           : "bg-zinc-400",
                                       )}
                                     />
-                                    {sess.socketState === "connected"
+                                    {isConnected
                                       ? t("sessions.statusConnected")
                                       : t("sessions.statusDisconnected")}
                                   </Badge>

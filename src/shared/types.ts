@@ -299,6 +299,7 @@ export type SessionSocketState = "connected" | "disconnected" | "buffered";
 export interface Session {
   sessionId: string;
   token: string;
+  deviceId?: string;
   clientIp: string;
   userAgent: string;
   connectedAt: number;

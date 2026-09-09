@@ -35,6 +35,38 @@ describe("SessionManager & Command Buffering", () => {
     it("should return undefined for unknown tokens or session IDs", () => {
       expect(manager.getSession("unknown-id")).toBeUndefined();
       expect(manager.getSessionByToken("unknown-token")).toBeUndefined();
+      expect(manager.getSessionByDeviceId("unknown-device")).toBeUndefined();
+    });
+
+    it("should track and retrieve sessions by deviceId", () => {
+      const session = manager.createSession({
+        deviceId: "dev_custom_123",
+        clientIp: "10.0.0.1",
+        userAgent: "Chrome/120.0",
+      });
+
+      expect(session.deviceId).toBe("dev_custom_123");
+      const byDevice = manager.getSessionByDeviceId("dev_custom_123");
+      expect(byDevice).toEqual(session);
+    });
+
+    it("should remove device mapping when session is revoked", () => {
+      const session = manager.createSession({
+        deviceId: "dev_revoke_test",
+      });
+
+      expect(manager.getSessionByDeviceId("dev_revoke_test")).toBeDefined();
+      manager.revokeSession(session.sessionId);
+      expect(manager.getSessionByDeviceId("dev_revoke_test")).toBeUndefined();
+    });
+
+    it("should clear device mappings on reset", () => {
+      manager.createSession({
+        deviceId: "dev_clear_test",
+      });
+      expect(manager.getSessionByDeviceId("dev_clear_test")).toBeDefined();
+      manager.clear();
+      expect(manager.getSessionByDeviceId("dev_clear_test")).toBeUndefined();
     });
 
     it("should list all active sessions", () => {
@@ -113,6 +145,34 @@ describe("SessionManager & Command Buffering", () => {
       manager.bindSocket(session.sessionId, mockSocket);
       manager.unbindSocket(session.sessionId);
 
+      expect(manager.getSocket(session.sessionId)).toBeUndefined();
+      expect(session.socketState).toBe("disconnected");
+    });
+
+    it("should not unbind current socket when an old superseded socket closes", () => {
+      const session = manager.createSession();
+      const oldSocket: SocketLike = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+      };
+      const newSocket: SocketLike = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+      };
+
+      manager.bindSocket(session.sessionId, oldSocket);
+      manager.bindSocket(session.sessionId, newSocket);
+
+      // Old socket fires close event
+      manager.unbindSocket(session.sessionId, oldSocket);
+
+      expect(manager.getSocket(session.sessionId)).toBe(newSocket);
+      expect(session.socketState).toBe("connected");
+
+      // When new socket fires close event, it unbinds
+      manager.unbindSocket(session.sessionId, newSocket);
       expect(manager.getSocket(session.sessionId)).toBeUndefined();
       expect(session.socketState).toBe("disconnected");
     });

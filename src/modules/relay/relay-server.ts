@@ -9,6 +9,7 @@ import {
   RelayServerStatus,
   RemoteEvent,
   Session,
+  UpstreamBridgeState,
   DEFAULT_RELAY_CONFIG,
 } from "./types";
 import { AuthRateLimiter } from "./relay-auth";
@@ -63,6 +64,33 @@ function extractUserAgent(
   return ua || "AntigravityRemote/1.0";
 }
 
+export function extractDeviceId(
+  headers: Record<string, string | string[] | undefined>,
+  query?: URLSearchParams | null,
+): string | undefined {
+  const cookieHeader = headers["cookie"];
+  const cookieStr = Array.isArray(cookieHeader)
+    ? cookieHeader.join("; ")
+    : cookieHeader;
+  if (cookieStr) {
+    const match = cookieStr.match(/(?:^|;\s*)ag_device_id=([^;]+)/);
+    if (match && match[1]) {
+      return decodeURIComponent(match[1].trim());
+    }
+  }
+  const headerDeviceId = headers["x-device-id"];
+  if (headerDeviceId) {
+    return Array.isArray(headerDeviceId) ? headerDeviceId[0] : headerDeviceId;
+  }
+  if (query) {
+    const queryDeviceId = query.get("deviceId") || query.get("device_id");
+    if (queryDeviceId) {
+      return queryDeviceId;
+    }
+  }
+  return undefined;
+}
+
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
   "keep-alive",
@@ -111,6 +139,18 @@ export function generateAutoReloadScript(
 (function() {
   if (window.__antigravityRelayAutoReloadInjected) return;
   window.__antigravityRelayAutoReloadInjected = true;
+
+  try {
+    var deviceMatch = document.cookie.match(/(?:^|;\s*)ag_device_id=([^;]+)/);
+    if (deviceMatch && deviceMatch[1]) {
+      localStorage.setItem("ag_device_id", decodeURIComponent(deviceMatch[1].trim()));
+    } else {
+      var storedDeviceId = localStorage.getItem("ag_device_id");
+      if (storedDeviceId) {
+        document.cookie = "ag_device_id=" + encodeURIComponent(storedDeviceId) + "; path=/; max-age=31536000; SameSite=Lax";
+      }
+    }
+  } catch (_) {}
 
   var initialPort = ${upstreamPort ?? "null"};
   var initialEpoch = ${upstreamEpoch};
@@ -216,6 +256,7 @@ export class RelayServer {
   private isRunning = false;
   private startedAt?: number;
   private upstreamEpoch = 0;
+  private hasCustomUpstreamBridge = false;
   private statusListeners: Set<(status: RelayServerStatus) => void> = new Set();
   private unhookUpstream?: () => void;
   private unhookSessionRevoked?: () => void;
@@ -232,10 +273,12 @@ export class RelayServer {
         maxBufferedCommands: this.config.maxBufferedCommands,
         bufferTtlMs: this.config.bufferTtlMs,
       });
+    this.hasCustomUpstreamBridge = !!options?.upstreamBridge;
     this.upstreamBridge =
       options?.upstreamBridge ??
       new UpstreamBridge({
         sessionManager: this.sessionManager,
+        autoReconnect: false,
       });
     this.rateLimiter = options?.rateLimiter ?? new AuthRateLimiter();
 
@@ -271,17 +314,35 @@ export class RelayServer {
   }
 
   public getStatus(): RelayServerStatus {
+    const port = this.portDiscovery.getPort();
+    const isRestarting = this.portDiscovery.isRestarting();
+    const isBuffering = isRestarting || this.upstreamBridge.isBuffering();
+
+    const bridgeStatus = this.upstreamBridge.getStatus();
+    const upstreamState: UpstreamBridgeState = isRestarting
+      ? "reconnecting"
+      : port
+        ? "connected"
+        : this.hasCustomUpstreamBridge
+          ? bridgeStatus.state
+          : "disconnected";
+
     return {
       isRunning: this.isRunning,
       port: this.config.port,
       host: this.config.host,
       activeSessions: this.sessionManager.getActiveSessions().length,
-      isBuffering: this.upstreamBridge.isBuffering(),
-      upstream: this.upstreamBridge.getStatus(),
+      isBuffering,
+      upstream: {
+        ...bridgeStatus,
+        state: upstreamState,
+        targetHost: "127.0.0.1",
+        targetPort: port ?? bridgeStatus.targetPort,
+      },
       startedAt: this.startedAt,
-      upstreamPort: this.portDiscovery.getPort(),
+      upstreamPort: port,
       upstreamEpoch: this.upstreamEpoch,
-      isRestarting: this.portDiscovery.isRestarting(),
+      isRestarting,
     };
   }
 
@@ -328,16 +389,17 @@ export class RelayServer {
 
     // Non-proxied health check endpoint
     app.get("/health", async () => {
+      const status = this.getStatus();
       return {
         success: true,
         status: "healthy",
         isRunning: this.isRunning,
-        activeSessions: this.sessionManager.getActiveSessions().length,
-        isBuffering: this.upstreamBridge.isBuffering(),
-        upstream: this.upstreamBridge.getStatus(),
-        upstreamPort: this.portDiscovery.getPort(),
+        activeSessions: status.activeSessions,
+        isBuffering: status.isBuffering,
+        upstream: status.upstream,
+        upstreamPort: status.upstreamPort,
         upstreamEpoch: this.upstreamEpoch,
-        isRestarting: this.portDiscovery.isRestarting(),
+        isRestarting: status.isRestarting,
         timestamp: Date.now(),
       };
     });
@@ -402,17 +464,42 @@ export class RelayServer {
           parsedUrl.searchParams.get("token") ||
           (request.headers["x-session-token"] as string | undefined);
 
-        if (token) {
-          const existing = this.sessionManager.getSessionByToken(token);
-          if (existing) {
-            existing.clientIp = clientIp;
-            existing.userAgent = userAgent;
-            this.sessionManager.updateSessionActivity(existing.sessionId);
+        let deviceId = extractDeviceId(request.headers, parsedUrl.searchParams);
+        if (!deviceId) {
+          deviceId = `dev_${crypto.randomUUID()}`;
+          reply.header(
+            "Set-Cookie",
+            `ag_device_id=${encodeURIComponent(deviceId)}; Path=/; Max-Age=31536000; SameSite=Lax`,
+          );
+        }
+
+        let session = this.sessionManager.getSessionByDeviceId(deviceId);
+
+        if (session) {
+          session.clientIp = clientIp;
+          session.userAgent = userAgent;
+          if (token && session.token !== token) {
+            session.token = token;
+            this.sessionManager.registerSession(session);
+          }
+          this.sessionManager.updateSessionActivity(session.sessionId);
+        } else if (token) {
+          const existingByToken = this.sessionManager.getSessionByToken(token);
+          if (existingByToken) {
+            existingByToken.clientIp = clientIp;
+            existingByToken.userAgent = userAgent;
+            existingByToken.deviceId = deviceId;
+            this.sessionManager.registerSession(existingByToken);
+            this.sessionManager.updateSessionActivity(
+              existingByToken.sessionId,
+            );
+            session = existingByToken;
           } else {
-            this.sessionManager.createSession({
+            session = this.sessionManager.createSession({
               clientIp,
               userAgent,
               token,
+              deviceId,
             });
             this.notifyStatusUpdated();
           }
@@ -424,11 +511,17 @@ export class RelayServer {
             .getActiveSessions()
             .find((s) => s.clientIp === clientIp && s.userAgent === userAgent);
           if (existing) {
+            if (!existing.deviceId) {
+              existing.deviceId = deviceId;
+              this.sessionManager.registerSession(existing);
+            }
             this.sessionManager.updateSessionActivity(existing.sessionId);
+            session = existing;
           } else {
-            this.sessionManager.createSession({
+            session = this.sessionManager.createSession({
               clientIp,
               userAgent,
+              deviceId,
             });
             this.notifyStatusUpdated();
           }
@@ -438,6 +531,7 @@ export class RelayServer {
             .find((s) => s.clientIp === clientIp && s.userAgent === userAgent);
           if (existing) {
             this.sessionManager.updateSessionActivity(existing.sessionId);
+            session = existing;
           }
         }
 
@@ -607,9 +701,11 @@ export class RelayServer {
 
     this.setupWebSocketUpgradeHandler();
 
-    this.upstreamBridge.connect().catch(() => {
-      // Connect errors handled by upstream bridge buffering
-    });
+    if (this.hasCustomUpstreamBridge) {
+      this.upstreamBridge.connect().catch(() => {
+        // Connect errors handled by upstream bridge buffering
+      });
+    }
 
     this.notifyStatusUpdated();
     return this.getStatus();
@@ -814,9 +910,16 @@ export class RelayServer {
       parsedUrl?.searchParams.get("pair") ||
       parsedUrl?.searchParams.get("token") ||
       (req.headers["x-session-token"] as string | undefined);
+    const deviceId = extractDeviceId(
+      req.headers as any,
+      parsedUrl?.searchParams,
+    );
 
     let session: Session | undefined;
-    if (token) {
+    if (deviceId) {
+      session = this.sessionManager.getSessionByDeviceId(deviceId);
+    }
+    if (!session && token) {
       session = this.sessionManager.getSessionByToken(token);
     }
 
@@ -834,12 +937,28 @@ export class RelayServer {
         if (token) {
           session.token = token;
         }
+        if (deviceId && !session.deviceId) {
+          session.deviceId = deviceId;
+          this.sessionManager.registerSession(session);
+        }
       } else {
         session = this.sessionManager.createSession({
           clientIp,
           userAgent,
           token: token || undefined,
+          deviceId,
         });
+      }
+    } else {
+      session.clientIp = clientIp;
+      session.userAgent = userAgent;
+      if (deviceId && !session.deviceId) {
+        session.deviceId = deviceId;
+        this.sessionManager.registerSession(session);
+      }
+      if (token && session.token !== token) {
+        session.token = token;
+        this.sessionManager.registerSession(session);
       }
     }
 
@@ -919,28 +1038,28 @@ export class RelayServer {
 
     clientWs.on("close", (code: number, reason: Buffer) => {
       this.activeWsConnections.delete(pair);
-      this.sessionManager.unbindSocket(sessionId);
+      this.sessionManager.unbindSocket(sessionId, clientWs as any);
       safeClose(upstreamWs, code, reason);
       this.notifyStatusUpdated();
     });
 
     upstreamWs.on("close", (code: number, reason: Buffer) => {
       this.activeWsConnections.delete(pair);
-      this.sessionManager.unbindSocket(sessionId);
+      this.sessionManager.unbindSocket(sessionId, clientWs as any);
       safeClose(clientWs, code, reason);
       this.notifyStatusUpdated();
     });
 
     clientWs.on("error", () => {
       this.activeWsConnections.delete(pair);
-      this.sessionManager.unbindSocket(sessionId);
+      this.sessionManager.unbindSocket(sessionId, clientWs as any);
       safeClose(upstreamWs);
       this.notifyStatusUpdated();
     });
 
     upstreamWs.on("error", () => {
       this.activeWsConnections.delete(pair);
-      this.sessionManager.unbindSocket(sessionId);
+      this.sessionManager.unbindSocket(sessionId, clientWs as any);
       safeClose(clientWs, 1011, "Upstream connection error");
       this.notifyStatusUpdated();
     });
@@ -948,6 +1067,9 @@ export class RelayServer {
 
   private handlePortChanged(_oldPort: number | null, _newPort: number): void {
     this.upstreamEpoch++;
+    if (!this.hasCustomUpstreamBridge) {
+      this.upstreamBridge.flushBuffer().catch(() => {});
+    }
     for (const pair of this.activeWsConnections) {
       if (pair.sessionId) {
         this.sessionManager.unbindSocket(pair.sessionId);
@@ -961,6 +1083,9 @@ export class RelayServer {
 
   private handleRestarting(): void {
     this.upstreamEpoch++;
+    if (!this.hasCustomUpstreamBridge) {
+      this.upstreamBridge.enterBuffering("Antigravity restarting");
+    }
     for (const pair of this.activeWsConnections) {
       if (pair.sessionId) {
         this.sessionManager.unbindSocket(pair.sessionId);
@@ -988,6 +1113,13 @@ export class RelayServer {
   }
 
   private wirePortDiscoveryEvents(): void {
+    this.portDiscovery.on("port-discovered", () => {
+      if (!this.hasCustomUpstreamBridge) {
+        this.upstreamBridge.flushBuffer().catch(() => {});
+      }
+      this.notifyStatusUpdated();
+    });
+
     this.portDiscovery.on("port-changed", ({ oldPort, newPort }) => {
       this.handlePortChanged(oldPort, newPort);
     });
