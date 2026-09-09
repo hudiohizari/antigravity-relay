@@ -35,6 +35,7 @@ import {
   stopTunnel,
   getTunnelUrl,
   checkTunnelBinary,
+  regeneratePairingKey,
 } from "../actions/relay";
 import { ipc } from "@/ipc/manager";
 import type { Session } from "../types";
@@ -212,6 +213,21 @@ export const RelayDashboard: React.FC = () => {
     const recommended = localIps.find((ip) => ip.isRecommended);
     return recommended?.address || localIps[0].address;
   }, [localIps]);
+
+  const serverPairingKey = relayStatus?.pairingKey;
+  useEffect(() => {
+    if (serverPairingKey && serverPairingKey !== pairingToken) {
+      setPairingToken(serverPairingKey);
+    }
+  }, [serverPairingKey, pairingToken]);
+
+  const regenerateKeyMutation = useMutation({
+    mutationFn: regeneratePairingKey,
+    onSuccess: (newKey) => {
+      setPairingToken(newKey);
+      queryClient.invalidateQueries({ queryKey: ["relay", "status"] });
+    },
+  });
 
   // Mutations
   const startRelayMutation = useMutation({
@@ -471,12 +487,8 @@ export const RelayDashboard: React.FC = () => {
   );
 
   const activeSessionsCount = useMemo(
-    () =>
-      sessions.filter(
-        (sess) =>
-          sess.socketState === "connected" || now - sess.lastActiveAt <= 45000,
-      ).length,
-    [sessions, now],
+    () => sessions.filter((sess) => sess.socketState === "connected").length,
+    [sessions],
   );
 
   // Upstream status pill info
@@ -1136,11 +1148,18 @@ export const RelayDashboard: React.FC = () => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={!isRelayRunning}
+                    disabled={
+                      !isRelayRunning || regenerateKeyMutation.isPending
+                    }
                     className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setPairingToken(generatePairingToken())}
+                    onClick={() => regenerateKeyMutation.mutate()}
                   >
-                    <RotateCw className="h-3 w-3 mr-1" />
+                    <RotateCw
+                      className={cn(
+                        "h-3 w-3 mr-1",
+                        regenerateKeyMutation.isPending && "animate-spin",
+                      )}
+                    />
                     {t("pairing.regenerateToken")}
                   </Button>
                 </div>
@@ -1264,9 +1283,7 @@ export const RelayDashboard: React.FC = () => {
                   <tbody className="divide-y">
                     {sessions.map((sess) => {
                       const parsed = parseDeviceUserAgent(sess.userAgent, t);
-                      const isConnected =
-                        sess.socketState === "connected" ||
-                        now - sess.lastActiveAt <= 45000;
+                      const isConnected = sess.socketState === "connected";
                       const durationStr = formatDuration(
                         now - sess.connectedAt,
                       );

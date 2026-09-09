@@ -55,6 +55,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       config: {
         port: 0,
         host: "127.0.0.1",
+        requirePairing: false,
       },
       portDiscovery,
     });
@@ -157,7 +158,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       });
 
       const unlinkedServer = new RelayServer({
-        config: { port: 0, host: "127.0.0.1" },
+        config: { port: 0, host: "127.0.0.1", requirePairing: false },
         portDiscovery: unlinkedDiscovery,
       });
 
@@ -182,7 +183,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       });
 
       const deadServer = new RelayServer({
-        config: { port: 0, host: "127.0.0.1" },
+        config: { port: 0, host: "127.0.0.1", requirePairing: false },
         portDiscovery: deadPortDiscovery,
       });
 
@@ -324,7 +325,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
 
     it("returns HTTP 503 when attempting WebSocket upgrade while port is unknown", async () => {
       const noPortServer = new RelayServer({
-        config: { port: 0, host: "127.0.0.1" },
+        config: { port: 0, host: "127.0.0.1", requirePairing: false },
         portDiscovery: new PortDiscoveryService({
           logPath: "/nonexistent/path.log",
         }),
@@ -363,6 +364,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
           port: 0,
           host: "127.0.0.1",
           injectAutoReload: false,
+          requirePairing: false,
         },
         portDiscovery,
       });
@@ -1184,6 +1186,150 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(switchSpy).not.toHaveBeenCalled();
 
       switchSpy.mockRestore();
+    });
+  });
+
+  describe("Relay Pairing Authentication and Session Disconnect Protocol", () => {
+    let secureServer: RelayServer;
+    let securePort: number;
+
+    beforeEach(async () => {
+      secureServer = new RelayServer({
+        config: {
+          port: 0,
+          host: "127.0.0.1",
+          requirePairing: true,
+        },
+        portDiscovery,
+      });
+      const st = await secureServer.start();
+      securePort = st.port;
+    });
+
+    afterEach(async () => {
+      if (secureServer) {
+        await secureServer.stop();
+        secureServer.dispose();
+      }
+    });
+
+    it("rejects unauthenticated root GET request with 401 and renders pairing page", async () => {
+      const res = await fetch(`http://127.0.0.1:${securePort}/`, {
+        headers: { Accept: "text/html" },
+      });
+      expect(res.status).toBe(401);
+      const text = await res.text();
+      expect(text).toContain("Device Pairing Required");
+      expect(text).toContain('name="pair"');
+      expect(secureServer.getSessionManager().getActiveSessions()).toHaveLength(
+        0,
+      );
+    });
+
+    it("rejects unauthenticated API request with 401 JSON", async () => {
+      const res = await fetch(`http://127.0.0.1:${securePort}/api/chat`);
+      expect(res.status).toBe(401);
+      const data = (await res.json()) as any;
+      expect(data.error).toBe("unauthorized");
+      expect(data.message).toContain("Pairing key required");
+    });
+
+    it("rejects invalid pairing key with 401 and error notice", async () => {
+      const res = await fetch(
+        `http://127.0.0.1:${securePort}/?pair=wrong-key`,
+        { headers: { Accept: "text/html" } },
+      );
+      expect(res.status).toBe(401);
+      const text = await res.text();
+      expect(text).toContain("Invalid pairing key");
+      expect(secureServer.getSessionManager().getActiveSessions()).toHaveLength(
+        0,
+      );
+    });
+
+    it("authenticates successfully with valid pairing key and persists device cookie", async () => {
+      const key = secureServer.getPairingKey();
+      const res = await undiciRequest(
+        `http://127.0.0.1:${securePort}/?pair=${key}`,
+      );
+      expect(res.statusCode).toBe(200);
+
+      const setCookie = res.headers["set-cookie"];
+      expect(setCookie).toBeTruthy();
+      const cookieStr = Array.isArray(setCookie)
+        ? setCookie.join("; ")
+        : setCookie!;
+      expect(cookieStr).toContain("ag_device_id=");
+
+      const match = cookieStr.match(/ag_device_id=([^;]+)/);
+      expect(match).toBeTruthy();
+      const deviceId = decodeURIComponent(match![1]);
+
+      const sessions = secureServer.getSessionManager().getActiveSessions();
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].deviceId).toBe(deviceId);
+
+      // Subsequent request using cookie succeeds without ?pair=
+      const nextRes = await undiciRequest(`http://127.0.0.1:${securePort}/`, {
+        headers: {
+          cookie: `ag_device_id=${encodeURIComponent(deviceId)}`,
+          accept: "text/html",
+        },
+      });
+      expect(nextRes.statusCode).toBe(200);
+    });
+
+    it("closes unauthenticated WebSocket connection with 4401 code", async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${securePort}/connect-websocket`,
+      );
+      const closeEvent = await new Promise<{ code: number; reason: string }>(
+        (resolve) => {
+          ws.on("close", (code, reason) => {
+            resolve({ code, reason: reason.toString() });
+          });
+        },
+      );
+      expect(closeEvent.code).toBe(4401);
+    });
+
+    it("allows authenticated WebSocket and immediately updates active count on disconnect", async () => {
+      const key = secureServer.getPairingKey();
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${securePort}/connect-websocket?pair=${key}`,
+        {
+          headers: {
+            "x-codeium-csrf-token": mockUpstream.getCsrfToken(),
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.on("open", () => resolve());
+        ws.on("error", (err) => reject(err));
+      });
+
+      expect(secureServer.getStatus().activeSessions).toBe(1);
+
+      // Close the socket (device closed tab/app)
+      ws.close();
+      await new Promise<void>((resolve) => ws.on("close", () => resolve()));
+
+      // Wait for server event loop to process close event
+      await new Promise<void>((resolve) => {
+        if (secureServer.getStatus().activeSessions === 0) return resolve();
+        const check = setInterval(() => {
+          if (secureServer.getStatus().activeSessions === 0) {
+            clearInterval(check);
+            resolve();
+          }
+        }, 10);
+      });
+
+      // Verify activeSessions immediately drops to 0
+      expect(secureServer.getStatus().activeSessions).toBe(0);
+      const session = secureServer.getSessionManager().getActiveSessions()[0];
+      expect(session.socketState).toBe("disconnected");
     });
   });
 });

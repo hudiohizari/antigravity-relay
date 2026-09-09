@@ -83,6 +83,14 @@ export const relayRouter = os.router({
         token: session.token,
       };
     }),
+
+  getPairingKey: os.output(z.string()).handler(async () => {
+    return RelayController.getInstance().relayServer.getPairingKey();
+  }),
+
+  regeneratePairingKey: os.output(z.string()).handler(async () => {
+    return RelayController.getInstance().relayServer.regeneratePairingKey();
+  }),
 });
 
 export const tunnelRouter = os.router({

@@ -44,4 +44,5 @@ export const DEFAULT_RELAY_CONFIG: RelayConfig = {
   bufferTtlMs: 60000,
   heartbeatIntervalMs: 15000,
   injectAutoReload: true,
+  requirePairing: true,
 };

@@ -98,6 +98,12 @@ export class SessionManager {
     return Array.from(this.sessions.values());
   }
 
+  public getConnectedSessions(): Session[] {
+    return Array.from(this.sessions.values()).filter(
+      (s) => s.socketState === "connected",
+    );
+  }
+
   public updateSessionActivity(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session) {
@@ -136,7 +142,9 @@ export class SessionManager {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.socketState = state;
-      session.lastActiveAt = Date.now();
+      if (state === "connected") {
+        session.lastActiveAt = Date.now();
+      }
     }
   }
 

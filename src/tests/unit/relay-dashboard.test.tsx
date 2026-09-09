@@ -76,6 +76,8 @@ vi.mock("@/modules/relay/actions/relay", () => ({
   stopTunnel: vi.fn(),
   getTunnelUrl: vi.fn(),
   checkTunnelBinary: vi.fn(),
+  getPairingKey: vi.fn(),
+  regeneratePairingKey: vi.fn(),
 }));
 
 describe("RelayDashboard Component", () => {
@@ -302,6 +304,33 @@ describe("RelayDashboard Component", () => {
           description: "pairing.linkCopied",
         }),
       );
+    });
+  });
+
+  it("calls regeneratePairingKey when Regenerate button is clicked", async () => {
+    vi.mocked(relayActions.regeneratePairingKey).mockResolvedValue(
+      "new-secret-key-999",
+    );
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const regenButton = await screen.findByRole("button", {
+      name: /pairing\.regenerateToken/i,
+    });
+    expect(regenButton).toBeDefined();
+
+    await waitFor(() => {
+      expect(regenButton.hasAttribute("disabled")).toBe(false);
+    });
+
+    fireEvent.click(regenButton);
+
+    await waitFor(() => {
+      expect(relayActions.regeneratePairingKey).toHaveBeenCalled();
     });
   });
 
@@ -566,17 +595,17 @@ describe("RelayDashboard Component", () => {
     });
   });
 
-  it("evaluates session as Active when socket is disconnected but HTTP RPC activity occurred within 45s", async () => {
+  it("evaluates session as Connected when socket is connected", async () => {
     vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
       {
-        sessionId: "session-http-active",
-        token: "secret-token-http",
+        sessionId: "session-socket-active",
+        token: "secret-token-active",
         clientIp: "192.168.1.60",
         userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
         connectedAt: Date.now() - 60000,
-        lastActiveAt: Date.now() - 10000, // 10s ago <= 45s
+        lastActiveAt: Date.now() - 10000,
         authenticated: true,
-        socketState: "disconnected",
+        socketState: "connected",
         deviceId: "dev_11223344",
       },
     ]);
@@ -592,15 +621,15 @@ describe("RelayDashboard Component", () => {
     expect(screen.queryByText("sessions.statusDisconnected")).toBeNull();
   });
 
-  it("evaluates session as Disconnected when socket is disconnected and last activity exceeds 45s", async () => {
+  it("evaluates session as Disconnected immediately when socket is disconnected", async () => {
     vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
       {
-        sessionId: "session-inactive",
-        token: "secret-token-inactive",
+        sessionId: "session-disconnected",
+        token: "secret-token-disconnected",
         clientIp: "192.168.1.70",
         userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
         connectedAt: Date.now() - 120000,
-        lastActiveAt: Date.now() - 50000, // 50s ago > 45s
+        lastActiveAt: Date.now() - 5000, // 5s ago
         authenticated: true,
         socketState: "disconnected",
         deviceId: "dev_99887766",

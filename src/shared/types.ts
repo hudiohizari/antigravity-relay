@@ -260,6 +260,7 @@ export interface RelayConfig {
   heartbeatIntervalMs: number;
   staticDir?: string;
   injectAutoReload?: boolean;
+  requirePairing?: boolean;
 }
 
 export type RelayServerConfig = RelayConfig;
@@ -293,6 +294,7 @@ export interface RelayServerStatus {
   isRestarting?: boolean;
   localIp?: string | null;
   networkUrl?: string | null;
+  pairingKey?: string | null;
 }
 
 // Remote Session Management

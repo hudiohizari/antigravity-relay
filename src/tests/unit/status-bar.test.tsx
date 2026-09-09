@@ -377,7 +377,7 @@ describe("StatusBar Component", () => {
     expect(relayLink.getAttribute("href")).toBe("http://127.0.0.1:4040");
   });
 
-  it("renders both Wi-Fi network address and local address when networkUrl is present", async () => {
+  it("renders only local Wi-Fi network address and not local device loopback when networkUrl is present", async () => {
     vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
       isRunning: true,
       port: 4040,
@@ -402,23 +402,16 @@ describe("StatusBar Component", () => {
       </QueryClientProvider>,
     );
 
-    const wifiBadge = await screen.findByText("status.wifi_network");
-    expect(wifiBadge).toBeDefined();
-
-    const localBadge = await screen.findByText("status.local_network");
-    expect(localBadge).toBeDefined();
-
-    const wifiLink = screen.getByRole("link", {
+    const wifiLink = await screen.findByRole("link", {
       name: /http:\/\/192\.168\.18\.85:4040/i,
     });
     expect(wifiLink).toBeDefined();
     expect(wifiLink.getAttribute("href")).toBe("http://192.168.18.85:4040");
 
-    const localLink = screen.getByRole("link", {
+    const localLink = screen.queryByRole("link", {
       name: /http:\/\/127\.0\.0\.1:4040/i,
     });
-    expect(localLink).toBeDefined();
-    expect(localLink.getAttribute("href")).toBe("http://127.0.0.1:4040");
+    expect(localLink).toBeNull();
   });
 
   it("renders active public link under tunnel when connected", async () => {

@@ -13,7 +13,12 @@ import {
   UpstreamBridgeState,
   DEFAULT_RELAY_CONFIG,
 } from "./types";
-import { AuthRateLimiter } from "./relay-auth";
+import {
+  AuthRateLimiter,
+  generatePairingKey,
+  generateSessionToken,
+  validateToken,
+} from "./relay-auth";
 import { SessionManager } from "./session-manager";
 import { UpstreamBridge } from "./upstream-bridge";
 import { PortDiscoveryService } from "./port-discovery";
@@ -251,6 +256,99 @@ export function generateAutoReloadScript(
 </script>`;
 }
 
+export function generatePairingHtml(errorMessage?: string): string {
+  const errorBlock = errorMessage
+    ? `<div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#ef4444;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:18px;">${errorMessage}</div>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Antigravity Relay - Pairing Required</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #090d16;
+      color: #f3f4f6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+    .card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 400px;
+      width: 100%;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .icon {
+      width: 44px;
+      height: 44px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+      color: #10b981;
+    }
+    h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+    p { font-size: 0.875rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.5rem; }
+    label { display: block; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 0.5rem; }
+    input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: #0d131f;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
+      color: #f3f4f6;
+      font-family: monospace;
+      font-size: 0.9375rem;
+      margin-bottom: 1.25rem;
+      outline: none;
+    }
+    input:focus { border-color: #10b981; }
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      background: #10b981;
+      color: #000;
+      font-weight: 600;
+      font-size: 0.875rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover { background: #059669; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+    </div>
+    <h1>Device Pairing Required</h1>
+    <p>To access Antigravity Relay, enter the pairing key from your desktop dashboard.</p>
+    ${errorBlock}
+    <form method="GET" action="/">
+      <input type="hidden" name="useWebSocket" value="true" />
+      <label for="pair">Pairing Key</label>
+      <input type="password" id="pair" name="pair" placeholder="Enter pairing key..." autofocus autocomplete="off" required />
+      <button type="submit">Pair Device</button>
+    </form>
+  </div>
+</body>
+</html>`;
+}
+
 export class RelayServer {
   private readonly config: RelayConfig;
   private readonly sessionManager: SessionManager;
@@ -274,6 +372,7 @@ export class RelayServer {
   private unhookUpstream?: () => void;
   private unhookSessionRevoked?: () => void;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private currentPairingKey: string = generatePairingKey();
 
   constructor(options?: RelayServerOptions) {
     this.config = {
@@ -326,6 +425,23 @@ export class RelayServer {
     return this.portDiscovery;
   }
 
+  public getPairingKey(): string {
+    return this.currentPairingKey;
+  }
+
+  public regeneratePairingKey(): string {
+    this.currentPairingKey = generatePairingKey();
+    this.notifyStatusUpdated();
+    return this.currentPairingKey;
+  }
+
+  public validatePairingKey(candidate?: string | null): boolean {
+    if (!candidate || typeof candidate !== "string") {
+      return false;
+    }
+    return validateToken(candidate.trim(), this.currentPairingKey);
+  }
+
   public getStatus(): RelayServerStatus {
     const port = this.portDiscovery.getPort();
     const isRestarting = this.portDiscovery.isRestarting();
@@ -350,7 +466,7 @@ export class RelayServer {
       isRunning: this.isRunning,
       port: this.config.port,
       host: this.config.host,
-      activeSessions: this.sessionManager.getActiveSessions().length,
+      activeSessions: this.sessionManager.getConnectedSessions().length,
       isBuffering,
       upstream: {
         ...bridgeStatus,
@@ -364,6 +480,7 @@ export class RelayServer {
       isRestarting,
       localIp,
       networkUrl,
+      pairingKey: this.isRunning ? this.currentPairingKey : null,
     };
   }
 
@@ -536,7 +653,22 @@ export class RelayServer {
               existingByToken.sessionId,
             );
             session = existingByToken;
-          } else if (pairingToken) {
+          }
+        }
+
+        const requirePairing = this.config.requirePairing !== false;
+
+        // If not yet authenticated, try pairing token
+        if (!session && pairingToken) {
+          if (this.rateLimiter.isRateLimited(clientIp)) {
+            return reply.status(429).send({
+              error: "rate_limited",
+              message: "Too many pairing attempts. Please wait.",
+            });
+          }
+
+          if (this.validatePairingKey(pairingToken) || !requirePairing) {
+            this.rateLimiter.recordSuccess(clientIp);
             session = this.sessionManager.createSession({
               clientIp,
               userAgent,
@@ -544,45 +676,94 @@ export class RelayServer {
               deviceId,
             });
             this.notifyStatusUpdated();
+          } else {
+            this.rateLimiter.recordFailure(clientIp);
+            const isHtml =
+              request.method === "GET" &&
+              (parsedUrl.pathname === "/" ||
+                parsedUrl.pathname === "/index.html" ||
+                (typeof request.headers.accept === "string" &&
+                  request.headers.accept.includes("text/html")));
+
+            if (isHtml) {
+              return reply
+                .status(401)
+                .type("text/html")
+                .send(
+                  generatePairingHtml(
+                    "Invalid pairing key. Check desktop dashboard.",
+                  ),
+                );
+            }
+            return reply.status(401).send({
+              error: "unauthorized",
+              message: "Invalid pairing key",
+            });
           }
-        } else if (
-          parsedUrl.pathname === "/" ||
-          parsedUrl.pathname === "/index.html"
-        ) {
-          if (!originalDeviceId) {
+        } else if (!requirePairing) {
+          if (
+            parsedUrl.pathname === "/" ||
+            parsedUrl.pathname === "/index.html"
+          ) {
+            if (!originalDeviceId) {
+              const existing = this.sessionManager
+                .getActiveSessions()
+                .find(
+                  (s) => s.clientIp === clientIp && s.userAgent === userAgent,
+                );
+              if (existing) {
+                if (!existing.deviceId && deviceId) {
+                  this.sessionManager.updateSessionDeviceId(
+                    existing.sessionId,
+                    deviceId,
+                  );
+                }
+                this.sessionManager.updateSessionActivity(existing.sessionId);
+                session = existing;
+              }
+            }
+
+            if (!session) {
+              session = this.sessionManager.createSession({
+                clientIp,
+                userAgent,
+                deviceId,
+              });
+              this.notifyStatusUpdated();
+            }
+          } else if (!originalDeviceId) {
             const existing = this.sessionManager
               .getActiveSessions()
               .find(
                 (s) => s.clientIp === clientIp && s.userAgent === userAgent,
               );
             if (existing) {
-              if (!existing.deviceId && deviceId) {
-                this.sessionManager.updateSessionDeviceId(
-                  existing.sessionId,
-                  deviceId,
-                );
-              }
               this.sessionManager.updateSessionActivity(existing.sessionId);
               session = existing;
             }
           }
+        }
 
-          if (!session) {
-            session = this.sessionManager.createSession({
-              clientIp,
-              userAgent,
-              deviceId,
-            });
-            this.notifyStatusUpdated();
+        // If still unauthenticated, block request from reaching upstream IDE
+        if (requirePairing && (!session || !session.authenticated)) {
+          const isHtml =
+            request.method === "GET" &&
+            (parsedUrl.pathname === "/" ||
+              parsedUrl.pathname === "/index.html" ||
+              (typeof request.headers.accept === "string" &&
+                request.headers.accept.includes("text/html")));
+
+          if (isHtml) {
+            return reply
+              .status(401)
+              .type("text/html")
+              .send(generatePairingHtml());
           }
-        } else if (!originalDeviceId) {
-          const existing = this.sessionManager
-            .getActiveSessions()
-            .find((s) => s.clientIp === clientIp && s.userAgent === userAgent);
-          if (existing) {
-            this.sessionManager.updateSessionActivity(existing.sessionId);
-            session = existing;
-          }
+
+          return reply.status(401).send({
+            error: "unauthorized",
+            message: "Pairing key required to access Antigravity Relay",
+          });
         }
 
         const port = this.portDiscovery.getPort();
@@ -1056,8 +1237,9 @@ export class RelayServer {
       session = this.sessionManager.getSessionByToken(token);
     }
 
+    const requirePairing = this.config.requirePairing !== false;
     if (!session) {
-      if (!deviceId) {
+      if (!deviceId && !requirePairing) {
         const existing = this.sessionManager
           .getActiveSessions()
           .find(
@@ -1075,25 +1257,42 @@ export class RelayServer {
       }
 
       if (!session) {
-        if (!deviceId) {
-          deviceId = `dev_${crypto.randomUUID()}`;
+        const pairParam = parsedUrl?.searchParams.get("pair");
+        if (
+          (pairParam && this.validatePairingKey(pairParam)) ||
+          !requirePairing
+        ) {
+          if (!deviceId) {
+            deviceId = `dev_${crypto.randomUUID()}`;
+          }
+          session = this.sessionManager.createSession({
+            clientIp,
+            userAgent,
+            token: token || generateSessionToken(),
+            deviceId,
+          });
+          this.notifyStatusUpdated();
         }
-        session = this.sessionManager.createSession({
-          clientIp,
-          userAgent,
-          token: token || undefined,
-          deviceId,
-        });
       }
-    } else {
-      session.clientIp = clientIp;
-      session.userAgent = userAgent;
-      if (deviceId && !session.deviceId) {
-        this.sessionManager.updateSessionDeviceId(session.sessionId, deviceId);
-      }
-      if (token && session.token !== token) {
-        this.sessionManager.updateSessionToken(session.sessionId, token);
-      }
+    }
+
+    if (requirePairing && (!session || !session.authenticated)) {
+      safeClose(clientWs, 4401, "Unauthorized: Pairing key required");
+      return;
+    }
+
+    if (!session) {
+      safeClose(clientWs, 1008, "Session initialization failed");
+      return;
+    }
+
+    session.clientIp = clientIp;
+    session.userAgent = userAgent;
+    if (deviceId && !session.deviceId) {
+      this.sessionManager.updateSessionDeviceId(session.sessionId, deviceId);
+    }
+    if (token && session.token !== token) {
+      this.sessionManager.updateSessionToken(session.sessionId, token);
     }
 
     const sessionId = session.sessionId;

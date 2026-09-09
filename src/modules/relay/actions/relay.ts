@@ -32,6 +32,14 @@ export async function createPairingToken(): Promise<{
   return ipc.client.relay.createPairingToken();
 }
 
+export async function getPairingKey(): Promise<string> {
+  return ipc.client.relay.getPairingKey();
+}
+
+export async function regeneratePairingKey(): Promise<string> {
+  return ipc.client.relay.regeneratePairingKey();
+}
+
 export async function getTunnelStatus(): Promise<TunnelStatus> {
   return ipc.client.tunnel.getStatus();
 }
