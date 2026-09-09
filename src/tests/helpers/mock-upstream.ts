@@ -234,6 +234,18 @@ export class MockUpstreamServer {
         return;
       }
 
+      if (url === "/api/error-429") {
+        res.writeHead(429, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "rate_limit_exceeded" }));
+        return;
+      }
+
+      if (url === "/api/error-500") {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "internal_server_error" }));
+        return;
+      }
+
       if (url.startsWith("/api/")) {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(

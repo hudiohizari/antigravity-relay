@@ -16,6 +16,7 @@ import {
   TEST_TLS_KEY,
   TEST_TLS_CERT,
 } from "../helpers/mock-upstream";
+import { AutoSwitchService } from "@/modules/cloud-account/services/AutoSwitchService";
 import https from "node:https";
 import { request as undiciRequest } from "undici";
 
@@ -1105,6 +1106,84 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       const healthJson = (await healthRes.json()) as any;
       expect(healthJson.upstreamEpoch).toBe(initialEpoch + 1);
       expect(healthJson.upstreamPort).toBe(newPort);
+    });
+  });
+
+  describe("Rate-Limit Auto-Switch and Exhaustion in Reverse Proxy", () => {
+    it("intercepts upstream 429 and triggers auto-switch to highest 5h quota account", async () => {
+      const switchSpy = vi
+        .spyOn(AutoSwitchService, "triggerRateLimitSwitch")
+        .mockResolvedValue({
+          switched: true,
+          nextAccount: {
+            id: "next-acc",
+            email: "next@example.com",
+            provider: "google",
+            token: {} as any,
+            created_at: 0,
+            last_used: 0,
+            status: "active",
+          },
+        });
+
+      const res = await fetch(`http://127.0.0.1:${relayPort}/api/error-429`);
+
+      expect(switchSpy).toHaveBeenCalledWith({
+        reason: "HTTP 429 upstream rate limit",
+        source: "relay",
+      });
+
+      expect(res.status).toBe(503);
+      expect(res.headers.get("retry-after")).toBe("3");
+      const json = (await res.json()) as any;
+      expect(json.error).toBe("account_switched_rate_limited");
+      expect(json.switched_to).toBe("next@example.com");
+
+      switchSpy.mockRestore();
+    });
+
+    it("returns structured 429 and broadcasts error when all accounts are rate-limited", async () => {
+      const switchSpy = vi
+        .spyOn(AutoSwitchService, "triggerRateLimitSwitch")
+        .mockResolvedValue({
+          switched: false,
+          noAccountLeft: true,
+        });
+
+      const broadcastSpy = vi.spyOn(relayServer, "broadcastToClients");
+
+      const res = await fetch(`http://127.0.0.1:${relayPort}/api/error-429`);
+
+      expect(switchSpy).toHaveBeenCalled();
+      expect(res.status).toBe(429);
+      expect(res.headers.get("retry-after")).toBe("60");
+
+      const json = (await res.json()) as any;
+      expect(json.error).toBe("rate_limited");
+      expect(json.message).toContain("rate limited");
+
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "ERROR",
+          payload: expect.objectContaining({
+            error: "ALL_ACCOUNTS_RATE_LIMITED",
+          }),
+        }),
+      );
+
+      switchSpy.mockRestore();
+      broadcastSpy.mockRestore();
+    });
+
+    it("does not trigger auto-switch on non-rate-limit 500 error", async () => {
+      const switchSpy = vi.spyOn(AutoSwitchService, "triggerRateLimitSwitch");
+
+      const res = await fetch(`http://127.0.0.1:${relayPort}/api/error-500`);
+
+      expect(res.status).toBe(500);
+      expect(switchSpy).not.toHaveBeenCalled();
+
+      switchSpy.mockRestore();
     });
   });
 });

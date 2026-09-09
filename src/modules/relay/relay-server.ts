@@ -17,6 +17,7 @@ import { AuthRateLimiter } from "./relay-auth";
 import { SessionManager } from "./session-manager";
 import { UpstreamBridge } from "./upstream-bridge";
 import { PortDiscoveryService } from "./port-discovery";
+import { isRateLimitError } from "@/modules/cloud-account/utils/account-status";
 
 export interface RelayServerOptions {
   config?: Partial<RelayConfig>;
@@ -699,6 +700,57 @@ export class RelayServer {
             return reply.status(upstreamRes.statusCode).send(finalHtml);
           }
 
+          if (upstreamRes.statusCode === 429) {
+            try {
+              const { AutoSwitchService } =
+                await import("@/modules/cloud-account/services/AutoSwitchService");
+              const switchResult =
+                await AutoSwitchService.triggerRateLimitSwitch({
+                  reason: "HTTP 429 upstream rate limit",
+                  source: "relay",
+                });
+
+              if (switchResult.switched && switchResult.nextAccount) {
+                this.broadcastToClients({
+                  type: "BUFFERING_ALERT",
+                  payload: {
+                    reason: `Switched account to ${switchResult.nextAccount.email} due to rate limit. Resuming session...`,
+                  },
+                  timestamp: Date.now(),
+                });
+
+                return reply
+                  .status(503)
+                  .header("Retry-After", "3")
+                  .send({
+                    error: "account_switched_rate_limited",
+                    message: `Rate limit reached on current account. Automatically switched to account ${switchResult.nextAccount.email} with highest 5h quota. Please retry.`,
+                    switched_to: switchResult.nextAccount.email,
+                    retry_after_ms: 3000,
+                  });
+              } else if (switchResult.noAccountLeft) {
+                this.broadcastToClients({
+                  type: "ERROR",
+                  payload: {
+                    error: "ALL_ACCOUNTS_RATE_LIMITED",
+                    message:
+                      "All Google accounts are currently rate-limited or depleted.",
+                  },
+                  timestamp: Date.now(),
+                });
+
+                return reply.status(429).header("Retry-After", "60").send({
+                  error: "rate_limited",
+                  message:
+                    "All Google Antigravity accounts are currently rate limited. Please wait for 5h quota reset or add another account.",
+                  retry_after_ms: 60000,
+                });
+              }
+            } catch {
+              // Fall through to standard 429 delivery
+            }
+          }
+
           for (const [headerName, headerVal] of Object.entries(
             upstreamRes.headers,
           )) {
@@ -709,7 +761,38 @@ export class RelayServer {
           }
 
           return reply.status(upstreamRes.statusCode).send(upstreamRes.body);
-        } catch {
+        } catch (fetchErr) {
+          if (isRateLimitError(fetchErr)) {
+            try {
+              const { AutoSwitchService } =
+                await import("@/modules/cloud-account/services/AutoSwitchService");
+              const switchResult =
+                await AutoSwitchService.triggerRateLimitSwitch({
+                  error: fetchErr,
+                  reason: "Upstream rate limit connection error",
+                  source: "relay",
+                });
+              if (switchResult.switched && switchResult.nextAccount) {
+                return reply
+                  .status(503)
+                  .header("Retry-After", "3")
+                  .send({
+                    error: "account_switched_rate_limited",
+                    message: `Rate limit reached. Automatically switched to ${switchResult.nextAccount.email}. Please retry.`,
+                    retry_after_ms: 3000,
+                  });
+              } else if (switchResult.noAccountLeft) {
+                return reply.status(429).header("Retry-After", "60").send({
+                  error: "rate_limited",
+                  message:
+                    "All Google Antigravity accounts are currently rate limited.",
+                  retry_after_ms: 60000,
+                });
+              }
+            } catch {
+              // fallback
+            }
+          }
           const isRestarting = this.portDiscovery.isRestarting();
           return reply
             .status(503)
