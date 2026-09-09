@@ -583,6 +583,7 @@ const en = {
         "antigravity-classic-db": "Antigravity Database",
         "antigravity-ide-db": "Antigravity IDE Database",
         "legacy-agent": "Legacy Agent Data",
+        "antigravity-cli-token": "Antigravity CLI",
       },
       validationErrors: {
         "credential-unavailable": "The credential is no longer available.",

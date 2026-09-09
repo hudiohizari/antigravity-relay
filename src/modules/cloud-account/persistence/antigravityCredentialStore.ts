@@ -38,7 +38,7 @@ export class CredentialStoreReadError extends Error {
 
 const CredentialTokenPayloadSchema = z
   .object({
-    access_token: z.string().trim().min(1).optional(),
+    access_token: z.string().optional(),
     refresh_token: z.string().trim().min(1),
     id_token: z.string().trim().min(1).optional(),
     project_id: z.string().trim().min(1).optional(),
@@ -90,7 +90,9 @@ function decodeCredentialStoreText(secret: Uint8Array): string {
   }
 }
 
-function parseCredentialStorePayload(payload: string): CredentialStoreToken {
+export function parseCredentialStorePayload(
+  payload: string,
+): CredentialStoreToken {
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(payload);
@@ -118,11 +120,12 @@ function parseCredentialStorePayload(payload: string): CredentialStoreToken {
     }
   }
 
+  const accessToken = token.access_token?.trim();
   return {
-    refreshToken: token.refresh_token,
-    ...(token.access_token ? { accessToken: token.access_token } : {}),
-    ...(token.id_token ? { idToken: token.id_token } : {}),
-    ...(token.project_id ? { projectId: token.project_id } : {}),
+    refreshToken: token.refresh_token.trim(),
+    ...(accessToken ? { accessToken } : {}),
+    ...(token.id_token?.trim() ? { idToken: token.id_token.trim() } : {}),
+    ...(token.project_id?.trim() ? { projectId: token.project_id.trim() } : {}),
     ...(expiryTimestamp !== undefined ? { expiryTimestamp } : {}),
   };
 }
@@ -146,6 +149,7 @@ function classifyCredentialStoreReadError(
     code === "eacces" ||
     code === "eperm" ||
     message.includes("permission denied") ||
+    message.includes("user interaction is not allowed") ||
     message.includes("access denied")
   ) {
     return new CredentialStoreReadError("permission-denied");
@@ -160,6 +164,53 @@ function readViaNativeKeyring(): Uint8Array | null {
   const entry = Entry.withTarget("gemini:antigravity", "gemini", "antigravity");
   const secret = entry.getSecret();
   return secret ? Uint8Array.from(secret) : null;
+}
+
+function readViaSecurityTool(): Uint8Array | null {
+  const lookupResult = spawnSync(
+    "/usr/bin/security",
+    ["find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"],
+    {
+      encoding: "utf-8",
+      shell: false,
+      timeout: 5000,
+      killSignal: "SIGKILL",
+      maxBuffer: 64 * 1024,
+    },
+  );
+
+  if (!lookupResult) {
+    throw new CredentialStoreReadError("unavailable");
+  }
+
+  if (lookupResult.error) {
+    throw classifyCredentialStoreReadError(lookupResult.error);
+  }
+
+  if (lookupResult.status === 0) {
+    const payload = lookupResult.stdout?.trim();
+    return payload ? Buffer.from(payload, "utf-8") : null;
+  }
+
+  if (lookupResult.status === 44) {
+    return null;
+  }
+
+  const stderr = lookupResult.stderr?.toLowerCase() ?? "";
+  if (
+    lookupResult.status === 128 ||
+    stderr.includes("permission denied") ||
+    stderr.includes("user interaction is not allowed") ||
+    stderr.includes("access denied")
+  ) {
+    throw new CredentialStoreReadError("permission-denied");
+  }
+
+  if (stderr.includes("locked")) {
+    throw new CredentialStoreReadError("locked");
+  }
+
+  throw new CredentialStoreReadError("unavailable");
 }
 
 function readViaSecretTool(): Uint8Array | null {
@@ -193,6 +244,30 @@ function readViaSecretTool(): Uint8Array | null {
 }
 
 export function readAntigravityCredentialStoreToken(): CredentialStoreToken | null {
+  if (process.platform === "darwin") {
+    try {
+      const secret = readViaSecurityTool();
+      if (secret) {
+        return parseCredentialStorePayload(decodeCredentialStoreText(secret));
+      }
+      return null;
+    } catch (error) {
+      const securityToolError = classifyCredentialStoreReadError(error);
+      if (securityToolError.code !== "unavailable") {
+        throw securityToolError;
+      }
+    }
+
+    try {
+      const secret = readViaNativeKeyring();
+      return secret
+        ? parseCredentialStorePayload(decodeCredentialStoreText(secret))
+        : null;
+    } catch (error) {
+      throw classifyCredentialStoreReadError(error);
+    }
+  }
+
   if (process.platform === "linux") {
     try {
       const secret = readViaSecretTool();

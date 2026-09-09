@@ -1,5 +1,5 @@
-import { z } from 'zod';
-import { os, ORPCError } from '@orpc/server';
+import { z } from "zod";
+import { os, ORPCError } from "@orpc/server";
 import {
   addGoogleAccount,
   bindCloudIdentityProfile,
@@ -26,29 +26,35 @@ import {
   setActiveOAuthClient,
   exportCloudAccounts,
   importCloudAccounts,
-} from './handler';
-import { CloudAccountRepo } from '@/modules/cloud-account/persistence/cloudHandler';
+} from "./handler";
+import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandler";
 import {
   AGY_SYNC_FROM_IDE_UNSUPPORTED_MESSAGE,
   IdeAccountImportAdapter,
-} from '@/modules/cloud-account/persistence/ide-account-import-adapter';
-import { AutoSwitchModelsConfigSchema, CloudAccountSchema } from '@/modules/cloud-account/types';
-import { AntigravityAppTargetSchema } from '@/shared/platform/antigravityAppTarget';
+} from "@/modules/cloud-account/persistence/ide-account-import-adapter";
+import {
+  AutoSwitchModelsConfigSchema,
+  CloudAccountSchema,
+} from "@/modules/cloud-account/types";
+import { AntigravityAppTargetSchema } from "@/shared/platform/antigravityAppTarget";
 import {
   DeviceProfileSchema,
   DeviceProfilesSnapshotSchema,
-} from '@/modules/identity-profile/types';
-import { logger } from '@/shared/logging/logger';
-import { getSwitchMetricsSnapshot } from '@/modules/antigravity-runtime/switch/switchMetrics';
-import { getSwitchGuardSnapshot } from '@/modules/antigravity-runtime/switch/switchGuard';
-import { getDeviceHardeningSnapshot } from '@/modules/identity-profile/ipc/handler';
-import { localAccountImportRouter } from '@/modules/cloud-account/local-import/ipc/router';
+} from "@/modules/identity-profile/types";
+import { logger } from "@/shared/logging/logger";
+import { getSwitchMetricsSnapshot } from "@/modules/antigravity-runtime/switch/switchMetrics";
+import { getSwitchGuardSnapshot } from "@/modules/antigravity-runtime/switch/switchGuard";
+import { getDeviceHardeningSnapshot } from "@/modules/identity-profile/ipc/handler";
+import { localAccountImportRouter } from "@/modules/cloud-account/local-import/ipc/router";
 
-import { WeeklyWarmupConfigSchema } from '@/modules/cloud-account/services/weekly-warmup-contract';
-import { getWeeklyWarmupConfig, setWeeklyWarmupConfig } from './weekly-warmup';
-import { getSecurityStatus } from '@/shared/security/security';
+import { WeeklyWarmupConfigSchema } from "@/modules/cloud-account/services/weekly-warmup-contract";
+import { getWeeklyWarmupConfig, setWeeklyWarmupConfig } from "./weekly-warmup";
+import { getSecurityStatus } from "@/shared/security/security";
 
-const switchOwnerSchema = z.enum(['local-account-switch', 'cloud-account-switch']);
+const switchOwnerSchema = z.enum([
+  "local-account-switch",
+  "cloud-account-switch",
+]);
 
 interface SyncLocalAccountORPCErrorData {
   backendName: string;
@@ -58,12 +64,24 @@ interface SyncLocalAccountORPCErrorData {
 }
 
 const SecurityStatusSchema = z.object({
-  state: z.enum(['secure', 'degraded', 'locked']),
+  state: z.enum(["secure", "degraded", "locked"]),
   masterKeySource: z
-    .enum(['safeStorage', 'keytar', 'file', 'legacy-safeStorage', 'legacy-keytar', 'legacy-file'])
+    .enum([
+      "safeStorage",
+      "keytar",
+      "file",
+      "legacy-safeStorage",
+      "legacy-keytar",
+      "legacy-file",
+    ])
     .optional(),
   recoveryHint: z
-    .enum(['HINT_APP_TRANSLOCATION', 'HINT_KEYCHAIN_DENIED', 'HINT_MANUAL_SIGN', 'HINT_RECOVERY'])
+    .enum([
+      "HINT_APP_TRANSLOCATION",
+      "HINT_KEYCHAIN_DENIED",
+      "HINT_MANUAL_SIGN",
+      "HINT_RECOVERY",
+    ])
     .optional(),
 });
 const switchMetricBucketSchema = z.object({
@@ -112,7 +130,7 @@ function extractErrorMessage(error: unknown): string {
 }
 
 function createSyncLocalAccountORPCError(
-  code: 'UNAUTHORIZED' | 'BAD_REQUEST' | 'INTERNAL_SERVER_ERROR',
+  code: "UNAUTHORIZED" | "BAD_REQUEST" | "INTERNAL_SERVER_ERROR",
   error: unknown,
 ): ORPCError<string, SyncLocalAccountORPCErrorData> {
   const message = extractErrorMessage(error);
@@ -134,39 +152,47 @@ export function toSyncLocalAccountORPCError(
   const normalizedMessage = message.toLowerCase();
 
   if (
-    normalizedMessage.includes('unauthenticated') ||
-    normalizedMessage.includes('unauthorized') ||
-    normalizedMessage.includes('token may be expired') ||
-    normalizedMessage.includes('re-login in antigravity ide')
+    normalizedMessage.includes("unauthenticated") ||
+    normalizedMessage.includes("unauthorized") ||
+    normalizedMessage.includes("token may be expired") ||
+    normalizedMessage.includes("re-login in antigravity ide")
   ) {
-    return createSyncLocalAccountORPCError('UNAUTHORIZED', error);
+    return createSyncLocalAccountORPCError("UNAUTHORIZED", error);
   }
 
   if (
-    normalizedMessage.includes('no cloud account found in ide') ||
-    normalizedMessage.includes('no oauth token found in ide state') ||
-    normalizedMessage.includes('antigravity database not found') ||
-    normalizedMessage.includes(AGY_SYNC_FROM_IDE_UNSUPPORTED_MESSAGE.toLowerCase())
+    normalizedMessage.includes("no cloud account found in ide") ||
+    normalizedMessage.includes("no oauth token found in ide state") ||
+    normalizedMessage.includes("antigravity database not found") ||
+    normalizedMessage.includes("no cloud account found in antigravity") ||
+    normalizedMessage.includes("antigravity cli token file not found") ||
+    normalizedMessage.includes(
+      AGY_SYNC_FROM_IDE_UNSUPPORTED_MESSAGE.toLowerCase(),
+    )
   ) {
-    return createSyncLocalAccountORPCError('BAD_REQUEST', error);
+    return createSyncLocalAccountORPCError("BAD_REQUEST", error);
   }
 
-  return createSyncLocalAccountORPCError('INTERNAL_SERVER_ERROR', error);
+  return createSyncLocalAccountORPCError("INTERNAL_SERVER_ERROR", error);
 }
 
 export const cloudRouter = os.router({
   localImport: localAccountImportRouter,
 
   addGoogleAccount: os
-    .input(z.object({ authCode: z.string(), oauthClientKey: z.string().optional() }))
+    .input(
+      z.object({ authCode: z.string(), oauthClientKey: z.string().optional() }),
+    )
     .output(CloudAccountSchema)
     .handler(async ({ input }) => {
       return addGoogleAccount(input.authCode, input.oauthClientKey);
     }),
 
-  listCloudAccounts: os.output(z.array(CloudAccountSchema)).handler(async () => {
-    return listCloudAccounts();
-  }),
+  listCloudAccounts: os
+    .output(z.array(CloudAccountSchema))
+    .handler(async () => {
+      return listCloudAccounts();
+    }),
 
   getSecurityStatus: os.output(SecurityStatusSchema).handler(async () => {
     return getSecurityStatus();
@@ -194,7 +220,12 @@ export const cloudRouter = os.router({
     }),
 
   switchCloudAccount: os
-    .input(z.object({ accountId: z.string(), appTarget: AntigravityAppTargetSchema.optional() }))
+    .input(
+      z.object({
+        accountId: z.string(),
+        appTarget: AntigravityAppTargetSchema.optional(),
+      }),
+    )
     .output(z.void())
     .handler(async ({ input }) => {
       await switchCloudAccount(input.accountId, input.appTarget);
@@ -211,9 +242,11 @@ export const cloudRouter = os.router({
       await setAutoSwitchEnabled(input.enabled);
     }),
 
-  getAutoSwitchModelsConfig: os.output(AutoSwitchModelsConfigSchema).handler(async () => {
-    return getAutoSwitchModelsConfig();
-  }),
+  getAutoSwitchModelsConfig: os
+    .output(AutoSwitchModelsConfigSchema)
+    .handler(async () => {
+      return getAutoSwitchModelsConfig();
+    }),
 
   setAutoSwitchModelsConfig: os
     .input(AutoSwitchModelsConfigSchema)
@@ -222,9 +255,11 @@ export const cloudRouter = os.router({
       setAutoSwitchModelsConfig(input);
     }),
 
-  getWeeklyWarmupConfig: os.output(WeeklyWarmupConfigSchema).handler(async () => {
-    return getWeeklyWarmupConfig();
-  }),
+  getWeeklyWarmupConfig: os
+    .output(WeeklyWarmupConfigSchema)
+    .handler(async () => {
+      return getWeeklyWarmupConfig();
+    }),
 
   setWeeklyWarmupConfig: os
     .input(WeeklyWarmupConfigSchema)
@@ -260,11 +295,13 @@ export const cloudRouter = os.router({
       return listOAuthClients();
     }),
 
-  getActiveOAuthClient: os.output(z.object({ client_key: z.string() })).handler(async () => {
-    return {
-      client_key: getActiveOAuthClient(),
-    };
-  }),
+  getActiveOAuthClient: os
+    .output(z.object({ client_key: z.string() }))
+    .handler(async () => {
+      return {
+        client_key: getActiveOAuthClient(),
+      };
+    }),
 
   setActiveOAuthClient: os
     .input(z.object({ clientKey: z.string() }))
@@ -280,21 +317,25 @@ export const cloudRouter = os.router({
       try {
         await CloudAccountRepo.setAccountProxy(input.accountId, input.proxyUrl);
       } catch (error) {
-        logger.error('[ORPC] setAccountProxy error:', error);
+        logger.error("[ORPC] setAccountProxy error:", error);
         throw error;
       }
     }),
 
   syncLocalAccount: os
-    .input(z.object({ appTarget: AntigravityAppTargetSchema.optional() }).optional())
+    .input(
+      z.object({ appTarget: AntigravityAppTargetSchema.optional() }).optional(),
+    )
     .output(CloudAccountSchema.nullable())
     .handler(async ({ input }) => {
       try {
-        const result = await IdeAccountImportAdapter.syncFromIde(input?.appTarget);
+        const result = await IdeAccountImportAdapter.syncFromIde(
+          input?.appTarget,
+        );
 
         return result;
       } catch (error) {
-        logger.error('[ORPC] syncLocalAccount error:', error);
+        logger.error("[ORPC] syncLocalAccount error:", error);
         throw toSyncLocalAccountORPCError(error);
       }
     }),
@@ -319,7 +360,12 @@ export const cloudRouter = os.router({
   }),
 
   bindIdentityProfile: os
-    .input(z.object({ accountId: z.string(), mode: z.enum(['capture', 'generate']) }))
+    .input(
+      z.object({
+        accountId: z.string(),
+        mode: z.enum(["capture", "generate"]),
+      }),
+    )
     .output(DeviceProfileSchema)
     .handler(async ({ input }) => {
       return bindCloudIdentityProfile(input.accountId, input.mode);
@@ -329,14 +375,20 @@ export const cloudRouter = os.router({
     .input(z.object({ accountId: z.string(), profile: DeviceProfileSchema }))
     .output(DeviceProfileSchema)
     .handler(async ({ input }) => {
-      return bindCloudIdentityProfileWithPayload(input.accountId, input.profile);
+      return bindCloudIdentityProfileWithPayload(
+        input.accountId,
+        input.profile,
+      );
     }),
 
   restoreIdentityProfileRevision: os
     .input(z.object({ accountId: z.string(), versionId: z.string() }))
     .output(DeviceProfileSchema)
     .handler(async ({ input }) => {
-      return restoreCloudIdentityProfileRevision(input.accountId, input.versionId);
+      return restoreCloudIdentityProfileRevision(
+        input.accountId,
+        input.versionId,
+      );
     }),
 
   restoreBaselineProfile: os
@@ -350,7 +402,10 @@ export const cloudRouter = os.router({
     .input(z.object({ accountId: z.string(), versionId: z.string() }))
     .output(z.void())
     .handler(async ({ input }) => {
-      await deleteCloudIdentityProfileRevision(input.accountId, input.versionId);
+      await deleteCloudIdentityProfileRevision(
+        input.accountId,
+        input.versionId,
+      );
     }),
 
   openIdentityStorageFolder: os.output(z.void()).handler(async () => {
@@ -364,7 +419,7 @@ export const cloudRouter = os.router({
       try {
         return await exportCloudAccounts(input.stripTokens);
       } catch (error) {
-        logger.error('[ORPC] exportCloudAccounts error:', error);
+        logger.error("[ORPC] exportCloudAccounts error:", error);
         throw error;
       }
     }),
@@ -373,7 +428,9 @@ export const cloudRouter = os.router({
     .input(
       z.object({
         jsonContent: z.string(),
-        strategy: z.enum(['merge', 'overwrite', 'skip-existing']).default('merge'),
+        strategy: z
+          .enum(["merge", "overwrite", "skip-existing"])
+          .default("merge"),
       }),
     )
     .output(
@@ -388,7 +445,7 @@ export const cloudRouter = os.router({
       try {
         return await importCloudAccounts(input.jsonContent, input.strategy);
       } catch (error) {
-        logger.error('[ORPC] importCloudAccounts error:', error);
+        logger.error("[ORPC] importCloudAccounts error:", error);
         throw error;
       }
     }),

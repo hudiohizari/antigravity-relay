@@ -1,16 +1,16 @@
-import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { detectAgyCliExecutablePath } from '@/modules/antigravity-runtime/binary-patch/agyCliPathDetection';
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { detectAgyCliExecutablePath } from "@/modules/antigravity-runtime/binary-patch/agyCliPathDetection";
 
-const AGY_CLI_DIR_SEGMENTS = ['.gemini', 'antigravity-cli'] as const;
-const AGY_CLI_TOKEN_FILE = 'antigravity-oauth-token';
+const AGY_CLI_DIR_SEGMENTS = [".gemini", "antigravity-cli"] as const;
+const AGY_CLI_TOKEN_FILE = "antigravity-oauth-token";
 const WSL_DISTRO_CACHE_TTL_MS = 60_000;
-const AGY_CLI_WSL_HOME_EXECUTABLE_SEGMENTS = ['.local', 'bin', 'agy'] as const;
+const AGY_CLI_WSL_HOME_EXECUTABLE_SEGMENTS = [".local", "bin", "agy"] as const;
 const AGY_CLI_WSL_SYSTEM_EXECUTABLE_SEGMENTS: readonly (readonly string[])[] = [
-  ['usr', 'local', 'bin', 'agy'],
-  ['usr', 'bin', 'agy'],
+  ["usr", "local", "bin", "agy"],
+  ["usr", "bin", "agy"],
 ];
 
 let cachedRunningWslDistros: { names: string[]; readAt: number } | null = null;
@@ -31,14 +31,17 @@ export interface GetAgyCliTokenPathsOptions {
  * considered. A system-wide `agy` install must never make another WSL user's
  * session eligible for the current Windows account's OAuth payload.
  */
-export function getAgyCliTokenPaths(options: GetAgyCliTokenPathsOptions = {}): string[] {
+export function getAgyCliTokenPaths(
+  options: GetAgyCliTokenPathsOptions = {},
+): string[] {
   const platform = options.platform ?? process.platform;
-  const localPathApi = platform === 'win32' ? path.win32 : path.posix;
+  const localPathApi = platform === "win32" ? path.win32 : path.posix;
   const homeDirectory = options.homeDirectory ?? os.homedir();
   const exists = options.exists ?? fs.existsSync;
   const listRunningWslDistros =
     options.listRunningWslDistros ?? (() => getRunningWslDistros(platform));
-  const resolveWslHomeForDistro = options.resolveWslHomeForDistro ?? resolveDefaultWslHomeDirectory;
+  const resolveWslHomeForDistro =
+    options.resolveWslHomeForDistro ?? resolveDefaultWslHomeDirectory;
   const tokenPaths: string[] = [];
 
   const localExecutablePath = detectAgyCliExecutablePath({
@@ -48,13 +51,19 @@ export function getAgyCliTokenPaths(options: GetAgyCliTokenPathsOptions = {}): s
     platform,
   });
   if (localExecutablePath) {
-    const sessionDirectory = localPathApi.join(homeDirectory, ...AGY_CLI_DIR_SEGMENTS);
+    const sessionDirectory = localPathApi.join(
+      homeDirectory,
+      ...AGY_CLI_DIR_SEGMENTS,
+    );
     if (exists(sessionDirectory)) {
-      appendUniquePath(tokenPaths, localPathApi.join(sessionDirectory, AGY_CLI_TOKEN_FILE));
+      appendUniquePath(
+        tokenPaths,
+        localPathApi.join(sessionDirectory, AGY_CLI_TOKEN_FILE),
+      );
     }
   }
 
-  if (platform !== 'win32') {
+  if (platform !== "win32") {
     return tokenPaths;
   }
 
@@ -68,34 +77,87 @@ export function getAgyCliTokenPaths(options: GetAgyCliTokenPathsOptions = {}): s
 
     const sessionDirectory = path.win32.join(wslHome, ...AGY_CLI_DIR_SEGMENTS);
     if (exists(sessionDirectory)) {
-      appendUniquePath(tokenPaths, path.win32.join(sessionDirectory, AGY_CLI_TOKEN_FILE));
+      appendUniquePath(
+        tokenPaths,
+        path.win32.join(sessionDirectory, AGY_CLI_TOKEN_FILE),
+      );
     }
   }
 
   return tokenPaths;
 }
 
+/**
+ * Returns candidate token file paths for CLI sessions across canonical user directories
+ * and running WSL distributions without requiring executable detection.
+ */
+export function getAgyCliCandidateTokenPaths(
+  options: GetAgyCliTokenPathsOptions = {},
+): string[] {
+  const platform = options.platform ?? process.platform;
+  const localPathApi = platform === "win32" ? path.win32 : path.posix;
+  const homeDirectory = options.homeDirectory ?? os.homedir();
+  const listRunningWslDistros =
+    options.listRunningWslDistros ?? (() => getRunningWslDistros(platform));
+  const resolveWslHomeForDistro =
+    options.resolveWslHomeForDistro ?? resolveDefaultWslHomeDirectory;
+  const tokenPaths: string[] = [];
+
+  const canonicalPath = localPathApi.join(
+    homeDirectory,
+    ...AGY_CLI_DIR_SEGMENTS,
+    AGY_CLI_TOKEN_FILE,
+  );
+  appendUniquePath(tokenPaths, canonicalPath);
+
+  if (platform !== "win32") {
+    return tokenPaths;
+  }
+
+  for (const distro of listRunningWslDistros()) {
+    const linuxHome = resolveWslHomeForDistro(distro);
+    const distroRoot = `\\\\wsl.localhost\\${distro}`;
+    const wslHome = linuxHome ? toWslUncPath(distroRoot, linuxHome) : null;
+    if (!wslHome) {
+      continue;
+    }
+
+    const sessionDirectory = path.win32.join(wslHome, ...AGY_CLI_DIR_SEGMENTS);
+    appendUniquePath(
+      tokenPaths,
+      path.win32.join(sessionDirectory, AGY_CLI_TOKEN_FILE),
+    );
+  }
+
+  return tokenPaths;
+}
+
 function getRunningWslDistros(platform: NodeJS.Platform): string[] {
-  if (platform !== 'win32') {
+  if (platform !== "win32") {
     return [];
   }
 
   const now = Date.now();
-  if (cachedRunningWslDistros && now - cachedRunningWslDistros.readAt < WSL_DISTRO_CACHE_TTL_MS) {
+  if (
+    cachedRunningWslDistros &&
+    now - cachedRunningWslDistros.readAt < WSL_DISTRO_CACHE_TTL_MS
+  ) {
     return cachedRunningWslDistros.names;
   }
 
   let names: string[] = [];
   try {
-    const raw = execFileSync('wsl.exe', ['-l', '-q', '--running'], {
-      encoding: 'buffer',
-      stdio: ['ignore', 'pipe', 'ignore'],
+    const raw = execFileSync("wsl.exe", ["-l", "-q", "--running"], {
+      encoding: "buffer",
+      stdio: ["ignore", "pipe", "ignore"],
       timeout: 5000,
     });
-    const text = raw.includes(0) ? raw.toString('utf16le') : raw.toString('utf-8');
+    const text = raw.includes(0)
+      ? raw.toString("utf16le")
+      : raw.toString("utf-8");
     names = text
       .split(/\r?\n/u)
-      .map((line) => line.replaceAll('\0', '').trim())
+      .map((line) => line.replaceAll("\0", "").trim())
       .filter(Boolean);
   } catch {
     names = [];
@@ -107,11 +169,15 @@ function getRunningWslDistros(platform: NodeJS.Platform): string[] {
 
 function resolveDefaultWslHomeDirectory(distro: string): string | null {
   try {
-    const home = execFileSync('wsl.exe', ['-d', distro, '--', 'sh', '-lc', 'printf %s "$HOME"'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 5000,
-    }).trim();
+    const home = execFileSync(
+      "wsl.exe",
+      ["-d", distro, "--", "sh", "-lc", 'printf %s "$HOME"'],
+      {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 5000,
+      },
+    ).trim();
     return home || null;
   } catch {
     return null;
@@ -120,11 +186,14 @@ function resolveDefaultWslHomeDirectory(distro: string): string | null {
 
 function toWslUncPath(distroRoot: string, linuxPath: string): string | null {
   const normalizedPath = path.posix.normalize(linuxPath.trim());
-  if (!path.posix.isAbsolute(normalizedPath) || normalizedPath === '/') {
+  if (!path.posix.isAbsolute(normalizedPath) || normalizedPath === "/") {
     return null;
   }
 
-  return path.win32.join(distroRoot, normalizedPath.slice(1).replaceAll('/', '\\'));
+  return path.win32.join(
+    distroRoot,
+    normalizedPath.slice(1).replaceAll("/", "\\"),
+  );
 }
 
 function hasWslAgyCliExecutable(
@@ -132,7 +201,11 @@ function hasWslAgyCliExecutable(
   distroRoot: string,
   homeDirectory: string,
 ): boolean {
-  if (exists(path.win32.join(homeDirectory, ...AGY_CLI_WSL_HOME_EXECUTABLE_SEGMENTS))) {
+  if (
+    exists(
+      path.win32.join(homeDirectory, ...AGY_CLI_WSL_HOME_EXECUTABLE_SEGMENTS),
+    )
+  ) {
     return true;
   }
 

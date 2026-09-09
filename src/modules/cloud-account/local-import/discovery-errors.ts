@@ -2,15 +2,15 @@ import type {
   LocalAccountDiscoveryFailure,
   LocalAccountDiscoveryFailureCode,
   LocalAccountSourceReference,
-} from './types';
+} from "./types";
 
 const ERROR_MESSAGES: Record<LocalAccountDiscoveryFailureCode, string> = {
-  missing: 'The local credential source was not found.',
-  'permission-denied': 'The local credential source denied access.',
-  locked: 'The local credential source is locked or busy.',
-  malformed: 'The local credential data is malformed.',
-  'timed-out': 'Reading the local credential source timed out.',
-  'read-failed': 'The local credential source could not be read.',
+  missing: "The local credential source was not found.",
+  "permission-denied": "The local credential source denied access.",
+  locked: "The local credential source is locked or busy.",
+  malformed: "The local credential data is malformed.",
+  "timed-out": "Reading the local credential source timed out.",
+  "read-failed": "The local credential source could not be read.",
 };
 
 interface ErrorLike {
@@ -20,7 +20,10 @@ interface ErrorLike {
 
 function getErrorLike(error: unknown): ErrorLike {
   if (error instanceof Error) {
-    const code = 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+    const code =
+      "code" in error && typeof error.code === "string"
+        ? error.code
+        : undefined;
     return {
       code,
       message: error.message,
@@ -33,48 +36,57 @@ export function classifyLocalAccountDiscoveryError(
   error: unknown,
 ): LocalAccountDiscoveryFailureCode {
   const errorLike = getErrorLike(error);
-  const code = errorLike.code?.toLowerCase() ?? '';
-  const message = errorLike.message?.toLowerCase() ?? '';
+  const code = errorLike.code?.toLowerCase() ?? "";
+  const message = errorLike.message?.toLowerCase() ?? "";
 
-  if (code === 'timed-out' || code === 'etimedout' || message.includes('timed out')) {
-    return 'timed-out';
-  }
   if (
-    code === 'permission-denied' ||
-    code === 'eacces' ||
-    code === 'eperm' ||
-    message.includes('permission denied') ||
-    message.includes('access denied')
+    code === "timed-out" ||
+    code === "etimedout" ||
+    message.includes("timed out")
   ) {
-    return 'permission-denied';
+    return "timed-out";
   }
   if (
-    code === 'locked' ||
-    code === 'sqlite_busy' ||
-    code === 'sqlite_locked' ||
-    message.includes('database is locked') ||
-    message.includes('keyring is locked')
+    code === "permission-denied" ||
+    code === "eacces" ||
+    code === "eperm" ||
+    message.includes("permission denied") ||
+    message.includes("user interaction is not allowed") ||
+    message.includes("access denied")
   ) {
-    return 'locked';
+    return "permission-denied";
   }
   if (
-    code === 'missing' ||
-    code === 'enoent' ||
-    message.includes('not found') ||
-    message.includes('no credential')
+    code === "locked" ||
+    code === "sqlite_busy" ||
+    code === "sqlite_locked" ||
+    message.includes("database is locked") ||
+    message.includes("keyring is locked")
   ) {
-    return 'missing';
+    return "locked";
   }
   if (
-    code === 'malformed' ||
+    code === "malformed" ||
     error instanceof SyntaxError ||
-    message.includes('malformed') ||
-    message.includes('corrupt') ||
-    message.includes('invalid json')
+    message.includes("malformed") ||
+    message.includes("corrupt") ||
+    message.includes("invalid json")
   ) {
-    return 'malformed';
+    return "malformed";
   }
-  return 'read-failed';
+  if (
+    code === "missing" ||
+    code === "enoent" ||
+    code === "unavailable" ||
+    message.includes("not found") ||
+    message.includes("no credential") ||
+    message.includes("no cloud account found") ||
+    message.includes("no oauth token found") ||
+    message.includes("unavailable")
+  ) {
+    return "missing";
+  }
+  return "read-failed";
 }
 
 export function createLocalAccountDiscoveryFailure(

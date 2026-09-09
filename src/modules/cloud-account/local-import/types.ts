@@ -1,13 +1,16 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const LocalAccountDiscoverySourceIdSchema = z.enum([
-  'antigravity-keyring',
-  'antigravity-classic-db',
-  'antigravity-ide-db',
-  'legacy-agent',
+  "antigravity-keyring",
+  "antigravity-classic-db",
+  "antigravity-ide-db",
+  "legacy-agent",
+  "antigravity-cli-token",
 ]);
 
-export type LocalAccountDiscoverySourceId = z.infer<typeof LocalAccountDiscoverySourceIdSchema>;
+export type LocalAccountDiscoverySourceId = z.infer<
+  typeof LocalAccountDiscoverySourceIdSchema
+>;
 
 export const DiscoveredCredentialSchema = z
   .object({
@@ -27,12 +30,12 @@ export interface LocalAccountSourceReference {
 }
 
 export type LocalAccountDiscoveryFailureCode =
-  | 'missing'
-  | 'permission-denied'
-  | 'locked'
-  | 'malformed'
-  | 'timed-out'
-  | 'read-failed';
+  | "missing"
+  | "permission-denied"
+  | "locked"
+  | "malformed"
+  | "timed-out"
+  | "read-failed";
 
 export interface LocalAccountDiscoveryFailure {
   source: LocalAccountSourceReference;

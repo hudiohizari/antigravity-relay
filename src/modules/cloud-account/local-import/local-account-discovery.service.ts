@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes } from "crypto";
 import {
   DiscoveredCredentialSchema,
   type DiscoveredCredential,
@@ -10,11 +10,12 @@ import {
   type LocalAccountSourceReference,
   type LocalAccountSourceResult,
   type LocalAccountSourceSummary,
-} from './types';
-import { createLocalAccountDiscoveryFailure } from './discovery-errors';
-import { AntigravityKeyringDiscoverySource } from './sources/antigravity-keyring.source';
-import { AntigravityDatabaseDiscoverySource } from './sources/antigravity-database.source';
-import { LegacyAgentDiscoverySource } from './sources/legacy-agent.source';
+} from "./types";
+import { createLocalAccountDiscoveryFailure } from "./discovery-errors";
+import { AntigravityKeyringDiscoverySource } from "./sources/antigravity-keyring.source";
+import { AntigravityDatabaseDiscoverySource } from "./sources/antigravity-database.source";
+import { LegacyAgentDiscoverySource } from "./sources/legacy-agent.source";
+import { AntigravityCliDiscoverySource } from "./sources/antigravity-cli.source";
 
 export interface LocalAccountDiscoveryServiceOptions {
   sources: LocalAccountDiscoverySource[];
@@ -31,7 +32,10 @@ interface AggregatedCredential {
 export class LocalAccountDiscoverySession {
   constructor(
     readonly result: LocalAccountDiscoveryResult,
-    private readonly credentialsByFingerprint: ReadonlyMap<string, DiscoveredCredential>,
+    private readonly credentialsByFingerprint: ReadonlyMap<
+      string,
+      DiscoveredCredential
+    >,
   ) {}
 
   getCredential(fingerprint: string): DiscoveredCredential | undefined {
@@ -42,7 +46,7 @@ export class LocalAccountDiscoverySession {
 
 function normalizeEmailHint(emailHint: string | undefined): string | undefined {
   const normalized = emailHint?.trim().toLowerCase();
-  if (!normalized || normalized === 'unknown') {
+  if (!normalized || normalized === "unknown") {
     return undefined;
   }
   return normalized;
@@ -66,7 +70,10 @@ function appendUniqueSource(
   candidate: LocalAccountSourceReference,
 ): void {
   if (
-    sources.some((source) => source.id === candidate.id && source.location === candidate.location)
+    sources.some(
+      (source) =>
+        source.id === candidate.id && source.location === candidate.location,
+    )
   ) {
     return;
   }
@@ -101,7 +108,7 @@ export class LocalAccountDiscoveryService {
 
   constructor(private readonly options: LocalAccountDiscoveryServiceOptions) {
     if (options.digestKey && options.digestKey.byteLength === 0) {
-      throw new Error('Local account discovery digest key must not be empty');
+      throw new Error("Local account discovery digest key must not be empty");
     }
     this.digestKey = options.digestKey ?? randomBytes(32);
     const requestedConcurrency = options.maxConcurrency ?? 3;
@@ -123,16 +130,23 @@ export class LocalAccountDiscoveryService {
       let validationFailureCount = 0;
 
       for (const candidate of result.candidates) {
-        const parsedCredential = DiscoveredCredentialSchema.safeParse(candidate.credential);
+        const parsedCredential = DiscoveredCredentialSchema.safeParse(
+          candidate.credential,
+        );
         if (!parsedCredential.success) {
           failures.push(
-            createLocalAccountDiscoveryFailure(candidate.source, parsedCredential.error),
+            createLocalAccountDiscoveryFailure(
+              candidate.source,
+              parsedCredential.error,
+            ),
           );
           validationFailureCount += 1;
           continue;
         }
 
-        const fingerprint = this.createFingerprint(parsedCredential.data.refreshToken);
+        const fingerprint = this.createFingerprint(
+          parsedCredential.data.refreshToken,
+        );
         const current = aggregatedByFingerprint.get(fingerprint);
         const normalizedEmailHint = normalizeEmailHint(candidate.emailHint);
         if (!current) {
@@ -145,9 +159,15 @@ export class LocalAccountDiscoveryService {
         }
 
         duplicateCount += 1;
-        current.credential = mergeCredential(current.credential, parsedCredential.data);
+        current.credential = mergeCredential(
+          current.credential,
+          parsedCredential.data,
+        );
         appendUniqueSource(current.sources, candidate.source);
-        if (normalizedEmailHint && !current.emailHints.includes(normalizedEmailHint)) {
+        if (
+          normalizedEmailHint &&
+          !current.emailHints.includes(normalizedEmailHint)
+        ) {
           current.emailHints.push(normalizedEmailHint);
         }
       }
@@ -188,11 +208,16 @@ export class LocalAccountDiscoveryService {
   }
 
   private createFingerprint(refreshToken: string): string {
-    return createHmac('sha256', this.digestKey).update(refreshToken).digest('hex');
+    return createHmac("sha256", this.digestKey)
+      .update(refreshToken)
+      .digest("hex");
   }
 
   private async discoverSources(): Promise<
-    Array<{ source: LocalAccountDiscoverySource; result: LocalAccountSourceResult }>
+    Array<{
+      source: LocalAccountDiscoverySource;
+      result: LocalAccountSourceResult;
+    }>
   > {
     const results = new Array<{
       source: LocalAccountDiscoverySource;
@@ -230,7 +255,10 @@ export class LocalAccountDiscoveryService {
       }
     };
 
-    const workerCount = Math.min(this.maxConcurrency, this.options.sources.length);
+    const workerCount = Math.min(
+      this.maxConcurrency,
+      this.options.sources.length,
+    );
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
     return results;
   }
@@ -240,9 +268,10 @@ export function createDefaultLocalAccountDiscoveryService(): LocalAccountDiscove
   return new LocalAccountDiscoveryService({
     sources: [
       new AntigravityKeyringDiscoverySource(),
-      new AntigravityDatabaseDiscoverySource('classic'),
-      new AntigravityDatabaseDiscoverySource('ide'),
+      new AntigravityDatabaseDiscoverySource("classic"),
+      new AntigravityDatabaseDiscoverySource("ide"),
       new LegacyAgentDiscoverySource(),
+      new AntigravityCliDiscoverySource(),
     ],
     maxConcurrency: 3,
   });

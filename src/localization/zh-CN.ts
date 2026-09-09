@@ -440,6 +440,7 @@ const zhCn = {
         "antigravity-classic-db": "Antigravity 数据库",
         "antigravity-ide-db": "Antigravity IDE 数据库",
         "legacy-agent": "旧版 Agent 数据",
+        "antigravity-cli-token": "Antigravity CLI",
       },
       validationErrors: {
         "credential-unavailable": "凭据已不可用。",
