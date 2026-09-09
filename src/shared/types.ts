@@ -291,6 +291,8 @@ export interface RelayServerStatus {
   upstreamPort?: number | null;
   upstreamEpoch?: number;
   isRestarting?: boolean;
+  localIp?: string | null;
+  networkUrl?: string | null;
 }
 
 // Remote Session Management

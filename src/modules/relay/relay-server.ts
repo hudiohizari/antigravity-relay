@@ -18,6 +18,7 @@ import { SessionManager } from "./session-manager";
 import { UpstreamBridge } from "./upstream-bridge";
 import { PortDiscoveryService } from "./port-discovery";
 import { isRateLimitError } from "@/modules/cloud-account/utils/account-status";
+import { getRecommendedLocalIp } from "@/shared/platform/network";
 
 export interface RelayServerOptions {
   config?: Partial<RelayConfig>;
@@ -339,6 +340,12 @@ export class RelayServer {
           ? bridgeStatus.state
           : "disconnected";
 
+    const localIp = getRecommendedLocalIp();
+    const networkUrl =
+      this.isRunning && localIp
+        ? `http://${localIp}:${this.config.port}`
+        : null;
+
     return {
       isRunning: this.isRunning,
       port: this.config.port,
@@ -355,6 +362,8 @@ export class RelayServer {
       upstreamPort: port,
       upstreamEpoch: this.upstreamEpoch,
       isRestarting,
+      localIp,
+      networkUrl,
     };
   }
 

@@ -26,6 +26,8 @@ const tr = {
     partial_running: "{{running}}/{{total}} hizmet çalışıyor",
     not_installed_short: "Yüklü Değil",
     tunnel_not_installed_tooltip: "cloudflared CLI bu bilgisayarda yüklü değil",
+    wifi_network: "Wi-Fi",
+    local_network: "Yerel",
   },
   action: {
     stop: "Durdur",

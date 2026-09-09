@@ -48,6 +48,7 @@ interface ManagedService {
   isPending: boolean;
   toggle: () => void;
   url?: string | null;
+  networkUrl?: string | null;
   isBinaryInstalled?: boolean;
 }
 
@@ -130,6 +131,10 @@ function useRelayService() {
 
   const port = relayStatus?.port || 4040;
   const url = isRunning ? `http://127.0.0.1:${port}` : null;
+  const networkUrl =
+    isRunning && relayStatus?.localIp && relayStatus.localIp !== "127.0.0.1"
+      ? `http://${relayStatus.localIp}:${port}`
+      : relayStatus?.networkUrl || null;
 
   return {
     isRunning,
@@ -137,6 +142,7 @@ function useRelayService() {
     isPending: startMutation.isPending || stopMutation.isPending,
     toggle,
     url,
+    networkUrl,
   };
 }
 
@@ -243,24 +249,66 @@ function ServiceRow({ service }: { service: ManagedService }) {
                     : t("status.stopped_short")}
             </span>
           </div>
-          {service.isRunning && service.url && (
-            <div className="mt-0.5 flex items-center">
-              <a
-                href={service.url}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => {
-                  if (window.electron?.openExternalUrl) {
-                    e.preventDefault();
-                    window.electron.openExternalUrl(service.url!);
-                  }
-                }}
-                className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 hover:underline truncate max-w-[180px]"
-                title={service.url}
-              >
-                <span className="truncate">{service.url}</span>
-                <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-70" />
-              </a>
+          {service.isRunning && (service.networkUrl || service.url) && (
+            <div className="mt-1 flex flex-col gap-0.5">
+              {service.networkUrl && (
+                <div className="flex items-center gap-1.5">
+                  <a
+                    href={service.networkUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => {
+                      if (window.electron?.openExternalUrl) {
+                        e.preventDefault();
+                        window.electron.openExternalUrl(service.networkUrl!);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 hover:underline truncate max-w-[170px]"
+                    title={`${t("status.wifi_network")}: ${service.networkUrl}`}
+                  >
+                    <span className="truncate">{service.networkUrl}</span>
+                    <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-70" />
+                  </a>
+                  <span className="text-[9px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-1 py-0.5 rounded leading-none">
+                    {t("status.wifi_network")}
+                  </span>
+                </div>
+              )}
+              {service.url &&
+                (!service.networkUrl || service.networkUrl !== service.url) && (
+                  <div className="flex items-center gap-1.5">
+                    <a
+                      href={service.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => {
+                        if (window.electron?.openExternalUrl) {
+                          e.preventDefault();
+                          window.electron.openExternalUrl(service.url!);
+                        }
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-1 text-[11px] font-mono hover:underline truncate max-w-[170px]",
+                        service.networkUrl
+                          ? "text-muted-foreground text-[10px]"
+                          : "text-emerald-600 dark:text-emerald-400",
+                      )}
+                      title={
+                        service.networkUrl
+                          ? `${t("status.local_network")}: ${service.url}`
+                          : service.url
+                      }
+                    >
+                      <span className="truncate">{service.url}</span>
+                      <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-70" />
+                    </a>
+                    {service.networkUrl && (
+                      <span className="text-[9px] font-medium text-muted-foreground bg-muted px-1 py-0.5 rounded leading-none">
+                        {t("status.local_network")}
+                      </span>
+                    )}
+                  </div>
+                )}
             </div>
           )}
         </div>

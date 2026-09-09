@@ -27,6 +27,8 @@ const ru = {
     not_installed_short: "Не установлен",
     tunnel_not_installed_tooltip:
       "CLI cloudflared не установлен на этом компьютере",
+    wifi_network: "Wi-Fi",
+    local_network: "Локальный",
   },
   action: {
     stop: "Стоп",

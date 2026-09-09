@@ -27,6 +27,8 @@ const id = {
     not_installed_short: "Belum Terpasang",
     tunnel_not_installed_tooltip:
       "CLI cloudflared belum terpasang di komputer ini",
+    wifi_network: "Wi-Fi",
+    local_network: "Lokal",
   },
   action: {
     stop: "Berhenti",
@@ -45,7 +47,8 @@ const id = {
     checkNow: "Periksa Pembaruan",
     checkFailed: "Tidak dapat memeriksa pembaruan",
     upToDate: "Versi Anda sudah terbaru.",
-    unsupported: "Pemeriksaan pembaruan otomatis tidak tersedia di platform ini.",
+    unsupported:
+      "Pemeriksaan pembaruan otomatis tidak tersedia di platform ini.",
     available: {
       title: "Pembaruan tersedia",
       description: "Versi {{version}} tersedia di GitHub.",
@@ -72,7 +75,8 @@ const id = {
         "Terdeteksi App Translocation macOS. Pindahkan aplikasi ke /Applications dan buka kembali.",
       keychainDenied:
         "Akses Keychain ditolak. Aplikasi mungkin belum ditandatangani; lihat README untuk solusi penandatanganan mandiri.",
-      signNotarize: "Harap gunakan build yang telah ditandatangani dan dinotarisasi jika tersedia.",
+      signNotarize:
+        "Harap gunakan build yang telah ditandatangani dan dinotarisasi jika tersedia.",
     },
     dataMigrationFailed: "Tidak dapat mendekripsi data akun lama.",
     masterKeyUnavailable:
@@ -262,8 +266,7 @@ const id = {
     description: "Kelola akun Google Gemini Antigravity Anda.",
     noBackups: {
       title: "Cadangan tidak ditemukan",
-      description:
-        "Buat cadangan akun Antigravity saat ini untuk memulai.",
+      description: "Buat cadangan akun Antigravity saat ini untuk memulai.",
       action: "Cadangkan Akun Saat Ini",
     },
   },
@@ -290,7 +293,8 @@ const id = {
       description: "Sesuaikan tampilan Antigravity Relay pada perangkat Anda.",
     },
     darkMode: "Mode Gelap",
-    darkModeDescription: "Aktifkan mode gelap untuk kenyamanan melihat di malam hari.",
+    darkModeDescription:
+      "Aktifkan mode gelap untuk kenyamanan melihat di malam hari.",
     language: {
       title: "Bahasa",
       description: "Pilih bahasa yang Anda inginkan.",
@@ -312,8 +316,7 @@ const id = {
         "Hapus direktori cache Antigravity yang diketahui untuk mengatasi masalah masuk atau validasi versi.",
       clear: "Hapus Cache Antigravity",
       dialogTitle: "Hapus Cache Antigravity?",
-      dialogDescription:
-        "Direktori cache yang ada berikut ini akan dihapus.",
+      dialogDescription: "Direktori cache yang ada berikut ini akan dihapus.",
       pathsLabel: "Direktori cache",
       noPaths: "Tidak ada direktori cache Antigravity yang ditemukan.",
       warning:
@@ -361,12 +364,14 @@ const id = {
     },
     startup: {
       title: "Mulai Otomatis",
-      description: "Kontrol perilaku peluncuran aplikasi saat sistem dinyalakan.",
+      description:
+        "Kontrol perilaku peluncuran aplikasi saat sistem dinyalakan.",
       auto_startup: "Mulai bersama sistem",
       auto_startup_desc:
         "Luncurkan saat masuk dan simpan aplikasi di baki sistem",
       start_in_tray: "Mulai di baki sistem",
-      start_in_tray_desc: "Mulai aplikasi dalam keadaan diminimalkan ke baki sistem",
+      start_in_tray_desc:
+        "Mulai aplikasi dalam keadaan diminimalkan ke baki sistem",
       macos_hint:
         "macOS memerlukan aplikasi bertanda tangan agar Item Masuk berfungsi. Jika gagal, tandatangani aplikasi atau aktifkan manual di Pengaturan Sistem.",
     },
@@ -445,7 +450,8 @@ const id = {
     },
     providerGroupings: {
       title: "Pengelompokan Penyedia",
-      description: "Kelompokkan model berdasarkan penyedia untuk organisasi yang lebih baik",
+      description:
+        "Kelompokkan model berdasarkan penyedia untuk organisasi yang lebih baik",
       enabled: "Aktifkan Pengelompokan Penyedia",
       models: "{{count}} model",
       avgLabel: "rata-rata",
@@ -495,7 +501,8 @@ const id = {
         cancel: "Batal",
         confirm: "Buat Ulang",
       },
-      key_warning: "Jaga keamanan kunci API Anda. Jangan bagikan kepada siapa pun.",
+      key_warning:
+        "Jaga keamanan kunci API Anda. Jangan bagikan kepada siapa pun.",
       auto_start: "Mulai Otomatis bersama Aplikasi",
       auto_start_desc: "Mulai layanan proksi saat aplikasi diluncurkan",
     },
@@ -769,7 +776,8 @@ const id = {
       actionFailed: "Tindakan gagal",
       startAuthFailed: "Gagal memulai alur masuk",
       refreshCreditsAvailable: "Kredit AI: {{amount}}",
-      refreshCreditsUnavailable: "Kredit AI tidak tersedia untuk penyegaran ini.",
+      refreshCreditsUnavailable:
+        "Kredit AI tidak tersedia untuk penyegaran ini.",
       batchRefreshSuccess: "Berhasil menyegarkan {{count}} akun.",
       batchRefreshPartial: {
         title: "Penyegaran selesai dengan masalah",
@@ -864,7 +872,8 @@ const id = {
         "Sisipkan potongan SSE __cloudCodeMeta non-standar untuk kompatibilitas Cloud Code lama. Biarkan nonaktif untuk klien OpenAI murni.",
       local_access: "Akses jaringan lokal:",
       select_ip: "Pilih IP",
-      no_token_warning: "⚠️ Kunci API belum diatur. Akses terbuka untuk semua orang!",
+      no_token_warning:
+        "⚠️ Kunci API belum diatur. Akses terbuka untuk semua orang!",
       show_key: "Tampilkan",
       hide_key: "Sembunyikan",
     },

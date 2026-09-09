@@ -26,6 +26,8 @@ const zhCn = {
     partial_running: "{{running}}/{{total}} 个服务运行中",
     not_installed_short: "未安装",
     tunnel_not_installed_tooltip: "此计算机上未安装 cloudflared CLI",
+    wifi_network: "Wi-Fi",
+    local_network: "本地",
   },
   action: {
     stop: "停止",

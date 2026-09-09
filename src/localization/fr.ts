@@ -29,6 +29,8 @@ const fr = {
     not_installed_short: "Non installe",
     tunnel_not_installed_tooltip:
       "Le CLI cloudflared n est pas installe sur cet ordinateur",
+    wifi_network: "Wi-Fi",
+    local_network: "Local",
   },
   action: {
     stop: "Arreter",

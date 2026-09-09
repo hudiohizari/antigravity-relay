@@ -27,6 +27,8 @@ const vi = {
     not_installed_short: "Chưa cài đặt",
     tunnel_not_installed_tooltip:
       "CLI cloudflared chưa được cài đặt trên máy tính này",
+    wifi_network: "Wi-Fi",
+    local_network: "Cục bộ",
   },
   action: {
     stop: "Dừng",
