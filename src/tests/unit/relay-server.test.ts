@@ -6,6 +6,7 @@ import os from "node:os";
 import {
   RelayServer,
   generateAutoReloadScript,
+  extractDeviceId,
 } from "@/modules/relay/relay-server";
 import { SessionManager } from "@/modules/relay/session-manager";
 import { UpstreamBridge } from "@/modules/relay/upstream-bridge";
@@ -837,6 +838,228 @@ describe("RelayServer Reverse Proxy Mirror", () => {
 
       ws2.close();
       await new Promise<void>((r) => ws2.on("close", () => r()));
+    });
+
+    it("sets ag_device_id cookie on initial request and reuses session on subsequent requests with the cookie", async () => {
+      const initialRes = await undiciRequest(`http://127.0.0.1:${relayPort}/`, {
+        headers: {
+          "user-agent": "BrowserClient/1.0",
+        },
+      });
+      expect(initialRes.statusCode).toBe(200);
+
+      const setCookie = initialRes.headers["set-cookie"];
+      expect(setCookie).toBeTruthy();
+      const cookieStr = Array.isArray(setCookie)
+        ? setCookie.join("; ")
+        : setCookie!;
+      expect(cookieStr).toContain("ag_device_id=dev_");
+      expect(cookieStr).toContain("Path=/");
+      expect(cookieStr).toContain("Max-Age=31536000");
+      expect(cookieStr).toContain("SameSite=Lax");
+
+      const match = cookieStr.match(/ag_device_id=([^;]+)/);
+      expect(match).toBeTruthy();
+      const deviceId = decodeURIComponent(match![1]);
+
+      const sessions = relayServer.getSessionManager().getActiveSessions();
+      expect(sessions).toHaveLength(1);
+      const session = sessions[0];
+      expect(session.deviceId).toBe(deviceId);
+      const initialActiveAt = session.lastActiveAt;
+
+      await new Promise((r) => setTimeout(r, 15));
+
+      const secondRes = await fetch(`http://127.0.0.1:${relayPort}/api/chat`, {
+        method: "POST",
+        headers: {
+          "user-agent": "BrowserClient/1.0",
+          cookie: `ag_device_id=${encodeURIComponent(deviceId)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ message: "hello" }),
+      });
+      expect(secondRes.status).toBe(200);
+
+      expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
+        1,
+      );
+      const updatedSession = relayServer
+        .getSessionManager()
+        .getSessionByDeviceId(deviceId);
+      expect(updatedSession).toBeDefined();
+      expect(updatedSession?.sessionId).toBe(session.sessionId);
+      expect(updatedSession?.lastActiveAt).toBeGreaterThan(initialActiveAt);
+    });
+
+    it("deduplicates multiple tabs opening WebSocket on the same device and supersedes previous socket", async () => {
+      const csrfToken = mockUpstream.getCsrfToken();
+      const testDeviceId = "dev_multi_tab_test_device";
+
+      const wsTab1 = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+            "user-agent": "BrowserTab1",
+            cookie: `ag_device_id=${testDeviceId}`,
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        wsTab1.on("open", () => resolve());
+        wsTab1.on("error", reject);
+      });
+
+      expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
+        1,
+      );
+      const sessionTab1 = relayServer
+        .getSessionManager()
+        .getSessionByDeviceId(testDeviceId)!;
+      expect(sessionTab1).toBeDefined();
+      expect(sessionTab1.socketState).toBe("connected");
+
+      let tab1CloseCode: number | null = null;
+      let tab1CloseReason: string | null = null;
+      const tab1ClosePromise = new Promise<void>((resolve) => {
+        wsTab1.on("close", (code, reason) => {
+          tab1CloseCode = code;
+          tab1CloseReason = reason.toString();
+          resolve();
+        });
+      });
+
+      const wsTab2 = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+            "user-agent": "BrowserTab2",
+            cookie: `ag_device_id=${testDeviceId}`,
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        wsTab2.on("open", () => resolve());
+        wsTab2.on("error", reject);
+      });
+
+      await tab1ClosePromise;
+      expect(tab1CloseCode).toBe(1000);
+      expect(tab1CloseReason).toBe("Superseded by new connection");
+
+      expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
+        1,
+      );
+      const sessionTab2 = relayServer
+        .getSessionManager()
+        .getSessionByDeviceId(testDeviceId)!;
+      expect(sessionTab2.sessionId).toBe(sessionTab1.sessionId);
+      expect(sessionTab2.socketState).toBe("connected");
+
+      wsTab2.close();
+      await vi.waitFor(
+        () => {
+          expect(sessionTab2.socketState).toBe("disconnected");
+        },
+        { timeout: 1000, interval: 20 },
+      );
+    });
+
+    it("purges device mapping on revocation and does not resurrect session on subsequent requests", async () => {
+      const csrfToken = mockUpstream.getCsrfToken();
+      const revokedDeviceId = "dev_revocation_target_device";
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+            cookie: `ag_device_id=${revokedDeviceId}`,
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.on("open", () => resolve());
+        ws.on("error", reject);
+      });
+
+      const session = relayServer
+        .getSessionManager()
+        .getSessionByDeviceId(revokedDeviceId)!;
+      expect(session).toBeDefined();
+      expect(session.socketState).toBe("connected");
+
+      const closePromise = new Promise<{ code: number; reason: string }>(
+        (resolve) => {
+          ws.on("close", (code, reason) => {
+            resolve({ code, reason: reason.toString() });
+          });
+        },
+      );
+
+      const revoked = relayServer
+        .getSessionManager()
+        .revokeSession(session.sessionId);
+      expect(revoked).toBe(true);
+
+      const closeResult = await closePromise;
+      expect(closeResult.code).toBe(4401);
+      expect(closeResult.reason).toBe("Session revoked");
+
+      expect(
+        relayServer.getSessionManager().getSessionByDeviceId(revokedDeviceId),
+      ).toBeUndefined();
+      expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
+        0,
+      );
+
+      const subsequentRes = await fetch(
+        `http://127.0.0.1:${relayPort}/api/chat`,
+        {
+          method: "POST",
+          headers: {
+            cookie: `ag_device_id=${revokedDeviceId}`,
+            "x-session-token": session.token,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ message: "attempt resurrect" }),
+        },
+      );
+      expect(subsequentRes.status).toBe(200);
+
+      expect(
+        relayServer.getSessionManager().getSessionByDeviceId(revokedDeviceId),
+      ).toBeUndefined();
+      expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
+        0,
+      );
+    });
+
+    it("extracts deviceId case-insensitively from headers, cookie, or query parameters", () => {
+      expect(extractDeviceId({ cookie: "ag_device_id=dev_lower_cookie" })).toBe(
+        "dev_lower_cookie",
+      );
+      expect(extractDeviceId({ Cookie: "ag_device_id=dev_upper_cookie" })).toBe(
+        "dev_upper_cookie",
+      );
+      expect(extractDeviceId({ "x-device-id": "dev_header_val" })).toBe(
+        "dev_header_val",
+      );
+      expect(extractDeviceId({ "X-Device-Id": "dev_header_caps" })).toBe(
+        "dev_header_caps",
+      );
+      expect(
+        extractDeviceId({}, new URLSearchParams("deviceId=dev_query_val")),
+      ).toBe("dev_query_val");
+      expect(
+        extractDeviceId({}, new URLSearchParams("device_id=dev_snake_query")),
+      ).toBe("dev_snake_query");
+      expect(extractDeviceId({})).toBeUndefined();
     });
   });
 

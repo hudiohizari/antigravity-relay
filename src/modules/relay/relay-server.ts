@@ -1,5 +1,6 @@
 import fastify, { FastifyInstance } from "fastify";
 import fastifyCors from "@fastify/cors";
+import crypto from "node:crypto";
 import { IncomingMessage } from "node:http";
 import { Duplex } from "node:stream";
 import { Agent, request as undiciRequest } from "undici";
@@ -68,7 +69,18 @@ export function extractDeviceId(
   headers: Record<string, string | string[] | undefined>,
   query?: URLSearchParams | null,
 ): string | undefined {
-  const cookieHeader = headers["cookie"];
+  let cookieHeader: string | string[] | undefined;
+  let headerDeviceId: string | string[] | undefined;
+
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+    if (lower === "cookie") {
+      cookieHeader = value;
+    } else if (lower === "x-device-id") {
+      headerDeviceId = value;
+    }
+  }
+
   const cookieStr = Array.isArray(cookieHeader)
     ? cookieHeader.join("; ")
     : cookieHeader;
@@ -78,7 +90,6 @@ export function extractDeviceId(
       return decodeURIComponent(match[1].trim());
     }
   }
-  const headerDeviceId = headers["x-device-id"];
   if (headerDeviceId) {
     return Array.isArray(headerDeviceId) ? headerDeviceId[0] : headerDeviceId;
   }
@@ -459,28 +470,45 @@ export class RelayServer {
 
         const rawUrl = request.url || "/";
         const parsedUrl = new URL(rawUrl, "http://127.0.0.1");
+        const pairingToken = parsedUrl.searchParams.get("pair") || undefined;
         const token =
-          parsedUrl.searchParams.get("pair") ||
+          pairingToken ||
           parsedUrl.searchParams.get("token") ||
           (request.headers["x-session-token"] as string | undefined);
 
-        let deviceId = extractDeviceId(request.headers, parsedUrl.searchParams);
+        const originalDeviceId = extractDeviceId(
+          request.headers,
+          parsedUrl.searchParams,
+        );
+        let deviceId = originalDeviceId;
+
+        const hasDeviceCookie = !!(
+          request.headers["cookie"] &&
+          /(?:^|;\s*)ag_device_id=/.test(String(request.headers["cookie"]))
+        );
+
         if (!deviceId) {
           deviceId = `dev_${crypto.randomUUID()}`;
           reply.header(
             "Set-Cookie",
             `ag_device_id=${encodeURIComponent(deviceId)}; Path=/; Max-Age=31536000; SameSite=Lax`,
           );
+        } else if (!hasDeviceCookie) {
+          reply.header(
+            "Set-Cookie",
+            `ag_device_id=${encodeURIComponent(deviceId)}; Path=/; Max-Age=31536000; SameSite=Lax`,
+          );
         }
 
-        let session = this.sessionManager.getSessionByDeviceId(deviceId);
+        let session = deviceId
+          ? this.sessionManager.getSessionByDeviceId(deviceId)
+          : undefined;
 
         if (session) {
           session.clientIp = clientIp;
           session.userAgent = userAgent;
           if (token && session.token !== token) {
-            session.token = token;
-            this.sessionManager.registerSession(session);
+            this.sessionManager.updateSessionToken(session.sessionId, token);
           }
           this.sessionManager.updateSessionActivity(session.sessionId);
         } else if (token) {
@@ -488,17 +516,21 @@ export class RelayServer {
           if (existingByToken) {
             existingByToken.clientIp = clientIp;
             existingByToken.userAgent = userAgent;
-            existingByToken.deviceId = deviceId;
-            this.sessionManager.registerSession(existingByToken);
+            if (deviceId && !existingByToken.deviceId) {
+              this.sessionManager.updateSessionDeviceId(
+                existingByToken.sessionId,
+                deviceId,
+              );
+            }
             this.sessionManager.updateSessionActivity(
               existingByToken.sessionId,
             );
             session = existingByToken;
-          } else {
+          } else if (pairingToken) {
             session = this.sessionManager.createSession({
               clientIp,
               userAgent,
-              token,
+              token: pairingToken,
               deviceId,
             });
             this.notifyStatusUpdated();
@@ -507,17 +539,25 @@ export class RelayServer {
           parsedUrl.pathname === "/" ||
           parsedUrl.pathname === "/index.html"
         ) {
-          const existing = this.sessionManager
-            .getActiveSessions()
-            .find((s) => s.clientIp === clientIp && s.userAgent === userAgent);
-          if (existing) {
-            if (!existing.deviceId) {
-              existing.deviceId = deviceId;
-              this.sessionManager.registerSession(existing);
+          if (!originalDeviceId) {
+            const existing = this.sessionManager
+              .getActiveSessions()
+              .find(
+                (s) => s.clientIp === clientIp && s.userAgent === userAgent,
+              );
+            if (existing) {
+              if (!existing.deviceId && deviceId) {
+                this.sessionManager.updateSessionDeviceId(
+                  existing.sessionId,
+                  deviceId,
+                );
+              }
+              this.sessionManager.updateSessionActivity(existing.sessionId);
+              session = existing;
             }
-            this.sessionManager.updateSessionActivity(existing.sessionId);
-            session = existing;
-          } else {
+          }
+
+          if (!session) {
             session = this.sessionManager.createSession({
               clientIp,
               userAgent,
@@ -525,7 +565,7 @@ export class RelayServer {
             });
             this.notifyStatusUpdated();
           }
-        } else {
+        } else if (!originalDeviceId) {
           const existing = this.sessionManager
             .getActiveSessions()
             .find((s) => s.clientIp === clientIp && s.userAgent === userAgent);
@@ -910,10 +950,11 @@ export class RelayServer {
       parsedUrl?.searchParams.get("pair") ||
       parsedUrl?.searchParams.get("token") ||
       (req.headers["x-session-token"] as string | undefined);
-    const deviceId = extractDeviceId(
+    const originalDeviceId = extractDeviceId(
       req.headers as any,
       parsedUrl?.searchParams,
     );
+    let deviceId = originalDeviceId;
 
     let session: Session | undefined;
     if (deviceId) {
@@ -924,24 +965,27 @@ export class RelayServer {
     }
 
     if (!session) {
-      const existing = this.sessionManager
-        .getActiveSessions()
-        .find(
-          (s) =>
-            s.clientIp === clientIp &&
-            s.userAgent === userAgent &&
-            s.socketState === "disconnected",
-        );
-      if (existing) {
-        session = existing;
-        if (token) {
-          session.token = token;
+      if (!deviceId) {
+        const existing = this.sessionManager
+          .getActiveSessions()
+          .find(
+            (s) =>
+              s.clientIp === clientIp &&
+              s.userAgent === userAgent &&
+              s.socketState === "disconnected",
+          );
+        if (existing) {
+          session = existing;
+          if (token && session.token !== token) {
+            this.sessionManager.updateSessionToken(session.sessionId, token);
+          }
         }
-        if (deviceId && !session.deviceId) {
-          session.deviceId = deviceId;
-          this.sessionManager.registerSession(session);
+      }
+
+      if (!session) {
+        if (!deviceId) {
+          deviceId = `dev_${crypto.randomUUID()}`;
         }
-      } else {
         session = this.sessionManager.createSession({
           clientIp,
           userAgent,
@@ -953,12 +997,10 @@ export class RelayServer {
       session.clientIp = clientIp;
       session.userAgent = userAgent;
       if (deviceId && !session.deviceId) {
-        session.deviceId = deviceId;
-        this.sessionManager.registerSession(session);
+        this.sessionManager.updateSessionDeviceId(session.sessionId, deviceId);
       }
       if (token && session.token !== token) {
-        session.token = token;
-        this.sessionManager.registerSession(session);
+        this.sessionManager.updateSessionToken(session.sessionId, token);
       }
     }
 

@@ -19,9 +19,26 @@ vi.mock("@/components/ui/use-toast", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, any>) => {
+      if (key === "sessions.deviceIPhone") return "iPhone";
+      if (key === "sessions.deviceAndroid") return "Android Device";
       if (params?.port) return `Port: ${params.port}`;
       if (params?.count) return `${params.count} queued commands`;
-      if (params?.device) return `Session for ${params.device}`;
+      if (key === "sessions.revokeAriaLabel" && params?.device)
+        return `Revoke session for ${params.device} on ${params?.ip}`;
+      if (key === "sessions.confirmRevokeMessage" && params?.device)
+        return `Session for ${params.device}`;
+      if (
+        key === "sessions.activeCountRatio" &&
+        params?.active &&
+        params?.total
+      )
+        return `${params.active} of ${params.total} active`;
+      if (key === "sessions.activeCountAria" && params?.count && params?.total)
+        return `${params.count} active sessions out of ${params.total} registered`;
+      if (key === "sessions.deviceIdTooltip" && params?.id)
+        return `Device ID: ${params.id} (click to copy)`;
+      if (key === "sessions.copyDeviceIdAria" && params?.id)
+        return `Copy device ID ${params.id}`;
       return key;
     },
   }),
@@ -124,6 +141,7 @@ describe("RelayDashboard Component", () => {
         lastActiveAt: Date.now() - 5000,
         authenticated: true,
         socketState: "connected",
+        deviceId: "dev_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       },
     ]);
   });
@@ -177,6 +195,7 @@ describe("RelayDashboard Component", () => {
     expect(pairingInput.value).toContain(
       "https://test-subdomain.trycloudflare.com/?pair=",
     );
+    expect(pairingInput.value).toContain("useWebSocket=true");
 
     expect(screen.queryByText("pairing.wifiAdvisory")).toBeNull();
   });
@@ -209,6 +228,7 @@ describe("RelayDashboard Component", () => {
         "pairing.copyLink",
       ) as HTMLInputElement;
       expect(pairingInput.value).toContain("http://192.168.1.100:4040/?pair=");
+      expect(pairingInput.value).toContain("useWebSocket=true");
     });
   });
 
@@ -237,6 +257,7 @@ describe("RelayDashboard Component", () => {
         "pairing.copyLink",
       ) as HTMLInputElement;
       expect(pairingInput.value).toContain("http://192.168.1.100:4040/?pair=");
+      expect(pairingInput.value).toContain("useWebSocket=true");
     });
   });
 
@@ -445,7 +466,7 @@ describe("RelayDashboard Component", () => {
     expect(await screen.findByText("sessions.statusConnected")).toBeDefined();
 
     const revokeBtn = screen.getByRole("button", {
-      name: "sessions.revoke",
+      name: /Revoke session for iPhone/,
     });
     fireEvent.click(revokeBtn);
 
@@ -474,7 +495,7 @@ describe("RelayDashboard Component", () => {
     );
 
     const revokeBtn = await screen.findByRole("button", {
-      name: "sessions.revoke",
+      name: /Revoke session for iPhone/,
     });
     fireEvent.click(revokeBtn);
 
@@ -491,5 +512,123 @@ describe("RelayDashboard Component", () => {
       expect(screen.queryByText("sessions.confirmRevokeTitle")).toBeNull();
       expect(relayActions.revokeRelaySession).not.toHaveBeenCalled();
     });
+  });
+
+  it("renders shortened Device ID chip and copies full ID to clipboard with feedback toast", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    // dev_a1b2c3d4-e5f6-7890-abcd-ef1234567890 should be shortened to dev_a1b2...7890
+    const deviceIdChip = await screen.findByRole("button", {
+      name: /Copy device ID dev_a1b2c3d4-e5f6-7890-abcd-ef1234567890/,
+    });
+    expect(deviceIdChip).toBeDefined();
+    expect(deviceIdChip.textContent).toContain("dev_a1b2...7890");
+
+    fireEvent.click(deviceIdChip);
+
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        "dev_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      );
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "sessions.title",
+          description: "sessions.deviceIdCopied",
+        }),
+      );
+    });
+  });
+
+  it("evaluates session as Active when socket is disconnected but HTTP RPC activity occurred within 45s", async () => {
+    vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
+      {
+        sessionId: "session-http-active",
+        token: "secret-token-http",
+        clientIp: "192.168.1.60",
+        userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+        connectedAt: Date.now() - 60000,
+        lastActiveAt: Date.now() - 10000, // 10s ago <= 45s
+        authenticated: true,
+        socketState: "disconnected",
+        deviceId: "dev_11223344",
+      },
+    ]);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const activeBadge = await screen.findByText("sessions.statusConnected");
+    expect(activeBadge).toBeDefined();
+    expect(screen.queryByText("sessions.statusDisconnected")).toBeNull();
+  });
+
+  it("evaluates session as Disconnected when socket is disconnected and last activity exceeds 45s", async () => {
+    vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
+      {
+        sessionId: "session-inactive",
+        token: "secret-token-inactive",
+        clientIp: "192.168.1.70",
+        userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+        connectedAt: Date.now() - 120000,
+        lastActiveAt: Date.now() - 50000, // 50s ago > 45s
+        authenticated: true,
+        socketState: "disconnected",
+        deviceId: "dev_99887766",
+      },
+    ]);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const disconnectedBadge = await screen.findByText(
+      "sessions.statusDisconnected",
+    );
+    expect(disconnectedBadge).toBeDefined();
+    expect(screen.queryByText("sessions.statusConnected")).toBeNull();
+  });
+
+  it("renders ratio counter badge in card header when both active and disconnected sessions exist", async () => {
+    vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
+      {
+        sessionId: "session-active",
+        token: "token-1",
+        clientIp: "192.168.1.80",
+        userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+        connectedAt: Date.now() - 30000,
+        lastActiveAt: Date.now() - 2000,
+        authenticated: true,
+        socketState: "connected",
+      },
+      {
+        sessionId: "session-stale",
+        token: "token-2",
+        clientIp: "192.168.1.81",
+        userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+        connectedAt: Date.now() - 120000,
+        lastActiveAt: Date.now() - 60000,
+        authenticated: true,
+        socketState: "disconnected",
+      },
+    ]);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    // 1 of 2 active should be rendered in the header badge
+    const ratioBadge = await screen.findByText("1 of 2 active");
+    expect(ratioBadge).toBeDefined();
   });
 });

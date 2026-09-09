@@ -57,6 +57,16 @@ export class SessionManager {
   }
 
   public registerSession(session: Session): void {
+    for (const [t, sId] of this.sessionsByToken.entries()) {
+      if (sId === session.sessionId && t !== session.token) {
+        this.sessionsByToken.delete(t);
+      }
+    }
+    for (const [d, sId] of this.sessionsByDeviceId.entries()) {
+      if (sId === session.sessionId && d !== session.deviceId) {
+        this.sessionsByDeviceId.delete(d);
+      }
+    }
     this.sessions.set(session.sessionId, session);
     this.sessionsByToken.set(session.token, session.sessionId);
     if (session.deviceId) {
@@ -91,6 +101,30 @@ export class SessionManager {
   public updateSessionActivity(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session) {
+      session.lastActiveAt = Date.now();
+    }
+  }
+
+  public updateSessionToken(sessionId: string, newToken: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      if (session.token !== newToken) {
+        this.sessionsByToken.delete(session.token);
+        session.token = newToken;
+        this.sessionsByToken.set(newToken, sessionId);
+      }
+      session.lastActiveAt = Date.now();
+    }
+  }
+
+  public updateSessionDeviceId(sessionId: string, newDeviceId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      if (session.deviceId && session.deviceId !== newDeviceId) {
+        this.sessionsByDeviceId.delete(session.deviceId);
+      }
+      session.deviceId = newDeviceId;
+      this.sessionsByDeviceId.set(newDeviceId, sessionId);
       session.lastActiveAt = Date.now();
     }
   }

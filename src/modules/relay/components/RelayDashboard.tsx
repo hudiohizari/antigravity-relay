@@ -55,6 +55,7 @@ import {
   PowerOff,
   Play,
   Square,
+  Fingerprint,
 } from "lucide-react";
 
 function formatDuration(ms: number): string {
@@ -68,29 +69,44 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 }
 
-function formatRelativeTime(ms: number): string {
+function formatRelativeTime(
+  ms: number,
+  t: (key: string, params?: Record<string, any>) => string,
+): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 5) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 5) return t("sessions.relativeJustNow");
+  if (seconds < 60) return t("sessions.relativeSecondsAgo", { count: seconds });
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t("sessions.relativeMinutesAgo", { count: minutes });
   const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
+  return t("sessions.relativeHoursAgo", { count: hours });
 }
 
-function parseDeviceUserAgent(ua: string): { device: string; browser: string } {
-  if (!ua || ua.trim().length === 0) {
-    return { device: "Mobile Device", browser: "Web Browser" };
-  }
-  let device = "Mobile Device";
-  if (/iPhone/i.test(ua)) device = "iPhone";
-  else if (/iPad/i.test(ua)) device = "iPad";
-  else if (/Android/i.test(ua)) device = "Android Device";
-  else if (/Macintosh|Mac OS/i.test(ua)) device = "Mac";
-  else if (/Windows/i.test(ua)) device = "Windows PC";
-  else if (/Linux/i.test(ua)) device = "Linux PC";
+function shortenDeviceId(deviceId: string): string {
+  if (!deviceId) return "";
+  if (deviceId.length <= 16) return deviceId;
+  return `${deviceId.slice(0, 8)}...${deviceId.slice(-4)}`;
+}
 
-  let browser = "Browser";
+function parseDeviceUserAgent(
+  ua: string,
+  t: (key: string, params?: Record<string, any>) => string,
+): { device: string; browser: string } {
+  if (!ua || ua.trim().length === 0) {
+    return {
+      device: t("sessions.unknownDevice"),
+      browser: t("sessions.unknownBrowser"),
+    };
+  }
+  let device = t("sessions.unknownDevice");
+  if (/iPhone/i.test(ua)) device = t("sessions.deviceIPhone");
+  else if (/iPad/i.test(ua)) device = t("sessions.deviceIPad");
+  else if (/Android/i.test(ua)) device = t("sessions.deviceAndroid");
+  else if (/Macintosh|Mac OS/i.test(ua)) device = t("sessions.deviceMac");
+  else if (/Windows/i.test(ua)) device = t("sessions.deviceWindows");
+  else if (/Linux/i.test(ua)) device = t("sessions.deviceLinux");
+
+  let browser = t("sessions.unknownBrowser");
   if (/Chrome/i.test(ua) && !/Edge|Edg/i.test(ua)) browser = "Chrome";
   else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = "Safari";
   else if (/Firefox/i.test(ua)) browser = "Firefox";
@@ -376,6 +392,26 @@ export const RelayDashboard: React.FC = () => {
     setSessionToRevoke(null);
     revokeSessionMutation.mutate(sid);
   }, [sessionToRevoke, revokeSessionMutation]);
+
+  const handleCopyDeviceId = useCallback(
+    async (deviceId: string) => {
+      await navigator.clipboard.writeText(deviceId);
+      toast({
+        title: t("sessions.title"),
+        description: t("sessions.deviceIdCopied"),
+      });
+    },
+    [t, toast],
+  );
+
+  const activeSessionsCount = useMemo(
+    () =>
+      sessions.filter(
+        (sess) =>
+          sess.socketState === "connected" || now - sess.lastActiveAt <= 45000,
+      ).length,
+    [sessions, now],
+  );
 
   // Upstream status pill info
   const upstreamInfo = useMemo(() => {
@@ -951,8 +987,21 @@ export const RelayDashboard: React.FC = () => {
                 </CardDescription>
               </div>
             </div>
-            <Badge variant="secondary" className="font-mono text-xs shrink-0">
-              {t("sessions.activeCount", { count: sessions.length })}
+            <Badge
+              variant="secondary"
+              className="font-mono text-xs shrink-0"
+              role="status"
+              aria-label={t("sessions.activeCountAria", {
+                count: activeSessionsCount,
+                total: sessions.length,
+              })}
+            >
+              {sessions.length > activeSessionsCount
+                ? t("sessions.activeCountRatio", {
+                    active: activeSessionsCount,
+                    total: sessions.length,
+                  })
+                : t("sessions.activeCount", { count: activeSessionsCount })}
             </Badge>
           </div>
         </CardHeader>
@@ -969,7 +1018,7 @@ export const RelayDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="rounded-lg border overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto w-full">
                 <table
                   className="w-full min-w-[540px] text-left text-xs"
                   aria-label={t("sessions.title")}
@@ -1010,7 +1059,7 @@ export const RelayDashboard: React.FC = () => {
                   </thead>
                   <tbody className="divide-y">
                     {sessions.map((sess) => {
-                      const parsed = parseDeviceUserAgent(sess.userAgent);
+                      const parsed = parseDeviceUserAgent(sess.userAgent, t);
                       const isConnected =
                         sess.socketState === "connected" ||
                         now - sess.lastActiveAt <= 45000;
@@ -1019,6 +1068,7 @@ export const RelayDashboard: React.FC = () => {
                       );
                       const lastActiveStr = formatRelativeTime(
                         now - sess.lastActiveAt,
+                        t,
                       );
                       const isRevoking =
                         revokeSessionMutation.isPending &&
@@ -1033,35 +1083,78 @@ export const RelayDashboard: React.FC = () => {
                             <div className="flex items-center gap-2.5">
                               <Smartphone className="h-4 w-4 text-muted-foreground shrink-0" />
                               <div className="flex flex-col min-w-0">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-semibold text-foreground truncate">
                                     {parsed.device}
                                   </span>
                                   <Badge
                                     variant="outline"
                                     className={cn(
-                                      "gap-1 px-1.5 py-0 text-[10px] font-normal",
+                                      "gap-1 px-1.5 py-0 text-[10px] font-normal transition-colors duration-150",
                                       isConnected
-                                        ? "border-emerald-300 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400"
-                                        : "border-zinc-300 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400",
+                                        ? "border-emerald-300 bg-emerald-500/10 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400"
+                                        : "border-zinc-300 bg-zinc-500/10 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-500/15 dark:text-zinc-400",
                                     )}
+                                    role="status"
+                                    aria-label={t("sessions.statusBadgeLabel", {
+                                      status: isConnected
+                                        ? t("sessions.statusConnected")
+                                        : t("sessions.statusDisconnected"),
+                                    })}
                                   >
-                                    <span
-                                      className={cn(
-                                        "h-1.5 w-1.5 rounded-full",
-                                        isConnected
-                                          ? "bg-emerald-500"
-                                          : "bg-zinc-400",
+                                    <span className="relative flex h-1.5 w-1.5 shrink-0">
+                                      {isConnected && (
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 motion-reduce:hidden" />
                                       )}
-                                    />
+                                      <span
+                                        className={cn(
+                                          "relative inline-flex h-1.5 w-1.5 rounded-full",
+                                          isConnected
+                                            ? "bg-emerald-500"
+                                            : "bg-zinc-400 dark:bg-zinc-500",
+                                        )}
+                                      />
+                                    </span>
                                     {isConnected
                                       ? t("sessions.statusConnected")
                                       : t("sessions.statusDisconnected")}
                                   </Badge>
                                 </div>
-                                <span className="text-[11px] text-muted-foreground truncate">
-                                  {parsed.browser}
-                                </span>
+                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                  <span className="text-[11px] text-muted-foreground truncate">
+                                    {parsed.browser}
+                                  </span>
+                                  {sess.deviceId && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleCopyDeviceId(sess.deviceId!)
+                                      }
+                                      className="inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground/80 hover:text-foreground bg-muted/60 hover:bg-muted px-1.5 py-0.5 rounded border border-border/40 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none max-w-[130px] sm:max-w-[160px] truncate group"
+                                      title={t("sessions.deviceIdTooltip", {
+                                        id: sess.deviceId,
+                                      })}
+                                      aria-label={t(
+                                        "sessions.copyDeviceIdAria",
+                                        {
+                                          id: sess.deviceId,
+                                        },
+                                      )}
+                                    >
+                                      <Fingerprint
+                                        className="h-3 w-3 text-muted-foreground/60 group-hover:text-foreground shrink-0"
+                                        aria-hidden="true"
+                                      />
+                                      <span className="truncate">
+                                        {shortenDeviceId(sess.deviceId)}
+                                      </span>
+                                      <Copy
+                                        className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-0.5"
+                                        aria-hidden="true"
+                                      />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </td>
@@ -1081,7 +1174,10 @@ export const RelayDashboard: React.FC = () => {
                               disabled={isRevoking}
                               onClick={() => setSessionToRevoke(sess)}
                               title={t("sessions.revokeTooltip")}
-                              aria-label={t("sessions.revoke")}
+                              aria-label={t("sessions.revokeAriaLabel", {
+                                device: parsed.device,
+                                ip: sess.clientIp || "127.0.0.1",
+                              })}
                               className="text-red-500 hover:text-red-600 hover:bg-red-500/10 gap-1.5 h-8 px-2.5"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1110,29 +1206,53 @@ export const RelayDashboard: React.FC = () => {
           if (!open) setSessionToRevoke(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-w-md p-6">
           <DialogHeader>
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-red-500/10 text-red-500">
-                <AlertTriangle className="h-5 w-5" />
+              <div className="p-2.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 shrink-0">
+                <AlertTriangle className="h-5 w-5" aria-hidden="true" />
               </div>
-              <DialogTitle>{t("sessions.confirmRevokeTitle")}</DialogTitle>
+              <DialogTitle className="text-base font-semibold leading-snug">
+                {t("sessions.confirmRevokeTitle")}
+              </DialogTitle>
             </div>
-            <DialogDescription className="pt-2">
+            <DialogDescription className="text-xs text-muted-foreground pt-2 leading-relaxed">
               {sessionToRevoke &&
                 t("sessions.confirmRevokeMessage", {
-                  device: parseDeviceUserAgent(sessionToRevoke.userAgent)
+                  device: parseDeviceUserAgent(sessionToRevoke.userAgent, t)
                     .device,
                   ip: sessionToRevoke.clientIp || "127.0.0.1",
                 })}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setSessionToRevoke(null)}>
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSessionToRevoke(null)}
+              disabled={revokeSessionMutation.isPending}
+              className="min-h-[40px] sm:min-h-[36px]"
+            >
               {t("action.cancel")}
             </Button>
-            <Button variant="destructive" onClick={handleConfirmRevoke}>
-              {t("sessions.confirmRevokeAction")}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmRevoke}
+              disabled={revokeSessionMutation.isPending}
+              className="min-h-[40px] sm:min-h-[36px] gap-1.5"
+            >
+              {revokeSessionMutation.isPending ? (
+                <>
+                  <Loader2
+                    className="h-3.5 w-3.5 animate-spin"
+                    aria-hidden="true"
+                  />
+                  <span>{t("sessions.revoking")}</span>
+                </>
+              ) : (
+                <span>{t("sessions.confirmRevokeAction")}</span>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

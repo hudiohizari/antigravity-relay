@@ -69,6 +69,48 @@ describe("SessionManager & Command Buffering", () => {
       expect(manager.getSessionByDeviceId("dev_clear_test")).toBeUndefined();
     });
 
+    it("should update session device mapping and clean up previous device ID", () => {
+      const session = manager.createSession({
+        deviceId: "dev_initial",
+      });
+      expect(manager.getSessionByDeviceId("dev_initial")).toEqual(session);
+
+      manager.updateSessionDeviceId(session.sessionId, "dev_migrated");
+      expect(manager.getSessionByDeviceId("dev_initial")).toBeUndefined();
+      expect(manager.getSessionByDeviceId("dev_migrated")).toEqual(session);
+      expect(session.deviceId).toBe("dev_migrated");
+    });
+
+    it("should update session token mapping and clean up previous token", () => {
+      const session = manager.createSession({
+        token: "token_old",
+      });
+      expect(manager.getSessionByToken("token_old")).toEqual(session);
+
+      manager.updateSessionToken(session.sessionId, "token_new");
+      expect(manager.getSessionByToken("token_old")).toBeUndefined();
+      expect(manager.getSessionByToken("token_new")).toEqual(session);
+      expect(session.token).toBe("token_new");
+    });
+
+    it("should clean up previous token and device ID when re-registering updated session", () => {
+      const session = manager.createSession({
+        token: "token_v1",
+        deviceId: "dev_v1",
+      });
+      expect(manager.getSessionByToken("token_v1")).toEqual(session);
+      expect(manager.getSessionByDeviceId("dev_v1")).toEqual(session);
+
+      session.token = "token_v2";
+      session.deviceId = "dev_v2";
+      manager.registerSession(session);
+
+      expect(manager.getSessionByToken("token_v1")).toBeUndefined();
+      expect(manager.getSessionByToken("token_v2")).toEqual(session);
+      expect(manager.getSessionByDeviceId("dev_v1")).toBeUndefined();
+      expect(manager.getSessionByDeviceId("dev_v2")).toEqual(session);
+    });
+
     it("should list all active sessions", () => {
       manager.createSession();
       manager.createSession();
