@@ -1034,7 +1034,14 @@ export function hasAntigravityStorage(
   target?: AntigravityAppTarget | null,
   options?: PathResolutionOptions,
 ): boolean {
-  return getAntigravityStoragePaths(target, options).some((candidate) =>
+  if (
+    getAntigravityStoragePaths(target, options).some((candidate) =>
+      fs.existsSync(candidate),
+    )
+  ) {
+    return true;
+  }
+  return getAntigravityDbPaths(target, options).some((candidate) =>
     fs.existsSync(candidate),
   );
 }

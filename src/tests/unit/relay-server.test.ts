@@ -3,7 +3,10 @@ import WebSocket from "ws";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { RelayServer } from "@/modules/relay/relay-server";
+import {
+  RelayServer,
+  generateAutoReloadScript,
+} from "@/modules/relay/relay-server";
 import { SessionManager } from "@/modules/relay/session-manager";
 import { UpstreamBridge } from "@/modules/relay/upstream-bridge";
 import { PortDiscoveryService } from "@/modules/relay/port-discovery";
@@ -341,20 +344,46 @@ describe("RelayServer Reverse Proxy Mirror", () => {
   });
 
   describe("Transparent CSRF Token Passthrough", () => {
-    it("delivers HTML byte-for-byte identical without modifying the csrfToken script", async () => {
-      const directUpstreamRes = await undiciRequest(
-        `https://127.0.0.1:${upstreamPort}/`,
-        {
-          dispatcher: (relayServer as any).upstreamDispatcher,
-        },
-      );
-      const directHtml = await directUpstreamRes.body.text();
-
+    it("preserves csrfToken script while injecting auto-reload client script", async () => {
       const proxiedRes = await fetch(`http://127.0.0.1:${relayPort}/`);
       const proxiedHtml = await proxiedRes.text();
 
-      expect(proxiedHtml).toBe(directHtml);
-      expect(proxiedHtml).toContain(mockUpstream.getCsrfToken());
+      expect(proxiedHtml).toContain(
+        `window.__APP_CONFIG__ = {csrfToken: "${mockUpstream.getCsrfToken()}"};`,
+      );
+      expect(proxiedHtml).toContain('id="antigravity-relay-autoreload"');
+      expect(proxiedHtml).toContain("initialPort");
+    });
+
+    it("delivers HTML byte-for-byte identical when injectAutoReload is disabled", async () => {
+      const rawRelay = new RelayServer({
+        config: {
+          port: 0,
+          host: "127.0.0.1",
+          injectAutoReload: false,
+        },
+        portDiscovery,
+      });
+      const rawStatus = await rawRelay.start();
+
+      try {
+        const directUpstreamRes = await undiciRequest(
+          `https://127.0.0.1:${upstreamPort}/`,
+          {
+            dispatcher: (rawRelay as any).upstreamDispatcher,
+          },
+        );
+        const directHtml = await directUpstreamRes.body.text();
+
+        const proxiedRes = await fetch(`http://127.0.0.1:${rawStatus.port}/`);
+        const proxiedHtml = await proxiedRes.text();
+
+        expect(proxiedHtml).toBe(directHtml);
+        expect(proxiedHtml).toContain(mockUpstream.getCsrfToken());
+      } finally {
+        await rawRelay.stop();
+        rawRelay.dispose();
+      }
     });
   });
 
@@ -808,6 +837,51 @@ describe("RelayServer Reverse Proxy Mirror", () => {
 
       ws2.close();
       await new Promise<void>((r) => ws2.on("close", () => r()));
+    });
+  });
+
+  describe("Auto-Reload Script Injection & Client State Synchronization", () => {
+    it("generates auto reload script containing port and epoch", () => {
+      const script = generateAutoReloadScript(54518, 3);
+      expect(script).toContain('id="antigravity-relay-autoreload"');
+      expect(script).toContain("initialPort = 54518");
+      expect(script).toContain("initialEpoch = 3");
+      expect(script).toContain("/health");
+      expect(script).toContain("window.location.reload()");
+    });
+
+    it("handles null upstream port in generated script", () => {
+      const script = generateAutoReloadScript(null, 0);
+      expect(script).toContain("initialPort = null");
+      expect(script).toContain("initialEpoch = 0");
+    });
+
+    it("exposes upstreamEpoch and isRestarting in /health endpoint", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/health`);
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.success).toBe(true);
+      expect(json.status).toBe("healthy");
+      expect(json.upstreamPort).toBe(upstreamPort);
+      expect(typeof json.upstreamEpoch).toBe("number");
+      expect(typeof json.isRestarting).toBe("boolean");
+    });
+
+    it("increments upstreamEpoch when port changes", async () => {
+      const initialStatus = relayServer.getStatus();
+      const initialEpoch = initialStatus.upstreamEpoch ?? 0;
+
+      const newPort = 59999;
+      portDiscovery.setPort(newPort);
+
+      const updatedStatus = relayServer.getStatus();
+      expect(updatedStatus.upstreamPort).toBe(newPort);
+      expect(updatedStatus.upstreamEpoch).toBe(initialEpoch + 1);
+
+      const healthRes = await fetch(`http://127.0.0.1:${relayPort}/health`);
+      const healthJson = (await healthRes.json()) as any;
+      expect(healthJson.upstreamEpoch).toBe(initialEpoch + 1);
+      expect(healthJson.upstreamPort).toBe(newPort);
     });
   });
 });

@@ -259,6 +259,7 @@ export interface RelayConfig {
   bufferTtlMs: number;
   heartbeatIntervalMs: number;
   staticDir?: string;
+  injectAutoReload?: boolean;
 }
 
 export type RelayServerConfig = RelayConfig;
@@ -287,6 +288,9 @@ export interface RelayServerStatus {
   isBuffering: boolean;
   upstream: UpstreamBridgeStatus;
   startedAt?: number;
+  upstreamPort?: number | null;
+  upstreamEpoch?: number;
+  isRestarting?: boolean;
 }
 
 // Remote Session Management

@@ -103,6 +103,101 @@ function safeClose(
   }
 }
 
+export function generateAutoReloadScript(
+  upstreamPort: number | null,
+  upstreamEpoch: number,
+): string {
+  return `<script id="antigravity-relay-autoreload">
+(function() {
+  if (window.__antigravityRelayAutoReloadInjected) return;
+  window.__antigravityRelayAutoReloadInjected = true;
+
+  var initialPort = ${upstreamPort ?? "null"};
+  var initialEpoch = ${upstreamEpoch};
+  var reloading = false;
+
+  function showBanner(msg) {
+    try {
+      var banner = document.getElementById("relay-reload-banner");
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "relay-reload-banner";
+        banner.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#0f172a;color:#38bdf8;border:1px solid #0284c7;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 8px 20px rgba(0,0,0,0.4);display:flex;align-items:center;gap:8px;";
+        document.body.appendChild(banner);
+      }
+      banner.innerHTML = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#38bdf8;"></span>' + msg;
+    } catch (_) {}
+  }
+
+  function triggerReload() {
+    if (reloading) return;
+    reloading = true;
+    showBanner("Antigravity restarting, reconnecting...");
+
+    var check = function() {
+      fetch("/health", { cache: "no-store" })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          var portChanged = data && data.upstreamPort && initialPort && data.upstreamPort !== initialPort;
+          var epochChanged = data && typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch;
+          var isHealthy = data && data.isRunning && data.upstreamPort && !data.isRestarting;
+
+          if (isHealthy && (portChanged || epochChanged)) {
+            window.location.reload();
+          } else {
+            setTimeout(check, 1000);
+          }
+        })
+        .catch(function() {
+          setTimeout(check, 1000);
+        });
+    };
+    setTimeout(check, 500);
+  }
+
+  if (typeof window.WebSocket !== "undefined") {
+    var OrigWS = window.WebSocket;
+    class PatchedWS extends OrigWS {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener("close", function(event) {
+          if (event.code === 1012 || event.code === 1006 || event.code === 1011) {
+            triggerReload();
+          }
+        });
+      }
+    }
+    window.WebSocket = PatchedWS;
+  }
+
+  document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === "visible") {
+      fetch("/health", { cache: "no-store" })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data && data.upstreamPort && (data.upstreamPort !== initialPort || (typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch))) {
+            triggerReload();
+          }
+        })
+        .catch(function() {});
+    }
+  });
+
+  setInterval(function() {
+    if (reloading) return;
+    fetch("/health", { cache: "no-store" })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data && data.upstreamPort && (data.upstreamPort !== initialPort || (typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch))) {
+          triggerReload();
+        }
+      })
+      .catch(function() {});
+  }, 5000);
+})();
+</script>`;
+}
+
 export class RelayServer {
   private readonly config: RelayConfig;
   private readonly sessionManager: SessionManager;
@@ -120,6 +215,7 @@ export class RelayServer {
 
   private isRunning = false;
   private startedAt?: number;
+  private upstreamEpoch = 0;
   private statusListeners: Set<(status: RelayServerStatus) => void> = new Set();
   private unhookUpstream?: () => void;
   private unhookSessionRevoked?: () => void;
@@ -184,7 +280,9 @@ export class RelayServer {
       upstream: this.upstreamBridge.getStatus(),
       startedAt: this.startedAt,
       upstreamPort: this.portDiscovery.getPort(),
-    } as RelayServerStatus & { upstreamPort?: number | null };
+      upstreamEpoch: this.upstreamEpoch,
+      isRestarting: this.portDiscovery.isRestarting(),
+    };
   }
 
   public onStatusUpdated(
@@ -238,6 +336,8 @@ export class RelayServer {
         isBuffering: this.upstreamBridge.isBuffering(),
         upstream: this.upstreamBridge.getStatus(),
         upstreamPort: this.portDiscovery.getPort(),
+        upstreamEpoch: this.upstreamEpoch,
+        isRestarting: this.portDiscovery.isRestarting(),
         timestamp: Date.now(),
       };
     });
@@ -400,6 +500,17 @@ export class RelayServer {
           }
         }
 
+        const isPotentialHtml =
+          method === "GET" &&
+          (parsedUrl.pathname === "/" ||
+            parsedUrl.pathname === "/index.html" ||
+            parsedUrl.pathname.endsWith(".html") ||
+            String(request.headers.accept || "").includes("text/html"));
+
+        if (isPotentialHtml) {
+          delete upstreamHeaders["accept-encoding"];
+        }
+
         try {
           const upstreamRes = await undiciRequest(upstreamUrl, {
             method: method as any,
@@ -407,6 +518,52 @@ export class RelayServer {
             body: bodyStream,
             dispatcher: this.upstreamDispatcher,
           });
+
+          const contentType = String(
+            upstreamRes.headers["content-type"] || "",
+          ).toLowerCase();
+
+          if (
+            this.config.injectAutoReload !== false &&
+            method === "GET" &&
+            upstreamRes.statusCode === 200 &&
+            contentType.includes("text/html")
+          ) {
+            const rawHtml = await upstreamRes.body.text();
+            let finalHtml = rawHtml;
+            if (!rawHtml.includes('id="antigravity-relay-autoreload"')) {
+              const injectedScript = generateAutoReloadScript(
+                port,
+                this.upstreamEpoch,
+              );
+              if (finalHtml.includes("</body>")) {
+                finalHtml = finalHtml.replace(
+                  "</body>",
+                  `${injectedScript}</body>`,
+                );
+              } else if (finalHtml.includes("</head>")) {
+                finalHtml = finalHtml.replace(
+                  "</head>",
+                  `${injectedScript}</head>`,
+                );
+              } else {
+                finalHtml = finalHtml + injectedScript;
+              }
+            }
+
+            for (const [headerName, headerVal] of Object.entries(
+              upstreamRes.headers,
+            )) {
+              if (headerVal === undefined) continue;
+              const lower = headerName.toLowerCase();
+              if (HOP_BY_HOP_HEADERS.has(lower) || lower === "content-length") {
+                continue;
+              }
+              reply.header(headerName, headerVal);
+            }
+
+            return reply.status(upstreamRes.statusCode).send(finalHtml);
+          }
 
           for (const [headerName, headerVal] of Object.entries(
             upstreamRes.headers,
@@ -790,6 +947,7 @@ export class RelayServer {
   }
 
   private handlePortChanged(_oldPort: number | null, _newPort: number): void {
+    this.upstreamEpoch++;
     for (const pair of this.activeWsConnections) {
       if (pair.sessionId) {
         this.sessionManager.unbindSocket(pair.sessionId);
@@ -802,6 +960,7 @@ export class RelayServer {
   }
 
   private handleRestarting(): void {
+    this.upstreamEpoch++;
     for (const pair of this.activeWsConnections) {
       if (pair.sessionId) {
         this.sessionManager.unbindSocket(pair.sessionId);
