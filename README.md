@@ -10,8 +10,10 @@ Desktop account management and session relay for Google Antigravity 2.0.
 
 - **Antigravity 2.0 Focused**: Dedicated integration and account switching for Google Antigravity 2.0.
 - **Multi-Account Pool**: Connect and manage multiple Google accounts via OAuth 2.0 loopback authentication.
+- **Local Account Discovery & Sync**: One-click discovery, verification, and import of local signed-in accounts across System Credential Store (macOS Keychain / Linux Secret Service), Antigravity CLI session files, and IDE databases with proactive token refresh.
 - **Live Quota Monitoring**: Real-time per-model quota tracking, background polling, and reset timers.
-- **Session Relay & Remote**: Built-in relay server allowing remote session observation and coordination.
+- **Remote Mobile Tethering & Web UI Mirror**: Fastify reverse proxy mirror for Antigravity web interface with automatic upstream port discovery, Cloudflare Tunnel support, and Local Wi-Fi QR pairing.
+- **Device Identification & Session Deduplication**: Persistent device tracking (`ag_device_id` cookie / header) to prevent multi-tab session duplication, dual-mode real-time connection state (WebSocket + 45s HTTP activity), and remote session revocation.
 - **Zero Third-Party Telemetry**: Completely stripped of telemetry, crash beacons, and analytics (no Clarity, no Sentry, no OpenTelemetry).
 - **Isolated & Encrypted Storage**: Dedicated storage (`~/.antigravity-relay/`) encrypted via OS Keychain (`AntigravityRelay`) with AES-256-GCM.
 
@@ -21,7 +23,7 @@ Desktop account management and session relay for Google Antigravity 2.0.
 
 - **Runtime**: Electron 40+, Node.js 22+
 - **Frontend**: React 19, Vite 6, Tailwind CSS 4, Radix UI
-- **Backend / IPC**: Electron Forge, oRPC, SQLite (better-sqlite3) via Drizzle ORM
+- **Backend / IPC**: Electron Forge, Fastify, oRPC, SQLite (better-sqlite3) via Drizzle ORM
 - **Packaging**: Electron Forge (Vite plugin + Auto-Unpack Natives)
 
 ---
