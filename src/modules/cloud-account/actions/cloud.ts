@@ -1,10 +1,13 @@
-import { ipc } from '@/ipc/manager';
-import type { AntigravityAppTarget } from '@/shared/platform/antigravityAppTarget';
-import type { DeviceProfile } from '@/modules/identity-profile/types';
-import { isValidProxyUrl } from '@/shared/utils/url';
-import type { WeeklyWarmupConfig } from '@/modules/cloud-account/services/weekly-warmup-contract';
+import { ipc } from "@/ipc/manager";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import type { DeviceProfile } from "@/modules/identity-profile/types";
+import { isValidProxyUrl } from "@/shared/utils/url";
+import type { WeeklyWarmupConfig } from "@/modules/cloud-account/services/weekly-warmup-contract";
 
-export function addGoogleAccount(input: { authCode: string; oauthClientKey?: string }) {
+export function addGoogleAccount(input: {
+  authCode: string;
+  oauthClientKey?: string;
+}) {
   return ipc.client.cloud.addGoogleAccount(input);
 }
 
@@ -29,7 +32,10 @@ export function refreshAccountQuota(input: { accountId: string }) {
   return ipc.client.cloud.refreshAccountQuota(input);
 }
 
-export function switchCloudAccount(input: { accountId: string; appTarget?: AntigravityAppTarget }) {
+export function switchCloudAccount(input: {
+  accountId: string;
+  appTarget?: AntigravityAppTarget;
+}) {
   return ipc.client.cloud.switchCloudAccount(input);
 }
 
@@ -76,6 +82,7 @@ export interface OAuthClientDescriptor {
   client_id: string;
   is_active: boolean;
   is_builtin: boolean;
+  is_configured: boolean;
 }
 
 export function startAuthFlow(input?: { oauthClientKey?: string }) {
@@ -83,7 +90,9 @@ export function startAuthFlow(input?: { oauthClientKey?: string }) {
 }
 
 export function listOAuthClients() {
-  return ipc.client.cloud.listOAuthClients() as Promise<OAuthClientDescriptor[]>;
+  return ipc.client.cloud.listOAuthClients() as Promise<
+    OAuthClientDescriptor[]
+  >;
 }
 
 export async function getActiveOAuthClient() {
@@ -109,7 +118,7 @@ export function previewGenerateCloudIdentityProfile() {
 
 export function bindCloudIdentityProfile(input: {
   accountId: string;
-  mode: 'capture' | 'generate';
+  mode: "capture" | "generate";
 }) {
   return ipc.client.cloud.bindIdentityProfile(input);
 }
@@ -143,9 +152,12 @@ export function openCloudIdentityStorageFolder() {
   return ipc.client.cloud.openIdentityStorageFolder();
 }
 
-export function setAccountProxy(input: { accountId: string; proxyUrl: string | null }) {
+export function setAccountProxy(input: {
+  accountId: string;
+  proxyUrl: string | null;
+}) {
   if (input.proxyUrl && !isValidProxyUrl(input.proxyUrl)) {
-    throw new Error('Invalid proxy URL format');
+    throw new Error("Invalid proxy URL format");
   }
   return ipc.client.cloud.setAccountProxy(input);
 }
@@ -156,12 +168,12 @@ export function exportCloudAccounts(input: { stripTokens?: boolean }) {
 
 export function importCloudAccounts(input: {
   jsonContent: string;
-  strategy?: 'merge' | 'overwrite' | 'skip-existing';
+  strategy?: "merge" | "overwrite" | "skip-existing";
 }) {
   try {
     JSON.parse(input.jsonContent);
   } catch {
-    throw new Error('Invalid JSON content provided for import');
+    throw new Error("Invalid JSON content provided for import");
   }
   return ipc.client.cloud.importCloudAccounts(input);
 }

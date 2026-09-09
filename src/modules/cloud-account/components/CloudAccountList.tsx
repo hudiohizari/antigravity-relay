@@ -15,37 +15,44 @@ import {
   startAuthFlow,
   useExportCloudAccounts,
   useImportCloudAccounts,
-} from '@/modules/cloud-account/hooks/useCloudAccounts';
-import { IdentityProfileDialog } from '@/modules/identity-profile/components/IdentityProfileDialog';
-import { CloudAccount } from '@/modules/cloud-account/types';
-import type { AntigravityAppTarget } from '@/shared/platform/antigravityAppTarget';
-import { useToast } from '@/components/ui/use-toast';
-import { useState, useEffect, useRef, useMemo, useCallback, type ChangeEvent } from 'react';
-import { useTranslation } from 'react-i18next';
-import { getLocalizedErrorMessage } from '@/shared/utils/errorMessages';
-import { useAppConfig } from '@/modules/config/hooks/useAppConfig';
-import { isNumber } from 'lodash-es';
+} from "@/modules/cloud-account/hooks/useCloudAccounts";
+import { IdentityProfileDialog } from "@/modules/identity-profile/components/IdentityProfileDialog";
+import { CloudAccount } from "@/modules/cloud-account/types";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  type ChangeEvent,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { getLocalizedErrorMessage } from "@/shared/utils/errorMessages";
+import { useAppConfig } from "@/modules/config/hooks/useAppConfig";
+import { isNumber } from "lodash-es";
 import {
   formatAiCreditsAmount,
   type AccountSortKey,
-} from '@/modules/cloud-account/utils/quota-display';
-import { ACCOUNT_TIER_UNKNOWN_KEY } from '@/modules/cloud-account/utils/account-tier-filter';
-import { shouldAutoSubmitGoogleAuthCode } from '@/modules/cloud-account/utils/googleAuthSubmission';
-import { useCloudAccountListView } from '@/modules/cloud-account/hooks/useCloudAccountListView';
-import type { GridLayout } from '@/modules/cloud-account/components/CloudAccountList.constants';
-import { CloudAccountBatchActionBar } from '@/modules/cloud-account/components/CloudAccountBatchActionBar';
-import { CloudAccountGrid } from '@/modules/cloud-account/components/CloudAccountGrid';
+} from "@/modules/cloud-account/utils/quota-display";
+import { ACCOUNT_TIER_UNKNOWN_KEY } from "@/modules/cloud-account/utils/account-tier-filter";
+import { shouldAutoSubmitGoogleAuthCode } from "@/modules/cloud-account/utils/googleAuthSubmission";
+import { useCloudAccountListView } from "@/modules/cloud-account/hooks/useCloudAccountListView";
+import type { GridLayout } from "@/modules/cloud-account/components/CloudAccountList.constants";
+import { CloudAccountBatchActionBar } from "@/modules/cloud-account/components/CloudAccountBatchActionBar";
+import { CloudAccountGrid } from "@/modules/cloud-account/components/CloudAccountGrid";
 import {
   CloudAccountLoadError,
   CloudAccountLoadingState,
-} from '@/modules/cloud-account/components/CloudAccountListFallbacks';
-import { CloudAccountListSummary } from '@/modules/cloud-account/components/CloudAccountListSummary';
-import { CloudAccountToolbar } from '@/modules/cloud-account/components/CloudAccountToolbar';
-import type { QuotaWindow } from '@/modules/cloud-account/utils/quota-groups';
+} from "@/modules/cloud-account/components/CloudAccountListFallbacks";
+import { CloudAccountListSummary } from "@/modules/cloud-account/components/CloudAccountListSummary";
+import { CloudAccountToolbar } from "@/modules/cloud-account/components/CloudAccountToolbar";
+import type { QuotaWindow } from "@/modules/cloud-account/utils/quota-groups";
 import {
   readQuotaWindowPreference,
   saveQuotaWindowPreference,
-} from '@/modules/cloud-account/utils/quota-window-preference';
+} from "@/modules/cloud-account/utils/quota-window-preference";
 
 export function CloudAccountList() {
   const { t } = useTranslation();
@@ -67,17 +74,19 @@ export function CloudAccountList() {
   const switchMutation = useSwitchCloudAccount();
   const syncMutation = useSyncLocalAccount();
 
-  const { data: autoSwitchEnabled, isLoading: isSettingsLoading } = useAutoSwitchEnabled();
+  const { data: autoSwitchEnabled, isLoading: isSettingsLoading } =
+    useAutoSwitchEnabled();
   const setAutoSwitchMutation = useSetAutoSwitchEnabled();
   const forcePollMutation = useForcePollCloudMonitor();
-  const { data: oauthClients = [], isLoading: isOAuthClientsLoading } = useOAuthClients();
+  const { data: oauthClients = [], isLoading: isOAuthClientsLoading } =
+    useOAuthClients();
   const setActiveOAuthClientMutation = useSetActiveOAuthClient();
 
   const { toast } = useToast();
   const lastLoadErrorToastAtRef = useRef<number>(0);
   const lastSubmittedAuthCodeRef = useRef<string | null>(null);
 
-  const gridLayout: GridLayout = (config?.grid_layout as GridLayout) || 'auto';
+  const gridLayout: GridLayout = (config?.grid_layout as GridLayout) || "auto";
   const [quotaWindow, setQuotaWindow] = useState<QuotaWindow>(() =>
     readQuotaWindowPreference(() => window.localStorage),
   );
@@ -92,7 +101,8 @@ export function CloudAccountList() {
     }
   };
 
-  const currentSort: AccountSortKey = (config?.account_sort as AccountSortKey) || 'recently-used';
+  const currentSort: AccountSortKey =
+    (config?.account_sort as AccountSortKey) || "recently-used";
 
   const {
     sortedAccounts,
@@ -111,7 +121,7 @@ export function CloudAccountList() {
   const getTierOptionLabel = useCallback(
     (key: string, label: string) => {
       if (key === ACCOUNT_TIER_UNKNOWN_KEY) {
-        return t('cloud.tierFilter.unknown');
+        return t("cloud.tierFilter.unknown");
       }
 
       return label;
@@ -121,7 +131,7 @@ export function CloudAccountList() {
 
   const tierFilterButtonLabel = useMemo(() => {
     if (!hasActiveTierFilter) {
-      return t('cloud.tierFilter.all');
+      return t("cloud.tierFilter.all");
     }
 
     if (effectiveSelectedTierKeys.length === 1) {
@@ -130,23 +140,35 @@ export function CloudAccountList() {
       );
       return selectedOption
         ? getTierOptionLabel(selectedOption.key, selectedOption.label)
-        : t('cloud.tierFilter.all');
+        : t("cloud.tierFilter.all");
     }
 
-    return t('cloud.tierFilter.selectedCount', { count: effectiveSelectedTierKeys.length });
-  }, [effectiveSelectedTierKeys, getTierOptionLabel, hasActiveTierFilter, t, tierOptions]);
+    return t("cloud.tierFilter.selectedCount", {
+      count: effectiveSelectedTierKeys.length,
+    });
+  }, [
+    effectiveSelectedTierKeys,
+    getTierOptionLabel,
+    hasActiveTierFilter,
+    t,
+    tierOptions,
+  ]);
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [authCode, setAuthCode] = useState('');
-  const [selectedOAuthClientKey, setSelectedOAuthClientKey] = useState('');
-  const [identityAccount, setIdentityAccount] = useState<CloudAccount | null>(null);
+  const [authCode, setAuthCode] = useState("");
+  const [selectedOAuthClientKey, setSelectedOAuthClientKey] = useState("");
+  const [identityAccount, setIdentityAccount] = useState<CloudAccount | null>(
+    null,
+  );
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [importStrategy, setImportStrategy] = useState<'merge' | 'overwrite' | 'skip-existing'>(
-    'merge',
+  const [importStrategy, setImportStrategy] = useState<
+    "merge" | "overwrite" | "skip-existing"
+  >("merge");
+  const [importFileContent, setImportFileContent] = useState<string | null>(
+    null,
   );
-  const [importFileContent, setImportFileContent] = useState<string | null>(null);
-  const [importFileName, setImportFileName] = useState<string>('');
+  const [importFileName, setImportFileName] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportMutation = useExportCloudAccounts();
   const importMutation = useImportCloudAccounts();
@@ -157,25 +179,33 @@ export function CloudAccountList() {
       if (!codeToUse) {
         return;
       }
+      const effectiveClientKey =
+        selectedOAuthClientKey ||
+        oauthClients.find((client) => client.is_active)?.key;
+      const selectedClient = oauthClients.find(
+        (client) => client.key === effectiveClientKey,
+      );
+      if (selectedClient?.is_configured === false) {
+        return;
+      }
       lastSubmittedAuthCodeRef.current = codeToUse;
       addMutation.mutate(
         {
           authCode: codeToUse,
-          oauthClientKey:
-            selectedOAuthClientKey || oauthClients.find((client) => client.is_active)?.key,
+          oauthClientKey: effectiveClientKey,
         },
         {
           onSuccess: () => {
             setIsAddDialogOpen(false);
-            setAuthCode('');
+            setAuthCode("");
             lastSubmittedAuthCodeRef.current = null;
-            toast({ title: t('cloud.toast.addSuccess') });
+            toast({ title: t("cloud.toast.addSuccess") });
           },
           onError: (err) => {
             toast({
-              title: t('cloud.toast.addFailed.title'),
+              title: t("cloud.toast.addFailed.title"),
               description: getLocalizedErrorMessage(err, t),
-              variant: 'destructive',
+              variant: "destructive",
             });
           },
         },
@@ -185,10 +215,12 @@ export function CloudAccountList() {
   );
 
   useEffect(() => {
-    if (selectedOAuthClientKey !== '') {
+    if (selectedOAuthClientKey !== "") {
       return;
     }
-    const activeClientKey = oauthClients.find((client) => client.is_active)?.key;
+    const activeClientKey = oauthClients.find(
+      (client) => client.is_active,
+    )?.key;
     if (activeClientKey) {
       setSelectedOAuthClientKey(activeClientKey);
     }
@@ -196,9 +228,12 @@ export function CloudAccountList() {
   // Listen for Google Auth Code
   useEffect(() => {
     if (window.electron?.onGoogleAuthCode) {
-      console.log('[OAuth] Registering Google auth code IPC listener');
+      console.log("[OAuth] Registering Google auth code IPC listener");
       const cleanup = window.electron.onGoogleAuthCode((code) => {
-        console.log('[OAuth] Received Google auth code via IPC:', code?.substring(0, 10) + '...');
+        console.log(
+          "[OAuth] Received Google auth code via IPC:",
+          code?.substring(0, 10) + "...",
+        );
         lastSubmittedAuthCodeRef.current = null;
         setAuthCode(code);
       });
@@ -216,7 +251,7 @@ export function CloudAccountList() {
         lastSubmittedAuthCode: lastSubmittedAuthCodeRef.current,
       })
     ) {
-      console.log('[OAuth] Auto-submitting Google auth code');
+      console.log("[OAuth] Auto-submitting Google auth code");
       submitAuthCode(authCode);
     }
   }, [addMutation.isPending, authCode, isAddDialogOpen, submitAuthCode]);
@@ -225,14 +260,18 @@ export function CloudAccountList() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!isError || !errorUpdatedAt || errorUpdatedAt === lastLoadErrorToastAtRef.current) {
+    if (
+      !isError ||
+      !errorUpdatedAt ||
+      errorUpdatedAt === lastLoadErrorToastAtRef.current
+    ) {
       return;
     }
 
     toast({
-      title: t('cloud.error.loadFailed'),
+      title: t("cloud.error.loadFailed"),
       description: getLocalizedErrorMessage(error, t),
-      variant: 'destructive',
+      variant: "destructive",
     });
     lastLoadErrorToastAtRef.current = errorUpdatedAt;
   }, [error, errorUpdatedAt, isError, t, toast]);
@@ -246,8 +285,8 @@ export function CloudAccountList() {
           const credits = updatedAccount.quota?.ai_credits?.credits;
           if (isNumber(credits)) {
             toast({
-              title: t('cloud.toast.quotaRefreshed'),
-              description: t('cloud.toast.refreshCreditsAvailable', {
+              title: t("cloud.toast.quotaRefreshed"),
+              description: t("cloud.toast.refreshCreditsAvailable", {
                 amount: formatAiCreditsAmount(credits),
               }),
             });
@@ -255,15 +294,15 @@ export function CloudAccountList() {
           }
 
           toast({
-            title: t('cloud.toast.quotaRefreshed'),
-            description: t('cloud.toast.refreshCreditsUnavailable'),
+            title: t("cloud.toast.quotaRefreshed"),
+            description: t("cloud.toast.refreshCreditsUnavailable"),
           });
         },
         onError: (err) =>
           toast({
-            title: t('cloud.toast.refreshFailed'),
+            title: t("cloud.toast.refreshFailed"),
             description: getLocalizedErrorMessage(err, t),
-            variant: 'destructive',
+            variant: "destructive",
           }),
       },
     );
@@ -275,26 +314,26 @@ export function CloudAccountList() {
       {
         onSuccess: () =>
           toast({
-            title: t('cloud.toast.switched.title'),
-            description: t('cloud.toast.switched.description'),
+            title: t("cloud.toast.switched.title"),
+            description: t("cloud.toast.switched.description"),
           }),
         onError: (err) =>
           toast({
-            title: t('cloud.toast.switchFailed'),
+            title: t("cloud.toast.switchFailed"),
             description: getLocalizedErrorMessage(err, t),
-            variant: 'destructive',
+            variant: "destructive",
           }),
       },
     );
   };
 
   const handleDelete = (id: string) => {
-    if (confirm(t('cloud.toast.deleteConfirm'))) {
+    if (confirm(t("cloud.toast.deleteConfirm"))) {
       deleteMutation.mutate(
         { accountId: id },
         {
           onSuccess: () => {
-            toast({ title: t('cloud.toast.deleted') });
+            toast({ title: t("cloud.toast.deleted") });
             // Clear from selection if deleted
             setSelectedIds((prev) => {
               const next = new Set(prev);
@@ -302,7 +341,11 @@ export function CloudAccountList() {
               return next;
             });
           },
-          onError: () => toast({ title: t('cloud.toast.deleteFailed'), variant: 'destructive' }),
+          onError: () =>
+            toast({
+              title: t("cloud.toast.deleteFailed"),
+              variant: "destructive",
+            }),
         },
       );
     }
@@ -319,10 +362,15 @@ export function CloudAccountList() {
       {
         onSuccess: () =>
           toast({
-            title: checked ? t('cloud.toast.autoSwitchOn') : t('cloud.toast.autoSwitchOff'),
+            title: checked
+              ? t("cloud.toast.autoSwitchOn")
+              : t("cloud.toast.autoSwitchOff"),
           }),
         onError: () =>
-          toast({ title: t('cloud.toast.updateSettingsFailed'), variant: 'destructive' }),
+          toast({
+            title: t("cloud.toast.updateSettingsFailed"),
+            variant: "destructive",
+          }),
       },
     );
   };
@@ -330,12 +378,12 @@ export function CloudAccountList() {
   const handleForcePoll = () => {
     if (forcePollMutation.isPending) return;
     forcePollMutation.mutate(undefined, {
-      onSuccess: () => toast({ title: t('cloud.polling') }),
+      onSuccess: () => toast({ title: t("cloud.polling") }),
       onError: (err) =>
         toast({
-          title: t('cloud.toast.pollFailed'),
+          title: t("cloud.toast.pollFailed"),
           description: getLocalizedErrorMessage(err, t),
-          variant: 'destructive',
+          variant: "destructive",
         }),
     });
   };
@@ -347,22 +395,24 @@ export function CloudAccountList() {
         onSuccess: (acc: CloudAccount | null) => {
           if (acc) {
             toast({
-              title: t('cloud.toast.syncSuccess.title'),
-              description: t('cloud.toast.syncSuccess.description', { email: acc.email }),
+              title: t("cloud.toast.syncSuccess.title"),
+              description: t("cloud.toast.syncSuccess.description", {
+                email: acc.email,
+              }),
             });
           } else {
             toast({
-              title: t('cloud.toast.syncFailed.title'),
-              description: t('cloud.toast.syncFailed.description'),
-              variant: 'destructive',
+              title: t("cloud.toast.syncFailed.title"),
+              description: t("cloud.toast.syncFailed.description"),
+              variant: "destructive",
             });
           }
         },
         onError: (err) => {
           toast({
-            title: t('cloud.toast.syncFailed.title'),
+            title: t("cloud.toast.syncFailed.title"),
             description: getLocalizedErrorMessage(err, t),
-            variant: 'destructive',
+            variant: "destructive",
           });
         },
       },
@@ -373,7 +423,14 @@ export function CloudAccountList() {
     try {
       lastSubmittedAuthCodeRef.current = null;
       const effectiveClientKey =
-        selectedOAuthClientKey || oauthClients.find((client) => client.is_active)?.key;
+        selectedOAuthClientKey ||
+        oauthClients.find((client) => client.is_active)?.key;
+      const selectedClient = oauthClients.find(
+        (client) => client.key === effectiveClientKey,
+      );
+      if (selectedClient?.is_configured === false) {
+        return;
+      }
       await startAuthFlow(
         effectiveClientKey
           ? {
@@ -383,9 +440,9 @@ export function CloudAccountList() {
       );
     } catch (e) {
       toast({
-        title: t('cloud.toast.startAuthFailed'),
+        title: t("cloud.toast.startAuthFailed"),
         description: String(e),
-        variant: 'destructive',
+        variant: "destructive",
       });
     }
   };
@@ -393,22 +450,24 @@ export function CloudAccountList() {
   const handleExport = async (stripTokens: boolean) => {
     let url: string | null = null;
     try {
-      const jsonContent: string = await exportMutation.mutateAsync({ stripTokens });
-      const blob = new Blob([jsonContent], { type: 'application/json' });
+      const jsonContent: string = await exportMutation.mutateAsync({
+        stripTokens,
+      });
+      const blob = new Blob([jsonContent], { type: "application/json" });
       url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `cloud-accounts-export-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `cloud-accounts-export-${new Date().toISOString().split("T")[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       setIsExportDialogOpen(false);
-      toast({ title: t('cloud.exportImport.exportSuccess') });
+      toast({ title: t("cloud.exportImport.exportSuccess") });
     } catch (error) {
       toast({
-        title: t('cloud.error.loadFailed'),
+        title: t("cloud.error.loadFailed"),
         description: getLocalizedErrorMessage(error, t),
-        variant: 'destructive',
+        variant: "destructive",
       });
     } finally {
       if (url) {
@@ -423,9 +482,9 @@ export function CloudAccountList() {
 
     if (file.size > 5 * 1024 * 1024) {
       toast({
-        title: t('cloud.error.loadFailed'),
-        description: t('cloud.exportImport.fileTooLarge'),
-        variant: 'destructive',
+        title: t("cloud.error.loadFailed"),
+        description: t("cloud.exportImport.fileTooLarge"),
+        variant: "destructive",
       });
       return;
     }
@@ -439,24 +498,24 @@ export function CloudAccountList() {
         setImportFileContent(content);
       } catch {
         toast({
-          title: t('cloud.error.loadFailed'),
-          description: t('cloud.exportImport.invalidJson'),
-          variant: 'destructive',
+          title: t("cloud.error.loadFailed"),
+          description: t("cloud.exportImport.invalidJson"),
+          variant: "destructive",
         });
-        setImportFileName('');
+        setImportFileName("");
         setImportFileContent(null);
       }
     };
     reader.onerror = () => {
       toast({
-        title: t('cloud.error.loadFailed'),
-        description: t('cloud.exportImport.readFileFailed'),
-        variant: 'destructive',
+        title: t("cloud.error.loadFailed"),
+        description: t("cloud.exportImport.readFileFailed"),
+        variant: "destructive",
       });
     };
     reader.readAsText(file);
     if (e.target) {
-      e.target.value = '';
+      e.target.value = "";
     }
   };
 
@@ -468,10 +527,10 @@ export function CloudAccountList() {
         onSuccess: (result) => {
           setIsImportDialogOpen(false);
           setImportFileContent(null);
-          setImportFileName('');
-          setImportStrategy('merge');
+          setImportFileName("");
+          setImportStrategy("merge");
           toast({
-            title: t('cloud.exportImport.importSuccess', {
+            title: t("cloud.exportImport.importSuccess", {
               imported: result.imported,
               updated: result.updated,
               skipped: result.skipped,
@@ -479,17 +538,19 @@ export function CloudAccountList() {
           });
           if (result.errors.length > 0) {
             toast({
-              title: t('cloud.exportImport.importErrors', { count: result.errors.length }),
-              description: result.errors.slice(0, 3).join('\n'),
-              variant: 'destructive',
+              title: t("cloud.exportImport.importErrors", {
+                count: result.errors.length,
+              }),
+              description: result.errors.slice(0, 3).join("\n"),
+              variant: "destructive",
             });
           }
         },
         onError: (err) => {
           toast({
-            title: t('cloud.error.loadFailed'),
+            title: t("cloud.error.loadFailed"),
             description: getLocalizedErrorMessage(err, t),
-            variant: 'destructive',
+            variant: "destructive",
           });
         },
       },
@@ -512,14 +573,17 @@ export function CloudAccountList() {
   useEffect(() => {
     const visibleAccountIdSet = new Set(visibleAccountIds);
     setSelectedIds((prev) => {
-      const next = new Set(Array.from(prev).filter((id) => visibleAccountIdSet.has(id)));
+      const next = new Set(
+        Array.from(prev).filter((id) => visibleAccountIdSet.has(id)),
+      );
       return next.size === prev.size ? prev : next;
     });
   }, [visibleAccountIds]);
 
   const toggleSelectAllAccounts = () => {
     const allVisibleSelected =
-      visibleAccountIds.length > 0 && visibleAccountIds.every((id) => selectedIds.has(id));
+      visibleAccountIds.length > 0 &&
+      visibleAccountIds.every((id) => selectedIds.has(id));
 
     if (allVisibleSelected) {
       setSelectedIds(new Set());
@@ -563,33 +627,37 @@ export function CloudAccountList() {
       ids.map((id) => refreshMutation.mutateAsync({ accountId: id })),
     );
 
-    const successful = results.filter((r) => r.status === 'fulfilled').length;
-    const failed = results.filter((r) => r.status === 'rejected').length;
+    const successful = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.filter((r) => r.status === "rejected").length;
 
     if (failed === 0) {
       toast({
-        title: t('cloud.toast.quotaRefreshed'),
-        description: t('cloud.toast.batchRefreshSuccess', { count: successful }),
+        title: t("cloud.toast.quotaRefreshed"),
+        description: t("cloud.toast.batchRefreshSuccess", {
+          count: successful,
+        }),
       });
     } else {
-      const firstRejectedResult = results.find((result) => result.status === 'rejected');
+      const firstRejectedResult = results.find(
+        (result) => result.status === "rejected",
+      );
       const firstFailureMessage =
-        firstRejectedResult?.status === 'rejected'
+        firstRejectedResult?.status === "rejected"
           ? getLocalizedErrorMessage(firstRejectedResult.reason, t)
           : null;
 
       toast({
-        title: t('cloud.toast.batchRefreshPartial.title'),
+        title: t("cloud.toast.batchRefreshPartial.title"),
         description: firstFailureMessage
-          ? `${t('cloud.toast.batchRefreshPartial.description', {
+          ? `${t("cloud.toast.batchRefreshPartial.description", {
               successful,
               failed,
             })} ${firstFailureMessage}`
-          : t('cloud.toast.batchRefreshPartial.description', {
+          : t("cloud.toast.batchRefreshPartial.description", {
               successful,
               failed,
             }),
-        variant: 'destructive',
+        variant: "destructive",
       });
     }
 
@@ -597,28 +665,30 @@ export function CloudAccountList() {
   };
 
   const deleteSelectedAccounts = async () => {
-    if (confirm(t('cloud.batch.confirmDelete', { count: selectedIds.size }))) {
+    if (confirm(t("cloud.batch.confirmDelete", { count: selectedIds.size }))) {
       const ids = Array.from(selectedIds);
       const results = await Promise.allSettled(
         ids.map((id) => deleteMutation.mutateAsync({ accountId: id })),
       );
 
-      const successful = results.filter((r) => r.status === 'fulfilled').length;
-      const failed = results.filter((r) => r.status === 'rejected').length;
+      const successful = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
 
       if (failed === 0) {
         toast({
-          title: t('cloud.toast.deleted'),
-          description: t('cloud.toast.batchDeleteSuccess', { count: successful }),
+          title: t("cloud.toast.deleted"),
+          description: t("cloud.toast.batchDeleteSuccess", {
+            count: successful,
+          }),
         });
       } else {
         toast({
-          title: t('cloud.toast.batchDeletePartial.title'),
-          description: t('cloud.toast.batchDeletePartial.description', {
+          title: t("cloud.toast.batchDeletePartial.title"),
+          description: t("cloud.toast.batchDeletePartial.description", {
             successful,
             failed,
           }),
-          variant: 'destructive',
+          variant: "destructive",
         });
       }
 
@@ -630,15 +700,15 @@ export function CloudAccountList() {
     setIsImportDialogOpen(open);
     if (!open) {
       setImportFileContent(null);
-      setImportFileName('');
-      setImportStrategy('merge');
+      setImportFileName("");
+      setImportStrategy("merge");
     }
   };
 
   const handleAddDialogOpenChange = (open: boolean) => {
     setIsAddDialogOpen(open);
     if (!open) {
-      setAuthCode('');
+      setAuthCode("");
       lastSubmittedAuthCodeRef.current = null;
     }
   };
@@ -652,9 +722,9 @@ export function CloudAccountList() {
       {
         onError: (error) => {
           toast({
-            title: t('cloud.toast.updateSettingsFailed'),
+            title: t("cloud.toast.updateSettingsFailed"),
             description: getLocalizedErrorMessage(error, t),
-            variant: 'destructive',
+            variant: "destructive",
           });
         },
       },
@@ -676,7 +746,8 @@ export function CloudAccountList() {
   }
 
   const allVisibleSelected =
-    visibleAccountIds.length > 0 && visibleAccountIds.every((id) => selectedIds.has(id));
+    visibleAccountIds.length > 0 &&
+    visibleAccountIds.every((id) => selectedIds.has(id));
   const refreshingAccountId = refreshMutation.isPending
     ? refreshMutation.variables?.accountId
     : undefined;
@@ -692,11 +763,13 @@ export function CloudAccountList() {
 
   return (
     <div className="space-y-5 pb-20">
-      {securityStatus?.state === 'degraded' ? (
+      {securityStatus?.state === "degraded" ? (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-          <div className="text-sm font-medium">{t('cloud.security.compatibilityMode.title')}</div>
+          <div className="text-sm font-medium">
+            {t("cloud.security.compatibilityMode.title")}
+          </div>
           <p className="text-muted-foreground mt-1 text-sm">
-            {t('cloud.security.compatibilityMode.description')}
+            {t("cloud.security.compatibilityMode.description")}
           </p>
         </div>
       ) : null}

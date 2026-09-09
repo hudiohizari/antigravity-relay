@@ -705,6 +705,14 @@ export class GoogleAPIService {
     OAuthClientRegistryService.setActiveOAuthClientKey(clientKey);
   }
 
+  static isClientConfigured(clientKey?: string): boolean {
+    return OAuthClientRegistryService.isClientConfigured(clientKey);
+  }
+
+  static hasAnyConfiguredClient(): boolean {
+    return OAuthClientRegistryService.hasAnyConfiguredClient();
+  }
+
   static normalizeRefreshedOAuthClientKey(
     currentToken: { oauth_client_key?: string; project_id?: string },
     refreshedClientKey?: string,
@@ -788,6 +796,16 @@ export class GoogleAPIService {
   static getAuthUrl(oauthClientKey?: string): string {
     const oauthClient =
       OAuthClientRegistryService.selectAuthClient(oauthClientKey);
+
+    if (
+      oauthClient.client_id.trim() === "" ||
+      oauthClient.client_secret.trim() === ""
+    ) {
+      throw new Error(
+        `OAuth client "${oauthClient.key}" is not configured. Both client_id and client_secret must be set.`,
+      );
+    }
+
     const redirectUri = AuthServer.getRedirectUri();
 
     const params = new URLSearchParams({
@@ -809,14 +827,46 @@ export class GoogleAPIService {
    */
   static async exchangeCode(
     code: string,
-    proxyUrl?: string,
+    proxyUrlOrClientKey?: string,
     preferredClientKey?: string,
   ): Promise<TokenResponse> {
+    let proxyUrl: string | undefined;
+    let clientKey = preferredClientKey;
+
+    if (proxyUrlOrClientKey !== undefined) {
+      if (
+        proxyUrlOrClientKey.startsWith("http://") ||
+        proxyUrlOrClientKey.startsWith("https://") ||
+        proxyUrlOrClientKey.startsWith("socks://") ||
+        proxyUrlOrClientKey.startsWith("socks5://")
+      ) {
+        proxyUrl = proxyUrlOrClientKey;
+      } else if (!clientKey) {
+        clientKey = proxyUrlOrClientKey;
+      } else {
+        proxyUrl = proxyUrlOrClientKey;
+      }
+    }
+
+    if (isString(clientKey) && !isEmpty(clientKey.trim())) {
+      if (!OAuthClientRegistryService.isClientConfigured(clientKey)) {
+        throw new Error(
+          `OAuth client "${clientKey}" is not configured. Both client_id and client_secret must be set.`,
+        );
+      }
+    }
+
     const redirectUri = AuthServer.getRedirectUri();
-    const candidates =
-      OAuthClientRegistryService.getCandidateClients(preferredClientKey);
+    const candidates = OAuthClientRegistryService.getCandidateClients(
+      clientKey,
+    ).filter(
+      (client) =>
+        client.client_id.trim() !== "" && client.client_secret.trim() !== "",
+    );
     if (candidates.length === 0) {
-      throw new Error("No OAuth clients configured");
+      throw new Error(
+        "No configured OAuth clients available for token exchange.",
+      );
     }
 
     const attemptErrors: string[] = [];

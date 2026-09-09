@@ -287,6 +287,7 @@ export const cloudRouter = os.router({
           client_id: z.string(),
           is_active: z.boolean(),
           is_builtin: z.boolean(),
+          is_configured: z.boolean(),
         }),
       ),
     )

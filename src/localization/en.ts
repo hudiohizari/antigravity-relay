@@ -542,6 +542,8 @@ const en = {
     autoSwitch: "Auto-Switch",
     providerGroupings: "Provider Groupings",
     addAccount: "Add Account",
+    addAccountDisabledTooltip:
+      "OAuth client credentials are not configured. Set ANTIGRAVITY_OAUTH_CLIENT_ID and ANTIGRAVITY_OAUTH_CLIENT_SECRET to enable.",
     syncFromIde: "Sync from Antigravity",
     syncFromAntigravity: "Sync from Antigravity",
     checkQuota: "Check Quota Now",
@@ -569,6 +571,15 @@ const en = {
     authDialog: {
       title: "Add Google Account",
       description: "To add an account, you need to authorize the application.",
+      missingCredentialsBanner:
+        "OAuth environment variables are not configured. Adding accounts is unavailable.",
+      unconfiguredWarning:
+        "OAuth environment variables are not configured. Adding accounts is unavailable.",
+      clientNotConfiguredBadge: "Unconfigured",
+      unconfiguredBadge: "Unconfigured",
+      selectedClientNotConfiguredWarning:
+        "Selected OAuth client is not configured.",
+      clientUnconfigured: "Selected OAuth client is not configured.",
       oauthClient: "OAuth Client",
       oauthClientPlaceholder: "Select OAuth client",
       openLogin: "Open Login Page",

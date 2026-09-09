@@ -539,6 +539,8 @@ const vi = {
     autoSwitch: "Tự động chuyển",
     providerGroupings: "Nhóm theo nhà cung cấp",
     addAccount: "Thêm tài khoản",
+    addAccountDisabledTooltip:
+      "Chưa cấu hình thông tin xác thực OAuth client. Vui lòng thiết lập ANTIGRAVITY_OAUTH_CLIENT_ID và ANTIGRAVITY_OAUTH_CLIENT_SECRET để kích hoạt.",
     syncFromIde: "Đồng bộ từ Antigravity",
     syncFromAntigravity: "Đồng bộ từ Antigravity",
     checkQuota: "Kiểm tra quota ngay",
@@ -566,6 +568,15 @@ const vi = {
     authDialog: {
       title: "Thêm tài khoản Google",
       description: "Bạn cần cấp quyền ứng dụng để thêm tài khoản.",
+      missingCredentialsBanner:
+        "Biến môi trường OAuth chưa được cấu hình. Không thể thêm tài khoản.",
+      unconfiguredWarning:
+        "Biến môi trường OAuth chưa được cấu hình. Không thể thêm tài khoản.",
+      clientNotConfiguredBadge: "Chưa cấu hình",
+      unconfiguredBadge: "Chưa cấu hình",
+      selectedClientNotConfiguredWarning:
+        "OAuth client đã chọn chưa được cấu hình.",
+      clientUnconfigured: "OAuth client đã chọn chưa được cấu hình.",
       oauthClient: "OAuth Client",
       oauthClientPlaceholder: "Chọn OAuth client",
       openLogin: "Mở trang đăng nhập",

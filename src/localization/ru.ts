@@ -540,6 +540,8 @@ const ru = {
     autoSwitch: "Авто-переключение",
     providerGroupings: "Группировка по провайдерам",
     addAccount: "Добавить аккаунт",
+    addAccountDisabledTooltip:
+      "Учетные данные клиента OAuth не настроены. Установите ANTIGRAVITY_OAUTH_CLIENT_ID и ANTIGRAVITY_OAUTH_CLIENT_SECRET для включения.",
     syncFromIde: "Синхр. из Antigravity",
     syncFromAntigravity: "Синхр. из Antigravity",
     checkQuota: "Проверить квоту",
@@ -568,6 +570,14 @@ const ru = {
       title: "Добавить Google Аккаунт",
       description:
         "Для добавления аккаунта необходимо авторизовать приложение.",
+      missingCredentialsBanner:
+        "Переменные окружения OAuth не настроены. Добавление аккаунтов недоступно.",
+      unconfiguredWarning:
+        "Переменные окружения OAuth не настроены. Добавление аккаунтов недоступно.",
+      clientNotConfiguredBadge: "Не настроен",
+      unconfiguredBadge: "Не настроен",
+      selectedClientNotConfiguredWarning: "Выбранный клиент OAuth не настроен.",
+      clientUnconfigured: "Выбранный клиент OAuth не настроен.",
       oauthClient: "OAuth клиент",
       oauthClientPlaceholder: "Выберите OAuth клиент",
       openLogin: "Открыть страницу входа",

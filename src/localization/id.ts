@@ -548,6 +548,8 @@ const id = {
     autoSwitch: "Alihkan Otomatis",
     providerGroupings: "Pengelompokan Penyedia",
     addAccount: "Tambah Akun",
+    addAccountDisabledTooltip:
+      "Kredensial klien OAuth belum dikonfigurasi. Atur ANTIGRAVITY_OAUTH_CLIENT_ID dan ANTIGRAVITY_OAUTH_CLIENT_SECRET untuk mengaktifkan.",
     syncFromIde: "Sinkronkan dari Antigravity",
     syncFromAntigravity: "Sinkronkan dari Antigravity",
     checkQuota: "Periksa Kuota Sekarang",
@@ -575,6 +577,15 @@ const id = {
     authDialog: {
       title: "Tambah Akun Google",
       description: "Untuk menambahkan akun, Anda harus mengotorisasi aplikasi.",
+      missingCredentialsBanner:
+        "Variabel lingkungan OAuth belum dikonfigurasi. Menambahkan akun tidak tersedia.",
+      unconfiguredWarning:
+        "Variabel lingkungan OAuth belum dikonfigurasi. Menambahkan akun tidak tersedia.",
+      clientNotConfiguredBadge: "Belum Dikonfigurasi",
+      unconfiguredBadge: "Belum Dikonfigurasi",
+      selectedClientNotConfiguredWarning:
+        "Klien OAuth yang dipilih belum dikonfigurasi.",
+      clientUnconfigured: "Klien OAuth yang dipilih belum dikonfigurasi.",
       oauthClient: "Klien OAuth",
       oauthClientPlaceholder: "Pilih klien OAuth",
       openLogin: "Buka Halaman Masuk",

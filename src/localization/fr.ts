@@ -564,6 +564,8 @@ const fr = {
     autoSwitch: "Basculement auto",
     providerGroupings: "Groupements de fournisseurs",
     addAccount: "Ajouter un compte",
+    addAccountDisabledTooltip:
+      "Les identifiants du client OAuth ne sont pas configurés. Définissez ANTIGRAVITY_OAUTH_CLIENT_ID et ANTIGRAVITY_OAUTH_CLIENT_SECRET pour activer.",
     syncFromIde: "Synchroniser depuis Antigravity",
     syncFromAntigravity: "Synchroniser depuis Antigravity",
     checkQuota: "Verifier le quota maintenant",
@@ -592,6 +594,15 @@ const fr = {
       title: "Ajouter un compte Google",
       description:
         "Pour ajouter un compte, vous devez autoriser l application.",
+      missingCredentialsBanner:
+        "Les variables d'environnement OAuth ne sont pas configurées. L'ajout de compte est indisponible.",
+      unconfiguredWarning:
+        "Les variables d'environnement OAuth ne sont pas configurées. L'ajout de compte est indisponible.",
+      clientNotConfiguredBadge: "Non configuré",
+      unconfiguredBadge: "Non configuré",
+      selectedClientNotConfiguredWarning:
+        "Le client OAuth sélectionné n'est pas configuré.",
+      clientUnconfigured: "Le client OAuth sélectionné n'est pas configuré.",
       oauthClient: "Client OAuth",
       oauthClientPlaceholder: "Selectionner un client OAuth",
       openLogin: "Ouvrir la page de connexion",

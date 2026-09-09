@@ -523,6 +523,8 @@ const zhCn = {
     autoSwitch: "自动切换",
     providerGroupings: "提供商分组",
     addAccount: "添加账号",
+    addAccountDisabledTooltip:
+      "未配置 OAuth 客户端凭据。请设置 ANTIGRAVITY_OAUTH_CLIENT_ID 和 ANTIGRAVITY_OAUTH_CLIENT_SECRET 以启用。",
     syncFromIde: "从 Antigravity 同步",
     syncFromAntigravity: "从 Antigravity 同步",
     checkQuota: "立即检查配额",
@@ -548,6 +550,12 @@ const zhCn = {
     authDialog: {
       title: "添加 Google 账号",
       description: "添加账号需要进行应用授权。",
+      missingCredentialsBanner: "未配置 OAuth 环境变量。添加账号功能不可用。",
+      unconfiguredWarning: "未配置 OAuth 环境变量。添加账号功能不可用。",
+      clientNotConfiguredBadge: "未配置",
+      unconfiguredBadge: "未配置",
+      selectedClientNotConfiguredWarning: "选定的 OAuth 客户端未配置。",
+      clientUnconfigured: "选定的 OAuth 客户端未配置。",
       oauthClient: "OAuth 客户端",
       oauthClientPlaceholder: "请选择 OAuth 客户端",
       openLogin: "打开登录页面",

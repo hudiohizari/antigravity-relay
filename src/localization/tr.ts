@@ -545,6 +545,8 @@ const tr = {
     autoSwitch: "Otomatik Değiştir",
     providerGroupings: "Sağlayıcı Grupları",
     addAccount: "Hesap Ekle",
+    addAccountDisabledTooltip:
+      "OAuth istemci kimlik bilgileri yapılandırılmadı. Etkinleştirmek için ANTIGRAVITY_OAUTH_CLIENT_ID ve ANTIGRAVITY_OAUTH_CLIENT_SECRET değerlerini ayarlayın.",
     syncFromIde: "Antigravity'den Eşitle",
     syncFromAntigravity: "Antigravity'den Eşitle",
     checkQuota: "Kotayı Şimdi Kontrol Et",
@@ -572,6 +574,15 @@ const tr = {
     authDialog: {
       title: "Google Hesabı Ekle",
       description: "Bir hesap eklemek için uygulamaya yetki vermeniz gerekir.",
+      missingCredentialsBanner:
+        "OAuth ortam değişkenleri yapılandırılmadı. Hesap ekleme kullanılamıyor.",
+      unconfiguredWarning:
+        "OAuth ortam değişkenleri yapılandırılmadı. Hesap ekleme kullanılamıyor.",
+      clientNotConfiguredBadge: "Yapılandırılmadı",
+      unconfiguredBadge: "Yapılandırılmadı",
+      selectedClientNotConfiguredWarning:
+        "Seçilen OAuth istemcisi yapılandırılmadı.",
+      clientUnconfigured: "Seçilen OAuth istemcisi yapılandırılmadı.",
       oauthClient: "OAuth İstemcisi",
       oauthClientPlaceholder: "OAuth istemcisini seçin",
       openLogin: "Giriş Sayfasını Aç",

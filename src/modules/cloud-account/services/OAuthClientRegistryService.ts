@@ -1,8 +1,6 @@
 import { isEmpty, isString } from "lodash-es";
 import { logger } from "@/shared/logging/logger";
 
-const CLIENT_ID = process.env.ANTIGRAVITY_OAUTH_CLIENT_ID || "";
-const CLIENT_SECRET = process.env.ANTIGRAVITY_OAUTH_CLIENT_SECRET || "";
 const OAUTH_CLIENTS_ENV = "ANTIGRAVITY_OAUTH_CLIENTS";
 const ACTIVE_OAUTH_CLIENT_ENV = "ANTIGRAVITY_OAUTH_CLIENT_KEY";
 const DEFAULT_OAUTH_CLIENT_KEY = "antigravity_enterprise";
@@ -26,12 +24,26 @@ export interface OAuthClientDescriptor {
   client_id: string;
   is_active: boolean;
   is_builtin: boolean;
+  is_configured: boolean;
 }
 
 let cachedOAuthClientRegistry: OAuthClientRegistry | null = null;
 
+export function resetRegistryCache(): void {
+  cachedOAuthClientRegistry = null;
+}
+
 export function normalizeOAuthClientKey(key: string): string {
   return key.trim().toLowerCase();
+}
+
+function isConfiguredClient(
+  client: OAuthClientConfig | null | undefined,
+): boolean {
+  if (!client) {
+    return false;
+  }
+  return client.client_id.trim() !== "" && client.client_secret.trim() !== "";
 }
 
 function getClientByKey(
@@ -46,12 +58,16 @@ function getClientByKey(
 }
 
 function buildOAuthClientRegistry(): OAuthClientRegistry {
+  const enterpriseClientId = process.env.ANTIGRAVITY_OAUTH_CLIENT_ID || "";
+  const enterpriseClientSecret =
+    process.env.ANTIGRAVITY_OAUTH_CLIENT_SECRET || "";
+
   const clients: OAuthClientConfig[] = [
     {
       key: normalizeOAuthClientKey(DEFAULT_OAUTH_CLIENT_KEY),
       label: "Antigravity Enterprise",
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
+      client_id: enterpriseClientId,
+      client_secret: enterpriseClientSecret,
       is_builtin: true,
     },
   ];
@@ -65,21 +81,20 @@ function buildOAuthClientRegistry(): OAuthClientRegistry {
       }
 
       const parts = trimmed.split("|").map((part) => part.trim());
-      if (parts.length < 3) {
+      const key = normalizeOAuthClientKey(parts[0] || "");
+      if (key === "") {
         logger.warn(
           `[OAuthClientRegistryService] Ignored invalid OAuth client entry in ${OAUTH_CLIENTS_ENV}: ${trimmed}`,
         );
         continue;
       }
 
-      const key = normalizeOAuthClientKey(parts[0]);
-      const clientId = parts[1];
-      const clientSecret = parts[2];
-      if (key === "" || clientId === "" || clientSecret === "") {
+      const clientId = parts[1] || "";
+      const clientSecret = parts[2] || "";
+      if (clientId === "" || clientSecret === "") {
         logger.warn(
-          `[OAuthClientRegistryService] Ignored incomplete OAuth client entry in ${OAUTH_CLIENTS_ENV}: ${trimmed}`,
+          `[OAuthClientRegistryService] OAuth client '${key}' in ${OAUTH_CLIENTS_ENV} is registered without full credentials (client_id or client_secret is empty)`,
         );
-        continue;
       }
 
       const clientConfig: OAuthClientConfig = {
@@ -122,6 +137,26 @@ function getOAuthClientRegistry(): OAuthClientRegistry {
 }
 
 export class OAuthClientRegistryService {
+  static resetRegistryCache(): void {
+    resetRegistryCache();
+  }
+
+  static isClientConfigured(key?: string): boolean {
+    const registry = getOAuthClientRegistry();
+    const client =
+      isString(key) && !isEmpty(key.trim())
+        ? getClientByKey(registry.clients, key)
+        : (getClientByKey(registry.clients, registry.activeKey) ??
+          registry.clients[0] ??
+          null);
+    return isConfiguredClient(client);
+  }
+
+  static hasAnyConfiguredClient(): boolean {
+    const registry = getOAuthClientRegistry();
+    return registry.clients.some(isConfiguredClient);
+  }
+
   static listOAuthClients(): OAuthClientDescriptor[] {
     const registry = getOAuthClientRegistry();
     return registry.clients.map((client) => {
@@ -131,6 +166,7 @@ export class OAuthClientRegistryService {
         client_id: client.client_id,
         is_active: client.key === registry.activeKey,
         is_builtin: client.is_builtin,
+        is_configured: isConfiguredClient(client),
       };
     });
   }
@@ -227,4 +263,12 @@ export class OAuthClientRegistryService {
 
     return resolved ? normalizeOAuthClientKey(resolved) : undefined;
   }
+}
+
+export function isClientConfigured(key?: string): boolean {
+  return OAuthClientRegistryService.isClientConfigured(key);
+}
+
+export function hasAnyConfiguredClient(): boolean {
+  return OAuthClientRegistryService.hasAnyConfiguredClient();
 }

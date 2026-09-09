@@ -1,5 +1,6 @@
 import type { ChangeEvent, RefObject } from "react";
 import {
+  AlertTriangle,
   Check,
   CheckSquare,
   CalendarDays,
@@ -175,6 +176,20 @@ export function CloudAccountToolbar({
 }: CloudAccountToolbarProps) {
   const { t } = useTranslation();
 
+  const hasConfiguredOAuthClient = oauthClients.some((client) =>
+    Boolean(client.is_configured),
+  );
+
+  const selectedClient = oauthClients.find(
+    (c) =>
+      c.key ===
+      (selectedOAuthClientKey ||
+        oauthClients.find((item) => item.is_active)?.key),
+  );
+  const isSelectedClientConfigured = selectedClient
+    ? Boolean(selectedClient.is_configured)
+    : false;
+
   return (
     <div className="bg-card flex flex-wrap items-center gap-2 rounded-lg border p-3">
       <div className="bg-muted/50 flex items-center gap-2 rounded-md border px-3 py-2">
@@ -349,12 +364,48 @@ export function CloudAccountToolbar({
       </Dialog>
 
       <Dialog open={isAddDialogOpen} onOpenChange={onAddDialogOpenChange}>
-        <DialogTrigger asChild>
-          <Button className="cursor-pointer">
-            <Plus className="mr-2 h-4 w-4" />
-            {t("cloud.addAccount")}
-          </Button>
-        </DialogTrigger>
+        {hasConfiguredOAuthClient ? (
+          <DialogTrigger asChild>
+            <Button className="cursor-pointer">
+              <Plus className="mr-2 h-4 w-4" />
+              {t("cloud.addAccount")}
+            </Button>
+          </DialogTrigger>
+        ) : (
+          <TooltipProvider>
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Button
+                  className="cursor-not-allowed pointer-events-auto opacity-50"
+                  aria-disabled="true"
+                  tabIndex={0}
+                  aria-describedby="add-account-disabled-tooltip"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  {t("cloud.addAccount")}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent
+                id="add-account-disabled-tooltip"
+                side="bottom"
+                align="center"
+                className="max-w-xs text-center"
+              >
+                {t("cloud.addAccountDisabledTooltip")}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>{t("cloud.authDialog.title")}</DialogTitle>
@@ -363,6 +414,20 @@ export function CloudAccountToolbar({
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {(!hasConfiguredOAuthClient || !isSelectedClientConfigured) && (
+              <div
+                role="alert"
+                aria-live="polite"
+                className="flex items-start gap-2.5 rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                <div className="flex-1">
+                  {!hasConfiguredOAuthClient
+                    ? t("cloud.authDialog.missingCredentialsBanner")
+                    : t("cloud.authDialog.selectedClientNotConfiguredWarning")}
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="oauth-client-select">
                 {t("cloud.authDialog.oauthClient")}
@@ -382,7 +447,14 @@ export function CloudAccountToolbar({
                 <SelectContent>
                   {oauthClients.map((client) => (
                     <SelectItem key={client.key} value={client.key}>
-                      {client.label}
+                      <div className="flex items-center justify-between w-full">
+                        <span>{client.label}</span>
+                        {!client.is_configured && (
+                          <span className="ml-2 inline-flex items-center rounded border border-amber-500/30 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium tracking-wide uppercase text-amber-700 dark:border-amber-500/35 dark:bg-amber-500/18 dark:text-amber-300">
+                            {t("cloud.authDialog.clientNotConfiguredBadge")}
+                          </span>
+                        )}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -393,6 +465,7 @@ export function CloudAccountToolbar({
                 variant="outline"
                 className="col-span-4"
                 onClick={onOpenGoogleAuthSignIn}
+                disabled={!isSelectedClientConfigured}
               >
                 <Cloud className="mr-2 h-4 w-4" />
                 {t("cloud.authDialog.openLogin")}
@@ -404,6 +477,7 @@ export function CloudAccountToolbar({
                 id="code"
                 placeholder={t("cloud.authDialog.placeholder")}
                 value={authCode}
+                disabled={!isSelectedClientConfigured}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => {
                   onAuthCodeChange(event.target.value);
                 }}
@@ -416,7 +490,9 @@ export function CloudAccountToolbar({
           <DialogFooter>
             <Button
               onClick={onSubmitAuthCode}
-              disabled={isAddPending || !authCode}
+              disabled={
+                isAddPending || !authCode || !isSelectedClientConfigured
+              }
             >
               {isAddPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
