@@ -36,6 +36,10 @@ const RevokeSessionInputSchema = z.object({
   sessionId: z.string().min(1),
 });
 
+const RevokeDeviceInputSchema = z.object({
+  deviceId: z.string().min(1),
+});
+
 export const relayRouter = os.router({
   getStatus: os.output(z.custom<RelayServerStatus>()).handler(async () => {
     return RelayController.getInstance().relayServer.getStatus();
@@ -65,6 +69,15 @@ export const relayRouter = os.router({
       return RelayController.getInstance()
         .relayServer.getSessionManager()
         .revokeSession(input.sessionId);
+    }),
+
+  revokeDevice: os
+    .input(RevokeDeviceInputSchema)
+    .output(z.boolean())
+    .handler(async ({ input }) => {
+      return RelayController.getInstance().relayServer.revokeDevice(
+        input.deviceId,
+      );
     }),
 
   createPairingToken: os

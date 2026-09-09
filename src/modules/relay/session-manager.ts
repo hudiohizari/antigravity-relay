@@ -20,7 +20,11 @@ export class SessionManager {
   private sessions: Map<string, Session> = new Map();
   private sessionsByToken: Map<string, string> = new Map();
   private sessionsByDeviceId: Map<string, string> = new Map();
-  private sockets: Map<string, SocketLike> = new Map();
+  private sockets: Map<string, Set<SocketLike>> = new Map();
+  private revokedDevices: Map<
+    string,
+    { revokedAt: number; sessionId: string }
+  > = new Map();
   private messageBuffer: BufferedMessage[] = [];
   private revokeListeners: Set<(sessionId: string) => void> = new Set();
 
@@ -37,7 +41,10 @@ export class SessionManager {
     deviceId?: string;
   }): Session {
     const sessionId = options?.sessionId ?? generateSessionId();
-    const token = options?.token ?? generateSessionToken();
+    let token = options?.token ?? generateSessionToken();
+    while (this.sessionsByToken.has(token)) {
+      token = generateSessionToken();
+    }
     const now = Date.now();
 
     const session: Session = {
@@ -149,28 +156,48 @@ export class SessionManager {
   }
 
   public bindSocket(sessionId: string, socket: SocketLike): void {
-    const existing = this.sockets.get(sessionId);
-    if (existing && existing !== socket) {
-      try {
-        existing.close(1000, "Superseded by new connection");
-      } catch {
-        // Suppress close error
-      }
+    let socketSet = this.sockets.get(sessionId);
+    if (!socketSet) {
+      socketSet = new Set<SocketLike>();
+      this.sockets.set(sessionId, socketSet);
     }
-    this.sockets.set(sessionId, socket);
+    socketSet.add(socket);
     this.setSessionSocketState(sessionId, "connected");
   }
 
   public getSocket(sessionId: string): SocketLike | undefined {
-    return this.sockets.get(sessionId);
+    const socketSet = this.sockets.get(sessionId);
+    if (!socketSet || socketSet.size === 0) {
+      return undefined;
+    }
+    return socketSet.values().next().value;
+  }
+
+  public getSockets(sessionId: string): SocketLike[] {
+    const socketSet = this.sockets.get(sessionId);
+    return socketSet ? Array.from(socketSet) : [];
+  }
+
+  public getSocketCount(sessionId: string): number {
+    return this.sockets.get(sessionId)?.size ?? 0;
   }
 
   public unbindSocket(sessionId: string, socket?: SocketLike): void {
-    if (socket && this.sockets.get(sessionId) !== socket) {
+    const socketSet = this.sockets.get(sessionId);
+    if (!socketSet) {
       return;
     }
-    this.sockets.delete(sessionId);
-    this.setSessionSocketState(sessionId, "disconnected");
+
+    if (socket) {
+      socketSet.delete(socket);
+      if (socketSet.size === 0) {
+        this.sockets.delete(sessionId);
+        this.setSessionSocketState(sessionId, "disconnected");
+      }
+    } else {
+      this.sockets.delete(sessionId);
+      this.setSessionSocketState(sessionId, "disconnected");
+    }
   }
 
   public closeSessionSocket(
@@ -178,22 +205,91 @@ export class SessionManager {
     code = 1000,
     reason = "Session terminated",
   ): void {
-    const socket = this.sockets.get(sessionId);
-    if (socket) {
-      try {
-        socket.close(code, reason);
-      } catch {
-        // Suppress socket error
+    const socketSet = this.sockets.get(sessionId);
+    if (socketSet) {
+      for (const socket of socketSet) {
+        try {
+          if (code === 4401 && socket.readyState === 1) {
+            socket.send(JSON.stringify({ type: "SESSION_REVOKED", reason }));
+          }
+        } catch {
+          // Suppress send error
+        }
+        try {
+          socket.close(code, reason);
+        } catch {
+          // Suppress socket error
+        }
       }
       this.sockets.delete(sessionId);
     }
     this.setSessionSocketState(sessionId, "disconnected");
   }
 
+  public isDeviceRevoked(deviceId: string): boolean {
+    if (!deviceId) {
+      return false;
+    }
+    const record = this.revokedDevices.get(deviceId);
+    if (!record) {
+      return false;
+    }
+    if (Date.now() - record.revokedAt > 24 * 60 * 60 * 1000) {
+      this.revokedDevices.delete(deviceId);
+      return false;
+    }
+    return true;
+  }
+
+  public clearDeviceRevocation(deviceId: string): void {
+    this.revokedDevices.delete(deviceId);
+  }
+
+  public getDeviceRevocation(
+    deviceId: string,
+  ): { revokedAt: number; sessionId: string } | undefined {
+    return this.revokedDevices.get(deviceId);
+  }
+
+  public getRevokedDevices(): Map<
+    string,
+    { revokedAt: number; sessionId: string }
+  > {
+    return this.revokedDevices;
+  }
+
+  public revokeDevice(deviceId: string): boolean {
+    if (!deviceId) {
+      return false;
+    }
+    const session = this.getSessionByDeviceId(deviceId);
+    const sessionId = session?.sessionId ?? "";
+    this.revokedDevices.set(deviceId, {
+      revokedAt: Date.now(),
+      sessionId,
+    });
+    if (session) {
+      this.revokeSession(session.sessionId);
+    }
+    for (const s of Array.from(this.sessions.values())) {
+      if (s.deviceId === deviceId) {
+        this.revokeSession(s.sessionId);
+      }
+    }
+    return true;
+  }
+
   public revokeSession(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session) {
       return false;
+    }
+
+    if (session.deviceId) {
+      this.revokedDevices.set(session.deviceId, {
+        revokedAt: Date.now(),
+        sessionId: session.sessionId,
+      });
     }
 
     this.closeSessionSocket(sessionId, 4401, "Session revoked");
@@ -308,6 +404,7 @@ export class SessionManager {
     this.sessionsByToken.clear();
     this.sessionsByDeviceId.clear();
     this.sockets.clear();
+    this.revokedDevices.clear();
     this.messageBuffer = [];
   }
 }

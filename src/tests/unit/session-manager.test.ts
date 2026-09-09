@@ -137,6 +137,16 @@ describe("SessionManager & Command Buffering", () => {
       manager.setSessionSocketState(session.sessionId, "buffered");
       expect(session.socketState).toBe("buffered");
     });
+
+    it("should guarantee unique session tokens across multiple sessions", () => {
+      const tokens = new Set<string>();
+      for (let i = 0; i < 50; i++) {
+        const session = manager.createSession();
+        expect(tokens.has(session.token)).toBe(false);
+        tokens.add(session.token);
+      }
+      expect(tokens.size).toBe(50);
+    });
   });
 
   describe("Socket Binding & Management", () => {
@@ -153,7 +163,7 @@ describe("SessionManager & Command Buffering", () => {
       expect(session.socketState).toBe("connected");
     });
 
-    it("should close old socket when binding a new socket for the same session", () => {
+    it("should allow multi-socket binding per session without closing sibling sockets", () => {
       const session = manager.createSession();
       const socket1: SocketLike = {
         readyState: 1,
@@ -169,14 +179,15 @@ describe("SessionManager & Command Buffering", () => {
       manager.bindSocket(session.sessionId, socket1);
       manager.bindSocket(session.sessionId, socket2);
 
-      expect(socket1.close).toHaveBeenCalledWith(
-        1000,
-        "Superseded by new connection",
-      );
-      expect(manager.getSocket(session.sessionId)).toBe(socket2);
+      expect(socket1.close).not.toHaveBeenCalled();
+      expect(socket2.close).not.toHaveBeenCalled();
+      expect(manager.getSocketCount(session.sessionId)).toBe(2);
+      expect(manager.getSockets(session.sessionId)).toContain(socket1);
+      expect(manager.getSockets(session.sessionId)).toContain(socket2);
+      expect(session.socketState).toBe("connected");
     });
 
-    it("should unbind socket and mark session disconnected", () => {
+    it("should unbind socket and mark session disconnected when all sockets unbind", () => {
       const session = manager.createSession();
       const mockSocket: SocketLike = {
         readyState: 1,
@@ -185,13 +196,14 @@ describe("SessionManager & Command Buffering", () => {
       };
 
       manager.bindSocket(session.sessionId, mockSocket);
-      manager.unbindSocket(session.sessionId);
+      manager.unbindSocket(session.sessionId, mockSocket);
 
       expect(manager.getSocket(session.sessionId)).toBeUndefined();
+      expect(manager.getSocketCount(session.sessionId)).toBe(0);
       expect(session.socketState).toBe("disconnected");
     });
 
-    it("should not unbind current socket when an old superseded socket closes", () => {
+    it("should not disconnect session when a single tab unbinds if sibling sockets remain", () => {
       const session = manager.createSession();
       const oldSocket: SocketLike = {
         readyState: 1,
@@ -207,14 +219,16 @@ describe("SessionManager & Command Buffering", () => {
       manager.bindSocket(session.sessionId, oldSocket);
       manager.bindSocket(session.sessionId, newSocket);
 
-      // Old socket fires close event
+      // Single tab unbind does not disconnect session
       manager.unbindSocket(session.sessionId, oldSocket);
 
-      expect(manager.getSocket(session.sessionId)).toBe(newSocket);
+      expect(manager.getSocketCount(session.sessionId)).toBe(1);
+      expect(manager.getSockets(session.sessionId)).toContain(newSocket);
       expect(session.socketState).toBe("connected");
 
-      // When new socket fires close event, it unbinds
+      // Session disconnects strictly when all sockets unbind
       manager.unbindSocket(session.sessionId, newSocket);
+      expect(manager.getSocketCount(session.sessionId)).toBe(0);
       expect(manager.getSocket(session.sessionId)).toBeUndefined();
       expect(session.socketState).toBe("disconnected");
     });
@@ -292,6 +306,101 @@ describe("SessionManager & Command Buffering", () => {
       });
 
       expect(() => manager.revokeSession(session.sessionId)).not.toThrow();
+    });
+
+    it("should close all sibling sockets in set with code 4401 on session revocation", () => {
+      const session = manager.createSession({
+        deviceId: "dev_multi_socket_revoke",
+      });
+      const socket1: SocketLike = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+      };
+      const socket2: SocketLike = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+      };
+
+      manager.bindSocket(session.sessionId, socket1);
+      manager.bindSocket(session.sessionId, socket2);
+
+      const revoked = manager.revokeSession(session.sessionId);
+      expect(revoked).toBe(true);
+
+      expect(socket1.close).toHaveBeenCalledWith(4401, "Session revoked");
+      expect(socket2.close).toHaveBeenCalledWith(4401, "Session revoked");
+      expect(manager.getSocketCount(session.sessionId)).toBe(0);
+      expect(manager.isDeviceRevoked("dev_multi_socket_revoke")).toBe(true);
+    });
+
+    it("should record deviceId in tombstone cache and respect 24h TTL", () => {
+      const session = manager.createSession({ deviceId: "dev_tombstone_ttl" });
+      expect(manager.isDeviceRevoked("dev_tombstone_ttl")).toBe(false);
+
+      manager.revokeSession(session.sessionId);
+      expect(manager.isDeviceRevoked("dev_tombstone_ttl")).toBe(true);
+
+      const record = manager.getDeviceRevocation("dev_tombstone_ttl");
+      expect(record).toBeDefined();
+      expect(record?.sessionId).toBe(session.sessionId);
+      expect(record?.revokedAt).toBeLessThanOrEqual(Date.now());
+
+      // Simulate expiry after 24h
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      record!.revokedAt = Date.now() - (DAY_MS + 1000);
+      expect(manager.isDeviceRevoked("dev_tombstone_ttl")).toBe(false);
+    });
+
+    it("should allow clearing device revocation tombstone", () => {
+      const session = manager.createSession({
+        deviceId: "dev_clear_tombstone",
+      });
+      manager.revokeSession(session.sessionId);
+      expect(manager.isDeviceRevoked("dev_clear_tombstone")).toBe(true);
+
+      manager.clearDeviceRevocation("dev_clear_tombstone");
+      expect(manager.isDeviceRevoked("dev_clear_tombstone")).toBe(false);
+    });
+
+    it("should revoke device by deviceId, terminate sockets, store tombstone, and notify listeners", () => {
+      const session = manager.createSession({
+        deviceId: "dev_target_revoke_id",
+      });
+      const mockSocket: SocketLike = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+      };
+      manager.bindSocket(session.sessionId, mockSocket);
+
+      const revokeListener = vi.fn();
+      manager.onSessionRevoked(revokeListener);
+
+      const revoked = manager.revokeDevice("dev_target_revoke_id");
+      expect(revoked).toBe(true);
+      expect(mockSocket.close).toHaveBeenCalledWith(4401, "Session revoked");
+      expect(manager.getSession(session.sessionId)).toBeUndefined();
+      expect(
+        manager.getSessionByDeviceId("dev_target_revoke_id"),
+      ).toBeUndefined();
+      expect(manager.isDeviceRevoked("dev_target_revoke_id")).toBe(true);
+      expect(revokeListener).toHaveBeenCalledWith(session.sessionId);
+    });
+
+    it("should store tombstone even when revoking a device without an active session", () => {
+      expect(manager.isDeviceRevoked("dev_offline_revoke")).toBe(false);
+      const result = manager.revokeDevice("dev_offline_revoke");
+      expect(result).toBe(true);
+      expect(manager.isDeviceRevoked("dev_offline_revoke")).toBe(true);
+      const tombstone = manager.getDeviceRevocation("dev_offline_revoke");
+      expect(tombstone).toBeDefined();
+      expect(tombstone?.sessionId).toBe("");
+    });
+
+    it("should return false when revoking an empty deviceId", () => {
+      expect(manager.revokeDevice("")).toBe(false);
     });
   });
 

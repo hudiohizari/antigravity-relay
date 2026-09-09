@@ -199,6 +199,13 @@ const fr = {
     serverInactive: "Serveur relais inactif",
     startServerToPair:
       "Démarrez le serveur relais pour activer l'appairage mobile",
+    keySingleUseBadge: "Usage unique par appareil",
+    autoRegeneratedNotice:
+      "Clé d'appairage régénérée automatiquement après connexion",
+    keyConsumedError:
+      "Cette clé d'appairage a déjà été utilisée par un autre appareil. Veuillez demander une nouvelle clé au host desktop.",
+    keyInvalidError:
+      "Clé d'appairage invalide. Veuillez vérifier la clé active sur votre tableau de bord desktop.",
   },
   sessions: {
     title: "Sessions mobiles connectées",
@@ -243,6 +250,31 @@ const fr = {
       "Scannez le code QR d'appairage ci-dessus avec votre smartphone pour associer votre première session distante.",
     revokedToast: "La session pour {{device}} a été révoquée",
     revokeFailed: "Échec de la révocation de la session : {{error}}",
+  },
+  revocation: {
+    screenHeading: "Accès révoqué par l'hôte",
+    screenDescription:
+      "Cette session d'appareil a été interrompue par l'hôte desktop. Veuillez saisir une clé d'appairage valide pour rétablir votre connexion.",
+    overlayBadge: "Déconnecté par l'hôte",
+    inputLabel: "Nouvelle clé d'appairage",
+    inputPlaceholder: "Entrez une nouvelle clé d'appairage",
+    reconnectButton: "Reconnecter l'appareil",
+    reconnecting: "Authentification en cours...",
+    reconnectedSuccess: "Appareil reconnecté avec succès !",
+    reconnectButtonAria:
+      "Soumettre la nouvelle clé d'appairage pour reconnecter cet appareil révoqué",
+    staleKeyError:
+      "La clé d'appairage précédente n'est plus valide. Saisissez la nouvelle clé affichée sur le tableau de bord desktop.",
+    emptyKeyError: "Veuillez saisir une clé d'appairage avant de soumettre.",
+    rateLimitedError:
+      "Trop de tentatives d'appairage. Veuillez patienter un moment avant de réessayer.",
+    networkError:
+      "Impossible de joindre le serveur relais. Veuillez vérifier votre connexion réseau.",
+    syncingSiblingTabs:
+      "Appareil réassocié avec succès. Synchronisation des onglets ouverts...",
+    fallbackTitle: "Session révoquée - Antigravity Relay",
+    fallbackNotice:
+      "Session révoquée : L'accès a été révoqué par l'hôte desktop. Veuillez saisir une clé d'appairage valide pour rétablir votre connexion.",
   },
   editionSelection: {
     title: "Choisissez votre edition Antigravity",

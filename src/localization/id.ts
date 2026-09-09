@@ -194,6 +194,13 @@ const id = {
     linkCopied: "Tautan pairing berhasil disalin",
     serverInactive: "Server Relay Nonaktif",
     startServerToPair: "Mulai server relay untuk mengaktifkan pairing ponsel",
+    keySingleUseBadge: "Sekali Pakai Per Perangkat",
+    autoRegeneratedNotice:
+      "Kunci pairing diperbarui otomatis setelah perangkat tersambung",
+    keyConsumedError:
+      "Kunci pairing ini sudah digunakan oleh perangkat lain. Silakan minta kunci baru dari host desktop.",
+    keyInvalidError:
+      "Kunci pairing tidak valid. Silakan periksa kunci aktif di dashboard desktop Anda.",
   },
   sessions: {
     title: "Sesi Ponsel Terhubung",
@@ -238,6 +245,31 @@ const id = {
       "Pindai kode QR pemasangan di atas dengan ponsel pintar Anda untuk menautkan sesi pertama.",
     revokedToast: "Sesi untuk {{device}} telah dicabut",
     revokeFailed: "Gagal mencabut sesi: {{error}}",
+  },
+  revocation: {
+    screenHeading: "Akses Dicabut oleh Host",
+    screenDescription:
+      "Sesi perangkat ini telah dihentikan oleh host desktop. Silakan masukkan kunci pairing yang valid untuk menyambung kembali.",
+    overlayBadge: "Terputus oleh Host",
+    inputLabel: "Kunci Pairing Baru",
+    inputPlaceholder: "Masukkan kunci pairing baru",
+    reconnectButton: "Sambungkan Ulang Perangkat",
+    reconnecting: "Mengotentikasi...",
+    reconnectedSuccess: "Perangkat berhasil tersambung kembali!",
+    reconnectButtonAria:
+      "Kirim kunci pairing baru untuk menyambungkan kembali perangkat yang dicabut ini",
+    staleKeyError:
+      "Kunci pairing sebelumnya sudah tidak valid. Masukkan kunci yang baru ditampilkan di dashboard desktop.",
+    emptyKeyError: "Silakan masukkan kunci pairing sebelum mengirimkan.",
+    rateLimitedError:
+      "Terlalu banyak percobaan pairing. Harap tunggu sebentar sebelum mencoba lagi.",
+    networkError:
+      "Tidak dapat menjangkau server relay. Silakan periksa koneksi jaringan Anda.",
+    syncingSiblingTabs:
+      "Perangkat berhasil dihubungkan ulang. Menyelaraskan tab yang terbuka...",
+    fallbackTitle: "Sesi Dicabut - Antigravity Relay",
+    fallbackNotice:
+      "Sesi Dicabut: Akses telah dicabut oleh host desktop. Silakan masukkan kunci pairing yang valid untuk menyambung kembali.",
   },
   editionSelection: {
     title: "Pilih Edisi Antigravity Anda",

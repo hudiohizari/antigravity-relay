@@ -181,6 +181,10 @@ const zhCn = {
     linkCopied: "配对链接已复制到剪贴板",
     serverInactive: "中继服务器未启动",
     startServerToPair: "启动中继服务器以启用手机配对",
+    keySingleUseBadge: "单设备单次使用",
+    autoRegeneratedNotice: "设备连接后配对密钥已自动重新生成",
+    keyConsumedError: "此配对密钥已被其他设备使用。请从桌面主机获取新密钥。",
+    keyInvalidError: "无效的配对密钥。请在桌面仪表板上验证当前有效密钥。",
   },
   sessions: {
     title: "已连接的手机会话",
@@ -224,6 +228,26 @@ const zhCn = {
       "使用智能手机扫描上方的配对二维码以绑定您的首个远程会话。",
     revokedToast: "{{device}} 的会话已被撤回",
     revokeFailed: "撤回会话失败: {{error}}",
+  },
+  revocation: {
+    screenHeading: "访问权限已被主机撤回",
+    screenDescription:
+      "此设备会话已被桌面主机终止。请输入有效的配对密钥以重新建立连接。",
+    overlayBadge: "已被主机断开",
+    inputLabel: "新配对密钥",
+    inputPlaceholder: "输入新的配对密钥",
+    reconnectButton: "重新连接设备",
+    reconnecting: "正在验证...",
+    reconnectedSuccess: "设备重新连接成功！",
+    reconnectButtonAria: "提交新配对密钥以重新连接此被撤回的设备",
+    staleKeyError: "之前的配对密钥已失效。请输入桌面仪表板上显示的新生成密钥。",
+    emptyKeyError: "请在提交前输入配对密钥。",
+    rateLimitedError: "配对尝试次数过多。请稍后再试。",
+    networkError: "无法连接到中继服务器。请检查您的网络连接。",
+    syncingSiblingTabs: "设备重新配对成功。正在同步已打开的标签页...",
+    fallbackTitle: "会话已撤回 - Antigravity Relay",
+    fallbackNotice:
+      "会话已撤回: 访问权限已被桌面主机撤回。请输入有效的配对密钥以重新建立连接。",
   },
   editionSelection: {
     title: "选择您的 Antigravity 版本",

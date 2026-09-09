@@ -38,6 +38,7 @@ interface ActiveWsPair {
   clientWs: WebSocket;
   upstreamWs: WebSocket;
   sessionId?: string;
+  deviceId?: string;
 }
 
 function extractClientIp(
@@ -157,6 +158,7 @@ export function generateAutoReloadScript(
 (function() {
   if (window.__antigravityRelayAutoReloadInjected) return;
   window.__antigravityRelayAutoReloadInjected = true;
+  window.__antigravitySessionRevoked = false;
 
   try {
     var deviceMatch = document.cookie.match(/(?:^|;\s*)ag_device_id=([^;]+)/);
@@ -173,6 +175,541 @@ export function generateAutoReloadScript(
   var initialPort = ${upstreamPort ?? "null"};
   var initialEpoch = ${upstreamEpoch};
   var reloading = false;
+  var RELAY_CHANNEL = "antigravity-relay";
+
+  var copyCatalog = {
+    en: {
+      overlayTitle: "Access Revoked",
+      overlayMessage: "Your access was revoked by the desktop host. Enter a new pairing key to reconnect.",
+      overlayBadge: "Disconnected by Host",
+      repairButton: "Re-pair Device",
+      repairButtonLoading: "Connecting...",
+      repairButtonAria: "Submit pairing key to re-pair this device",
+      pairingInputLabel: "Pairing Key",
+      pairingInputPlaceholder: "Enter pairing key",
+      invalidKeyError: "Invalid pairing key. Please verify the key shown on your desktop dashboard.",
+      emptyKeyError: "Please enter a pairing key before submitting.",
+      rateLimitError: "Too many pairing attempts. Please wait.",
+      networkError: "Unable to reach the relay server. Please check your network connection.",
+      syncingSiblingTabs: "Device re-paired successfully. Synchronizing open tabs...",
+      keyConsumedError: "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+      staleKeyError: "The previous pairing key is no longer valid. Enter the newly generated key shown on the desktop dashboard."
+    },
+    id: {
+      overlayTitle: "Akses Dicabut",
+      overlayMessage: "Akses Anda telah dicabut oleh host desktop. Masukkan kunci pairing baru untuk menyambung kembali.",
+      overlayBadge: "Terputus oleh Host",
+      repairButton: "Hubungkan Ulang Perangkat",
+      repairButtonLoading: "Menyambungkan...",
+      repairButtonAria: "Kirim kunci pairing untuk menghubungkan ulang perangkat ini",
+      pairingInputLabel: "Kunci Pairing",
+      pairingInputPlaceholder: "Masukkan kunci pairing",
+      invalidKeyError: "Kunci pairing tidak valid. Silakan periksa kunci yang ditampilkan di dashboard desktop Anda.",
+      emptyKeyError: "Silakan masukkan kunci pairing sebelum mengirimkan.",
+      rateLimitError: "Terlalu banyak percobaan pairing. Silakan tunggu.",
+      networkError: "Tidak dapat menjangkau server relay. Silakan periksa koneksi jaringan Anda.",
+      syncingSiblingTabs: "Perangkat berhasil dihubungkan ulang. Menyelaraskan tab yang terbuka...",
+      keyConsumedError: "Kunci pairing ini sudah digunakan oleh perangkat lain. Silakan minta kunci baru dari host desktop.",
+      staleKeyError: "Kunci pairing sebelumnya sudah tidak valid. Masukkan kunci yang baru ditampilkan di dashboard desktop."
+    }
+  };
+
+  function getCatalog() {
+    try {
+      var navLang = (navigator.language || navigator.userLanguage || "en").toLowerCase();
+      if (navLang.indexOf("id") === 0) {
+        return copyCatalog.id;
+      }
+    } catch (_) {}
+    return copyCatalog.en;
+  }
+
+  function broadcastSessionRevoked() {
+    try {
+      if (typeof window.BroadcastChannel !== "undefined") {
+        var bc = new BroadcastChannel(RELAY_CHANNEL);
+        bc.postMessage({ type: "SESSION_REVOKED", timestamp: Date.now() });
+        bc.close();
+      }
+    } catch (_) {}
+    try {
+      localStorage.setItem("ag_relay_revoked_at", Date.now().toString());
+    } catch (_) {}
+  }
+
+  function broadcastSessionRestored() {
+    try {
+      if (typeof window.BroadcastChannel !== "undefined") {
+        var bc = new BroadcastChannel(RELAY_CHANNEL);
+        bc.postMessage({ type: "SESSION_RESTORED", timestamp: Date.now() });
+        bc.close();
+      }
+    } catch (_) {}
+    try {
+      localStorage.removeItem("ag_relay_revoked_at");
+      localStorage.setItem("ag_relay_restored_at", Date.now().toString());
+      localStorage.setItem("ag_auth_restored", Date.now().toString());
+    } catch (_) {}
+  }
+
+  try {
+    var currentUrlParams = new URLSearchParams(window.location.search);
+    var hasPairParam = currentUrlParams.has("pair");
+    if (hasPairParam) {
+      broadcastSessionRestored();
+    } else {
+      localStorage.removeItem("ag_relay_revoked_at");
+    }
+    if (hasPairParam || currentUrlParams.has("useWebSocket")) {
+      currentUrlParams.delete("pair");
+      currentUrlParams.delete("useWebSocket");
+      var remainingSearch = currentUrlParams.toString();
+      var cleanSearch = remainingSearch ? "?" + remainingSearch : "";
+      var cleanPath = window.location.pathname + cleanSearch + window.location.hash;
+      window.history.replaceState({}, document.title, cleanPath);
+    }
+  } catch (_) {}
+
+  function lockBodyScroll() {
+    try {
+      document.documentElement.style.overflow = "hidden";
+      document.documentElement.style.touchAction = "none";
+      document.body.style.overflow = "hidden";
+      document.body.style.touchAction = "none";
+    } catch (_) {}
+  }
+
+  function unlockBodyScroll() {
+    try {
+      document.documentElement.style.overflow = "";
+      document.documentElement.style.touchAction = "";
+      document.body.style.overflow = "";
+      document.body.style.touchAction = "";
+    } catch (_) {}
+  }
+
+  function unmountRevocationOverlay() {
+    try {
+      var existingHost = document.getElementById("antigravity-revocation-host");
+      if (existingHost && existingHost.parentNode) {
+        existingHost.parentNode.removeChild(existingHost);
+      }
+    } catch (_) {}
+    unlockBodyScroll();
+  }
+
+  function mountRevocationOverlay() {
+    if (document.getElementById("antigravity-revocation-host")) return;
+    if (!document.body) {
+      document.addEventListener("DOMContentLoaded", mountRevocationOverlay);
+      return;
+    }
+
+    lockBodyScroll();
+
+    var strings = getCatalog();
+    var host = document.createElement("div");
+    host.id = "antigravity-revocation-host";
+    host.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;pointer-events:auto;";
+    var shadow = host.attachShadow({ mode: "open" });
+
+    var style = document.createElement("style");
+    style.textContent = \`
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      .scrim {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(9, 13, 22, 0.88);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: clamp(1rem, 5vw, 2rem);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        z-index: 2147483647;
+      }
+      .card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px;
+        padding: clamp(1.25rem, 5vw, 2rem);
+        max-width: 400px;
+        width: 100%;
+        max-height: calc(100vh - 32px);
+        max-height: calc(100dvh - 32px);
+        overflow-y: auto;
+        box-shadow: 0 20px 35px -5px rgba(0, 0, 0, 0.6);
+        color: #f9fafb;
+        min-width: 0;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        border-radius: 9999px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #f87171;
+        margin-bottom: 1.25rem;
+      }
+      .badge-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #ef4444;
+        flex-shrink: 0;
+      }
+      .icon-box {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ef4444;
+        margin-bottom: 1rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #f9fafb;
+      }
+      p {
+        font-size: 0.875rem;
+        color: #9ca3af;
+        line-height: 1.5;
+        margin-bottom: 1.25rem;
+      }
+      .error-alert {
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        color: #f87171;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 0.8125rem;
+        line-height: 1.4;
+        margin-bottom: 1rem;
+        display: none;
+      }
+      label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #9ca3af;
+        margin-bottom: 0.5rem;
+      }
+      input {
+        width: 100%;
+        min-height: 44px;
+        padding: 0.75rem 1rem;
+        background: #0d131f;
+        border: 1px solid #374151;
+        border-radius: 8px;
+        color: #f9fafb;
+        font-family: monospace;
+        font-size: 0.9375rem;
+        margin-bottom: 1.25rem;
+        outline: none;
+        box-sizing: border-box;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      input:hover {
+        border-color: #6b7280;
+      }
+      input:focus-visible {
+        border-color: #3b82f6;
+        outline: none;
+        box-shadow: 0 0 0 2px #090d16, 0 0 0 4px #3b82f6;
+      }
+      input[aria-invalid="true"] {
+        border-color: #ef4444;
+        background: rgba(239, 68, 68, 0.08);
+      }
+      input:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        pointer-events: none;
+      }
+      button {
+        width: 100%;
+        min-height: 44px;
+        padding: 0.75rem;
+        background: #10b981;
+        color: #000000;
+        font-weight: 600;
+        font-size: 0.875rem;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        box-sizing: border-box;
+        transition: background 0.15s ease, transform 0.1s ease;
+      }
+      button:hover {
+        background: #059669;
+      }
+      button:active {
+        transform: scale(0.98);
+      }
+      button:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px #111827, 0 0 0 4px #3b82f6;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+        pointer-events: none;
+      }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .animate-spin {
+        animation: spin 0.8s linear infinite;
+        flex-shrink: 0;
+      }
+      @keyframes form-shake {
+        0%, 100% { transform: translateX(0); }
+        20%, 60% { transform: translateX(-6px); }
+        40%, 80% { transform: translateX(6px); }
+      }
+      .shake {
+        animation: form-shake 0.4s ease-in-out;
+      }
+      .sync-toast {
+        margin-top: 1rem;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        color: #34d399;
+        font-size: 0.8125rem;
+        display: none;
+        text-align: center;
+      }
+    \`;
+
+    var overlay = document.createElement("div");
+    overlay.className = "scrim";
+    overlay.setAttribute("role", "alertdialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "overlay-title");
+    overlay.setAttribute("aria-describedby", "overlay-desc");
+
+    overlay.innerHTML =
+      '<div class="card" id="revocation-card">' +
+        '<div class="badge" role="status">' +
+          '<span class="badge-dot" aria-hidden="true"></span>' +
+          '<span>' + strings.overlayBadge + '</span>' +
+        '</div>' +
+        '<div class="icon-box" aria-hidden="true">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>' +
+            '<path d="m14.5 9-5 5"></path>' +
+            '<path d="m9.5 9 5 5"></path>' +
+          '</svg>' +
+        '</div>' +
+        '<h1 id="overlay-title">' + strings.overlayTitle + '</h1>' +
+        '<p id="overlay-desc">' + strings.overlayMessage + '</p>' +
+        '<div class="error-alert" id="overlay-error" role="alert" aria-live="assertive"></div>' +
+        '<form id="overlay-form" novalidate>' +
+          '<label for="overlay-key">' + strings.pairingInputLabel + '</label>' +
+          '<input type="password" id="overlay-key" name="pair" placeholder="' + strings.pairingInputPlaceholder + '" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-required="true" aria-invalid="false" aria-describedby="overlay-error" />' +
+          '<button type="submit" id="overlay-submit" aria-label="' + strings.repairButtonAria + '">' +
+            '<span>' + strings.repairButton + '</span>' +
+          '</button>' +
+        '</form>' +
+        '<div class="sync-toast" id="overlay-sync" role="status" aria-live="polite">' +
+          strings.syncingSiblingTabs +
+        '</div>' +
+      '</div>';
+
+    shadow.appendChild(style);
+    shadow.appendChild(overlay);
+    document.body.appendChild(host);
+
+    var card = shadow.getElementById("revocation-card");
+    var input = shadow.getElementById("overlay-key");
+    var form = shadow.getElementById("overlay-form");
+    var submitBtn = shadow.getElementById("overlay-submit");
+    var errorBox = shadow.getElementById("overlay-error");
+    var syncToast = shadow.getElementById("overlay-sync");
+
+    overlay.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (e.key === "Tab") {
+        var focusable = [input, submitBtn].filter(function(el) { return el && !el.disabled; });
+        if (focusable.length === 0) return;
+        var activeEl = shadow.activeElement;
+        if (e.shiftKey) {
+          if (!activeEl || activeEl === focusable[0]) {
+            e.preventDefault();
+            focusable[focusable.length - 1].focus();
+          }
+        } else {
+          if (!activeEl || activeEl === focusable[focusable.length - 1]) {
+            e.preventDefault();
+            focusable[0].focus();
+          }
+        }
+      }
+    });
+
+    setTimeout(function() {
+      try {
+        input.focus();
+        if (typeof input.select === "function") input.select();
+      } catch (_) {}
+    }, 50);
+
+    form.addEventListener("submit", function(e) {
+      e.preventDefault();
+      var key = input.value.trim();
+      if (!key) {
+        input.setAttribute("aria-invalid", "true");
+        errorBox.textContent = strings.emptyKeyError;
+        errorBox.style.display = "block";
+        if (card) {
+          card.classList.remove("shake");
+          void card.offsetWidth;
+          card.classList.add("shake");
+        }
+        input.focus();
+        return;
+      }
+
+      input.setAttribute("aria-invalid", "false");
+      errorBox.style.display = "none";
+      input.setAttribute("disabled", "true");
+      submitBtn.setAttribute("disabled", "true");
+      submitBtn.setAttribute("aria-busy", "true");
+      var spinnerSvg = '<svg class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor"></circle><path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>';
+      submitBtn.innerHTML = spinnerSvg + '<span>' + strings.repairButtonLoading + '</span>';
+
+      fetch("/?pair=" + encodeURIComponent(key), {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin"
+      })
+        .then(function(res) {
+          if (res.status === 200 || res.ok) {
+            broadcastSessionRestored();
+            syncToast.textContent = strings.syncingSiblingTabs;
+            syncToast.style.display = "block";
+            setTimeout(function() {
+              unmountRevocationOverlay();
+              window.location.reload();
+            }, 500);
+            return;
+          }
+          return res.json().then(function(data) {
+            if (data && data.error === "key_consumed") {
+              throw { status: res.status, message: strings.keyConsumedError || strings.invalidKeyError };
+            }
+            if (data && data.error === "session_revoked") {
+              throw { status: res.status, message: strings.staleKeyError || strings.invalidKeyError };
+            }
+            if (res.status === 429 || (data && data.error === "rate_limited")) {
+              throw { status: 429, message: strings.rateLimitError };
+            }
+            throw { status: res.status, message: strings.invalidKeyError };
+          }).catch(function(jsonErr) {
+            if (jsonErr && jsonErr.message) throw jsonErr;
+            if (res.status === 429) throw { status: 429, message: strings.rateLimitError };
+            throw { status: res.status, message: strings.invalidKeyError };
+          });
+        })
+        .catch(function(err) {
+          input.removeAttribute("disabled");
+          submitBtn.removeAttribute("disabled");
+          submitBtn.removeAttribute("aria-busy");
+          submitBtn.innerHTML = '<span>' + strings.repairButton + '</span>';
+          input.setAttribute("aria-invalid", "true");
+          if (card) {
+            card.classList.remove("shake");
+            void card.offsetWidth;
+            card.classList.add("shake");
+          }
+          var msg = err && err.message ? err.message : strings.networkError;
+          errorBox.textContent = msg;
+          errorBox.style.display = "block";
+          input.focus();
+        });
+    });
+  }
+
+  function handleRevocation(shouldBroadcast) {
+    window.__antigravitySessionRevoked = true;
+    if (shouldBroadcast) {
+      broadcastSessionRevoked();
+    }
+    mountRevocationOverlay();
+  }
+
+  function initCrossTabSyncListener() {
+    var handleRestoredEvent = function() {
+      var host = document.getElementById("antigravity-revocation-host");
+      if (host && host.shadowRoot) {
+        var toast = host.shadowRoot.getElementById("overlay-sync");
+        if (toast) {
+          toast.textContent = getCatalog().syncingSiblingTabs;
+          toast.style.display = "block";
+        }
+      }
+      setTimeout(function() {
+        unmountRevocationOverlay();
+        window.location.reload();
+      }, 300);
+    };
+
+    var handleRevokedEvent = function() {
+      handleRevocation(false);
+    };
+
+    if (typeof window.BroadcastChannel !== "undefined") {
+      try {
+        var bc = new BroadcastChannel(RELAY_CHANNEL);
+        bc.onmessage = function(event) {
+          if (!event || !event.data) return;
+          if (event.data.type === "SESSION_REVOKED") {
+            handleRevokedEvent();
+          } else if (event.data.type === "SESSION_RESTORED" || event.data.type === "AUTH_RESTORED") {
+            handleRestoredEvent();
+          }
+        };
+      } catch (_) {}
+    }
+
+    window.addEventListener("storage", function(event) {
+      if (event.key === "ag_relay_revoked_at" && event.newValue) {
+        handleRevokedEvent();
+      } else if (event.key === "ag_relay_restored_at" && event.newValue) {
+        handleRestoredEvent();
+      } else if (event.key === "ag_auth_restored" && event.newValue) {
+        handleRestoredEvent();
+      }
+    });
+  }
+
+  initCrossTabSyncListener();
 
   function showBanner(msg) {
     try {
@@ -188,14 +725,22 @@ export function generateAutoReloadScript(
   }
 
   function triggerReload() {
-    if (reloading) return;
+    if (reloading || window.__antigravitySessionRevoked) return;
     reloading = true;
     showBanner("Antigravity restarting, reconnecting...");
 
     var check = function() {
+      if (window.__antigravitySessionRevoked) {
+        reloading = false;
+        return;
+      }
       fetch("/health", { cache: "no-store" })
         .then(function(res) { return res.json(); })
         .then(function(data) {
+          if (window.__antigravitySessionRevoked) {
+            reloading = false;
+            return;
+          }
           var portChanged = data && data.upstreamPort && initialPort && data.upstreamPort !== initialPort;
           var epochChanged = data && typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch;
           var isHealthy = data && data.isRunning && data.upstreamPort && !data.isRestarting;
@@ -207,7 +752,11 @@ export function generateAutoReloadScript(
           }
         })
         .catch(function() {
-          setTimeout(check, 1000);
+          if (!window.__antigravitySessionRevoked) {
+            setTimeout(check, 1000);
+          } else {
+            reloading = false;
+          }
         });
     };
     setTimeout(check, 500);
@@ -218,7 +767,22 @@ export function generateAutoReloadScript(
     class PatchedWS extends OrigWS {
       constructor(...args) {
         super(...args);
+        this.addEventListener("message", function(event) {
+          try {
+            var data = typeof event.data === "string" ? JSON.parse(event.data) : null;
+            if (data && (data.type === "SESSION_REVOKED" || data.revoked)) {
+              handleRevocation(true);
+            }
+          } catch (_) {}
+        });
         this.addEventListener("close", function(event) {
+          if (event.code === 4401 || event.reason === "Session revoked" || event.reason === "Session revoked by host") {
+            handleRevocation(true);
+            return;
+          }
+          if (typeof window === "undefined" || window.__antigravitySessionRevoked) {
+            return;
+          }
           if (event.code === 1012 || event.code === 1006 || event.code === 1011) {
             triggerReload();
           }
@@ -230,9 +794,19 @@ export function generateAutoReloadScript(
 
   document.addEventListener("visibilitychange", function() {
     if (document.visibilityState === "visible") {
+      var revokedAt = null;
+      try {
+        revokedAt = localStorage.getItem("ag_relay_revoked_at");
+      } catch (_) {}
+      if (revokedAt || window.__antigravitySessionRevoked) {
+        handleRevocation(false);
+        return;
+      }
+      if (reloading) return;
       fetch("/health", { cache: "no-store" })
         .then(function(r) { return r.json(); })
         .then(function(data) {
+          if (window.__antigravitySessionRevoked) return;
           if (data && data.upstreamPort && (data.upstreamPort !== initialPort || (typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch))) {
             triggerReload();
           }
@@ -242,10 +816,11 @@ export function generateAutoReloadScript(
   });
 
   setInterval(function() {
-    if (reloading) return;
+    if (reloading || window.__antigravitySessionRevoked) return;
     fetch("/health", { cache: "no-store" })
       .then(function(r) { return r.json(); })
       .then(function(data) {
+        if (window.__antigravitySessionRevoked) return;
         if (data && data.upstreamPort && (data.upstreamPort !== initialPort || (typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch))) {
           triggerReload();
         }
@@ -349,6 +924,273 @@ export function generatePairingHtml(errorMessage?: string): string {
 </html>`;
 }
 
+export function generateRevokedHtml(errorMessage?: string): string {
+  const errorBlock = errorMessage
+    ? `<div role="alert" aria-live="assertive" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#f87171;padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.4;margin-bottom:18px;">${errorMessage}</div>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Session Revoked - Antigravity Relay</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #090d16;
+      color: #f9fafb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: clamp(1rem, 5vw, 2rem);
+    }
+    .card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: clamp(1.25rem, 5vw, 2rem);
+      max-width: 400px;
+      width: 100%;
+      max-height: calc(100vh - 32px);
+      max-height: calc(100dvh - 32px);
+      overflow-y: auto;
+      box-shadow: 0 20px 35px -5px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      min-width: 0;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #f87171;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 1.25rem;
+    }
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ef4444;
+      flex-shrink: 0;
+    }
+    .icon {
+      width: 44px;
+      height: 44px;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+      color: #ef4444;
+    }
+    h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: #f9fafb; }
+    p { font-size: 0.875rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.25rem; }
+    label { display: block; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 0.5rem; }
+    input {
+      width: 100%;
+      min-height: 44px;
+      padding: 0.75rem 1rem;
+      background: #0d131f;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      color: #f9fafb;
+      font-family: monospace;
+      font-size: 0.9375rem;
+      margin-bottom: 1.25rem;
+      outline: none;
+      box-sizing: border-box;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    input:hover { border-color: #6b7280; }
+    input:focus-visible {
+      border-color: #3b82f6;
+      outline: none;
+      box-shadow: 0 0 0 2px #090d16, 0 0 0 4px #3b82f6;
+    }
+    input[aria-invalid="true"] {
+      border-color: #ef4444;
+      background: rgba(239, 68, 68, 0.08);
+    }
+    input:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    button {
+      width: 100%;
+      min-height: 44px;
+      padding: 0.75rem;
+      background: #10b981;
+      color: #000000;
+      font-weight: 600;
+      font-size: 0.875rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-sizing: border-box;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    button:hover { background: #059669; }
+    button:active { transform: scale(0.98); background: #047857; }
+    button:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px #111827, 0 0 0 4px #3b82f6;
+    }
+    button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin {
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes form-shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .shake {
+      animation: form-shake 0.4s ease-in-out;
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="revocation-card" role="alertdialog" aria-modal="true" aria-labelledby="revoked-heading" aria-describedby="revoked-desc">
+    <div class="badge" role="status">
+      <span class="badge-dot" aria-hidden="true"></span>
+      Disconnected by Host
+    </div>
+    <div class="icon" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+    </div>
+    <h1 id="revoked-heading">Access Revoked by Host</h1>
+    <p id="revoked-desc">Session Revoked: Access was revoked by the desktop host. Please enter a valid pairing key to re-establish your connection.</p>
+    ${errorBlock}
+    <form id="reconnect-form" method="GET" action="/" novalidate>
+      <input type="hidden" name="useWebSocket" value="true" />
+      <label for="pair">New Pairing Key</label>
+      <input type="password" id="pair" name="pair" placeholder="Enter fresh pairing key" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-label="New Pairing Key" aria-required="true" aria-invalid="false" />
+      <button type="submit" id="submit-btn" aria-label="Submit new pairing key to reconnect this revoked device">
+        <span>Connect</span>
+      </button>
+    </form>
+  </div>
+  <script>
+    (function() {
+      // URL sanitization via history.replaceState
+      try {
+        if (window.history && window.history.replaceState) {
+          var params = new URLSearchParams(window.location.search);
+          if (params.has("pair") || params.has("useWebSocket")) {
+            params.delete("pair");
+            params.delete("useWebSocket");
+            var remaining = params.toString();
+            var clean = window.location.pathname + (remaining ? "?" + remaining : "") + window.location.hash;
+            window.history.replaceState({}, document.title, clean);
+          }
+        }
+      } catch (_) {}
+
+      // Sibling tab sync
+      if (typeof window.BroadcastChannel !== "undefined") {
+        try {
+          var bc = new BroadcastChannel("antigravity-relay");
+          bc.onmessage = function(ev) {
+            if (ev && ev.data && (ev.data.type === "SESSION_RESTORED" || ev.data.type === "AUTH_RESTORED")) {
+              window.location.reload();
+            }
+          };
+        } catch (_) {}
+      }
+      window.addEventListener("storage", function(ev) {
+        if (ev.key === "ag_relay_restored_at" || ev.key === "ag_auth_restored") {
+          window.location.reload();
+        }
+      });
+
+      var card = document.getElementById("revocation-card");
+      var input = document.getElementById("pair");
+      var btn = document.getElementById("submit-btn");
+      var form = document.getElementById("reconnect-form");
+
+      // Autofocus & select on mount
+      setTimeout(function() {
+        if (input) {
+          try {
+            input.focus();
+            if (typeof input.select === "function") input.select();
+          } catch (_) {}
+        }
+      }, 50);
+
+      // Focus trap and Escape prevention
+      document.addEventListener("keydown", function(e) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        if (e.key === "Tab") {
+          var focusable = [input, btn].filter(function(el) { return el && !el.disabled; });
+          if (focusable.length === 0) return;
+          var active = document.activeElement;
+          if (e.shiftKey) {
+            if (!active || active === focusable[0]) {
+              e.preventDefault();
+              focusable[focusable.length - 1].focus();
+            }
+          } else {
+            if (!active || active === focusable[focusable.length - 1]) {
+              e.preventDefault();
+              focusable[0].focus();
+            }
+          }
+        }
+      });
+
+      // Form submission validation and loading spinner
+      if (form && input && btn) {
+        form.addEventListener("submit", function(e) {
+          var val = input.value.trim();
+          if (!val) {
+            e.preventDefault();
+            input.setAttribute("aria-invalid", "true");
+            if (card) {
+              card.classList.remove("shake");
+              void card.offsetWidth;
+              card.classList.add("shake");
+            }
+            input.focus();
+            return;
+          }
+          input.setAttribute("aria-invalid", "false");
+          btn.setAttribute("disabled", "true");
+          btn.setAttribute("aria-busy", "true");
+          btn.innerHTML = '<svg class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor"></circle><path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg><span>Connecting...</span>';
+        });
+      }
+    })();
+  </script>
+</body>
+</html>`;
+}
+
 export class RelayServer {
   private readonly config: RelayConfig;
   private readonly sessionManager: SessionManager;
@@ -372,6 +1214,9 @@ export class RelayServer {
   private unhookUpstream?: () => void;
   private unhookSessionRevoked?: () => void;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private readonly retiredPairingKeys: Map<string, number> = new Map();
+  public static readonly RETIRED_KEY_TTL_MS = 60 * 60 * 1000; // 1 hour
+  public static readonly MAX_RETIRED_KEYS = 200;
   private currentPairingKey: string = generatePairingKey();
 
   constructor(options?: RelayServerOptions) {
@@ -429,7 +1274,28 @@ export class RelayServer {
     return this.currentPairingKey;
   }
 
+  private pruneRetiredPairingKeys(): void {
+    const now = Date.now();
+    for (const [key, retiredAt] of this.retiredPairingKeys.entries()) {
+      if (now - retiredAt > RelayServer.RETIRED_KEY_TTL_MS) {
+        this.retiredPairingKeys.delete(key);
+      }
+    }
+    while (this.retiredPairingKeys.size > RelayServer.MAX_RETIRED_KEYS) {
+      const oldestKey = this.retiredPairingKeys.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.retiredPairingKeys.delete(oldestKey);
+      } else {
+        break;
+      }
+    }
+  }
+
   public regeneratePairingKey(): string {
+    if (this.currentPairingKey) {
+      this.retiredPairingKeys.set(this.currentPairingKey, Date.now());
+      this.pruneRetiredPairingKeys();
+    }
     this.currentPairingKey = generatePairingKey();
     this.notifyStatusUpdated();
     return this.currentPairingKey;
@@ -440,6 +1306,70 @@ export class RelayServer {
       return false;
     }
     return validateToken(candidate.trim(), this.currentPairingKey);
+  }
+
+  public consumePairingKey(candidate?: string | null): {
+    success: boolean;
+    reason?: "invalid" | "consumed";
+  } {
+    this.pruneRetiredPairingKeys();
+    if (!candidate || typeof candidate !== "string") {
+      return { success: false, reason: "invalid" };
+    }
+    const trimmed = candidate.trim();
+    if (this.retiredPairingKeys.has(trimmed)) {
+      return { success: false, reason: "consumed" };
+    }
+    if (
+      !this.currentPairingKey ||
+      !validateToken(trimmed, this.currentPairingKey)
+    ) {
+      if (this.retiredPairingKeys.has(trimmed)) {
+        return { success: false, reason: "consumed" };
+      }
+      return { success: false, reason: "invalid" };
+    }
+
+    const consumedKey = this.currentPairingKey;
+    this.retiredPairingKeys.set(consumedKey, Date.now());
+    this.currentPairingKey = generatePairingKey();
+    this.pruneRetiredPairingKeys();
+    this.notifyStatusUpdated();
+    return { success: true };
+  }
+
+  public isKeyConsumed(candidate?: string | null): boolean {
+    if (!candidate || typeof candidate !== "string") {
+      return false;
+    }
+    this.pruneRetiredPairingKeys();
+    return this.retiredPairingKeys.has(candidate.trim());
+  }
+
+  public getRetiredPairingKeys(): Map<string, number> {
+    return this.retiredPairingKeys;
+  }
+
+  public getRateLimiter(): AuthRateLimiter {
+    return this.rateLimiter;
+  }
+
+  public revokeDevice(deviceId: string): boolean {
+    const session = this.sessionManager.getSessionByDeviceId(deviceId);
+    const sessionId = session?.sessionId;
+    const revoked = this.sessionManager.revokeDevice(deviceId);
+    for (const pair of Array.from(this.activeWsConnections)) {
+      if (
+        (sessionId && pair.sessionId === sessionId) ||
+        pair.deviceId === deviceId
+      ) {
+        safeClose(pair.clientWs, 4401, "Session revoked");
+        safeClose(pair.upstreamWs, 4401, "Session revoked");
+        this.activeWsConnections.delete(pair);
+      }
+    }
+    this.notifyStatusUpdated();
+    return revoked;
   }
 
   public getStatus(): RelayServerStatus {
@@ -594,12 +1524,13 @@ export class RelayServer {
           request.socket?.remoteAddress,
         );
         const userAgent = extractUserAgent(request.headers);
+        const requirePairing = this.config.requirePairing !== false;
 
         const rawUrl = request.url || "/";
         const parsedUrl = new URL(rawUrl, "http://127.0.0.1");
         const pairingToken = parsedUrl.searchParams.get("pair") || undefined;
-        const token =
-          pairingToken ||
+        const sessionToken =
+          (!requirePairing ? pairingToken : undefined) ||
           parsedUrl.searchParams.get("token") ||
           (request.headers["x-session-token"] as string | undefined);
 
@@ -627,78 +1558,165 @@ export class RelayServer {
           );
         }
 
-        let session = deviceId
-          ? this.sessionManager.getSessionByDeviceId(deviceId)
-          : undefined;
+        const rateLimitKey = AuthRateLimiter.buildKey(clientIp, deviceId);
+
+        const acceptsJson =
+          typeof request.headers.accept === "string" &&
+          request.headers.accept.includes("application/json") &&
+          !request.headers.accept.includes("text/html");
+
+        const isHtml =
+          !acceptsJson &&
+          request.method === "GET" &&
+          (parsedUrl.pathname === "/" ||
+            parsedUrl.pathname === "/index.html" ||
+            (typeof request.headers.accept === "string" &&
+              request.headers.accept.includes("text/html")));
+
+        let session: Session | undefined;
+
+        // 1. Revoked device handling
+        if (deviceId && this.sessionManager.isDeviceRevoked(deviceId)) {
+          if (pairingToken) {
+            if (this.rateLimiter.isRateLimited(rateLimitKey)) {
+              return reply.status(429).send({
+                error: "rate_limited",
+                message: "Too many pairing attempts. Please wait.",
+              });
+            }
+
+            const consumeResult = this.consumePairingKey(pairingToken);
+            if (consumeResult.success || !requirePairing) {
+              this.rateLimiter.recordSuccess(rateLimitKey);
+              this.sessionManager.clearDeviceRevocation(deviceId);
+              session = this.sessionManager.createSession({
+                clientIp,
+                userAgent,
+                token: !requirePairing ? pairingToken : undefined,
+                deviceId,
+              });
+            } else {
+              this.rateLimiter.recordFailure(rateLimitKey);
+              if (consumeResult.reason === "consumed") {
+                if (isHtml) {
+                  return reply
+                    .status(401)
+                    .type("text/html")
+                    .send(
+                      generateRevokedHtml(
+                        "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+                      ),
+                    );
+                }
+                return reply.status(401).send({
+                  error: "key_consumed",
+                  message:
+                    "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+                  revoked: true,
+                });
+              } else {
+                if (isHtml) {
+                  return reply
+                    .status(401)
+                    .type("text/html")
+                    .send(
+                      generateRevokedHtml(
+                        "Invalid pairing key. Check desktop dashboard.",
+                      ),
+                    );
+                }
+                return reply.status(401).send({
+                  error: "session_revoked",
+                  message: "Access was revoked by the desktop host",
+                  revoked: true,
+                });
+              }
+            }
+          } else {
+            if (isHtml) {
+              return reply
+                .status(401)
+                .type("text/html")
+                .send(generateRevokedHtml());
+            }
+            return reply.status(401).send({
+              error: "session_revoked",
+              message: "Access was revoked by the desktop host",
+              revoked: true,
+            });
+          }
+        }
+
+        // 2. Lookup existing active session (routine reload / refresh)
+        if (!session && deviceId) {
+          session = this.sessionManager.getSessionByDeviceId(deviceId);
+        }
+        if (!session && sessionToken) {
+          session = this.sessionManager.getSessionByToken(sessionToken);
+        }
 
         if (session) {
           session.clientIp = clientIp;
           session.userAgent = userAgent;
-          if (token && session.token !== token) {
-            this.sessionManager.updateSessionToken(session.sessionId, token);
+          if (deviceId && !session.deviceId) {
+            this.sessionManager.updateSessionDeviceId(
+              session.sessionId,
+              deviceId,
+            );
           }
           this.sessionManager.updateSessionActivity(session.sessionId);
-        } else if (token) {
-          const existingByToken = this.sessionManager.getSessionByToken(token);
-          if (existingByToken) {
-            existingByToken.clientIp = clientIp;
-            existingByToken.userAgent = userAgent;
-            if (deviceId && !existingByToken.deviceId) {
-              this.sessionManager.updateSessionDeviceId(
-                existingByToken.sessionId,
-                deviceId,
-              );
-            }
-            this.sessionManager.updateSessionActivity(
-              existingByToken.sessionId,
-            );
-            session = existingByToken;
-          }
-        }
-
-        const requirePairing = this.config.requirePairing !== false;
-
-        // If not yet authenticated, try pairing token
-        if (!session && pairingToken) {
-          if (this.rateLimiter.isRateLimited(clientIp)) {
+        } else if (pairingToken) {
+          // 3. Unauthenticated device pairing with candidate key
+          if (this.rateLimiter.isRateLimited(rateLimitKey)) {
             return reply.status(429).send({
               error: "rate_limited",
               message: "Too many pairing attempts. Please wait.",
             });
           }
 
-          if (this.validatePairingKey(pairingToken) || !requirePairing) {
-            this.rateLimiter.recordSuccess(clientIp);
+          const consumeResult = this.consumePairingKey(pairingToken);
+          if (consumeResult.success || !requirePairing) {
+            this.rateLimiter.recordSuccess(rateLimitKey);
             session = this.sessionManager.createSession({
               clientIp,
               userAgent,
-              token: pairingToken,
+              token: !requirePairing ? pairingToken : undefined,
               deviceId,
             });
-            this.notifyStatusUpdated();
           } else {
-            this.rateLimiter.recordFailure(clientIp);
-            const isHtml =
-              request.method === "GET" &&
-              (parsedUrl.pathname === "/" ||
-                parsedUrl.pathname === "/index.html" ||
-                (typeof request.headers.accept === "string" &&
-                  request.headers.accept.includes("text/html")));
-
-            if (isHtml) {
-              return reply
-                .status(401)
-                .type("text/html")
-                .send(
-                  generatePairingHtml(
-                    "Invalid pairing key. Check desktop dashboard.",
-                  ),
-                );
+            this.rateLimiter.recordFailure(rateLimitKey);
+            if (consumeResult.reason === "consumed") {
+              if (isHtml) {
+                return reply
+                  .status(401)
+                  .type("text/html")
+                  .send(
+                    generatePairingHtml(
+                      "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+                    ),
+                  );
+              }
+              return reply.status(401).send({
+                error: "key_consumed",
+                message:
+                  "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+              });
+            } else {
+              if (isHtml) {
+                return reply
+                  .status(401)
+                  .type("text/html")
+                  .send(
+                    generatePairingHtml(
+                      "Invalid pairing key. Check desktop dashboard.",
+                    ),
+                  );
+              }
+              return reply.status(401).send({
+                error: "invalid_key",
+                message: "Invalid pairing key",
+              });
             }
-            return reply.status(401).send({
-              error: "unauthorized",
-              message: "Invalid pairing key",
-            });
           }
         } else if (!requirePairing) {
           if (
@@ -746,13 +1764,6 @@ export class RelayServer {
 
         // If still unauthenticated, block request from reaching upstream IDE
         if (requirePairing && (!session || !session.authenticated)) {
-          const isHtml =
-            request.method === "GET" &&
-            (parsedUrl.pathname === "/" ||
-              parsedUrl.pathname === "/index.html" ||
-              (typeof request.headers.accept === "string" &&
-                request.headers.accept.includes("text/html")));
-
           if (isHtml) {
             return reply
               .status(401)
@@ -1080,12 +2091,14 @@ export class RelayServer {
   public broadcastToClients(event: RemoteEvent): void {
     const payload = JSON.stringify(event);
     for (const session of this.sessionManager.getActiveSessions()) {
-      const socket = this.sessionManager.getSocket(session.sessionId);
-      if (socket && socket.readyState === 1 /* OPEN */) {
-        try {
-          socket.send(payload);
-        } catch {
-          // Suppress socket send error
+      const sockets = this.sessionManager.getSockets(session.sessionId);
+      for (const socket of sockets) {
+        if (socket && socket.readyState === 1 /* OPEN */) {
+          try {
+            socket.send(payload);
+          } catch {
+            // Suppress socket send error
+          }
         }
       }
     }
@@ -1147,16 +2160,16 @@ export class RelayServer {
     });
 
     for (const session of activeSessions) {
-      const socket = this.sessionManager.getSocket(session.sessionId);
-      if (socket) {
+      const sockets = this.sessionManager.getSockets(session.sessionId);
+      for (const socket of sockets) {
         if (socket.readyState === 1 /* OPEN */) {
           try {
             socket.send(payload);
           } catch {
-            this.sessionManager.unbindSocket(session.sessionId);
+            this.sessionManager.unbindSocket(session.sessionId, socket);
           }
         } else if (socket.readyState === 2 || socket.readyState === 3) {
-          this.sessionManager.unbindSocket(session.sessionId);
+          this.sessionManager.unbindSocket(session.sessionId, socket);
         }
       }
     }
@@ -1197,6 +2210,64 @@ export class RelayServer {
           return;
         }
 
+        const clientIp = extractClientIp(
+          req.headers,
+          req.socket?.remoteAddress,
+        );
+        const deviceId = extractDeviceId(
+          req.headers as any,
+          parsedUrl?.searchParams,
+        );
+        const rateLimitKey = AuthRateLimiter.buildKey(clientIp, deviceId);
+
+        if (deviceId && this.sessionManager.isDeviceRevoked(deviceId)) {
+          const pairParam = parsedUrl?.searchParams.get("pair");
+          if (this.rateLimiter.isRateLimited(rateLimitKey)) {
+            const body = JSON.stringify({
+              error: "rate_limited",
+              message: "Too many pairing attempts. Please wait.",
+            });
+            socket.write(
+              `HTTP/1.1 429 Too Many Requests\r\n` +
+                `Content-Type: application/json\r\n` +
+                `Retry-After: 60\r\n` +
+                `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+                `Connection: close\r\n` +
+                `\r\n` +
+                body,
+            );
+            socket.destroy();
+            return;
+          }
+
+          if (pairParam && this.validatePairingKey(pairParam)) {
+            // Valid pairing key provided; allow upgrade to bridgeWebSocket where key is consumed
+          } else {
+            this.rateLimiter.recordFailure(rateLimitKey);
+            const isConsumed =
+              pairParam && this.retiredPairingKeys.has(pairParam.trim());
+            const errorCode = isConsumed ? "key_consumed" : "session_revoked";
+            const errorMsg = isConsumed
+              ? "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host."
+              : "Access was revoked by the desktop host";
+            const body = JSON.stringify({
+              error: errorCode,
+              message: errorMsg,
+              revoked: true,
+            });
+            socket.write(
+              `HTTP/1.1 401 Unauthorized\r\n` +
+                `Content-Type: application/json\r\n` +
+                `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+                `Connection: close\r\n` +
+                `\r\n` +
+                body,
+            );
+            socket.destroy();
+            return;
+          }
+        }
+
         this.wss?.handleUpgrade(req, socket, head, (clientWs) => {
           this.bridgeWebSocket(clientWs, req, port);
         });
@@ -1217,10 +2288,12 @@ export class RelayServer {
   ): void {
     const clientIp = extractClientIp(req.headers, req.socket?.remoteAddress);
     const userAgent = extractUserAgent(req.headers);
+    const requirePairing = this.config.requirePairing !== false;
 
     const parsedUrl = req.url ? new URL(req.url, "http://127.0.0.1") : null;
-    const token =
-      parsedUrl?.searchParams.get("pair") ||
+    const pairParam = parsedUrl?.searchParams.get("pair") || undefined;
+    const sessionToken =
+      (!requirePairing ? pairParam : undefined) ||
       parsedUrl?.searchParams.get("token") ||
       (req.headers["x-session-token"] as string | undefined);
     const originalDeviceId = extractDeviceId(
@@ -1229,46 +2302,88 @@ export class RelayServer {
     );
     let deviceId = originalDeviceId;
 
+    const rateLimitKey = AuthRateLimiter.buildKey(clientIp, deviceId);
     let session: Session | undefined;
-    if (deviceId) {
+
+    // Handle revoked device
+    if (deviceId && this.sessionManager.isDeviceRevoked(deviceId)) {
+      if (pairParam) {
+        if (this.rateLimiter.isRateLimited(rateLimitKey)) {
+          safeClose(clientWs, 4401, "Rate limited");
+          return;
+        }
+        const consumeResult = this.consumePairingKey(pairParam);
+        if (consumeResult.success || !requirePairing) {
+          this.rateLimiter.recordSuccess(rateLimitKey);
+          this.sessionManager.clearDeviceRevocation(deviceId);
+          session = this.sessionManager.createSession({
+            clientIp,
+            userAgent,
+            token: !requirePairing ? pairParam : undefined,
+            deviceId,
+          });
+        } else {
+          this.rateLimiter.recordFailure(rateLimitKey);
+          safeClose(clientWs, 4401, "Session revoked");
+          return;
+        }
+      } else {
+        safeClose(clientWs, 4401, "Session revoked");
+        return;
+      }
+    }
+
+    // Check existing session (routine reload / refresh / cookie-based authentication)
+    if (!session && deviceId) {
       session = this.sessionManager.getSessionByDeviceId(deviceId);
     }
-    if (!session && token) {
-      session = this.sessionManager.getSessionByToken(token);
+    if (!session && sessionToken) {
+      session = this.sessionManager.getSessionByToken(sessionToken);
     }
 
-    const requirePairing = this.config.requirePairing !== false;
+    // If session exists: existing sessions bypass pairing re-check!
     if (!session) {
-      if (!deviceId && !requirePairing) {
-        const existing = this.sessionManager
-          .getActiveSessions()
-          .find(
-            (s) =>
-              s.clientIp === clientIp &&
-              s.userAgent === userAgent &&
-              s.socketState === "disconnected",
-          );
-        if (existing) {
-          session = existing;
-          if (token && session.token !== token) {
-            this.sessionManager.updateSessionToken(session.sessionId, token);
-          }
+      if (pairParam) {
+        if (this.rateLimiter.isRateLimited(rateLimitKey)) {
+          safeClose(clientWs, 4401, "Rate limited");
+          return;
         }
-      }
-
-      if (!session) {
-        const pairParam = parsedUrl?.searchParams.get("pair");
-        if (
-          (pairParam && this.validatePairingKey(pairParam)) ||
-          !requirePairing
-        ) {
+        const consumeResult = this.consumePairingKey(pairParam);
+        if (consumeResult.success || !requirePairing) {
+          this.rateLimiter.recordSuccess(rateLimitKey);
           if (!deviceId) {
             deviceId = `dev_${crypto.randomUUID()}`;
           }
           session = this.sessionManager.createSession({
             clientIp,
             userAgent,
-            token: token || generateSessionToken(),
+            token: !requirePairing ? pairParam : undefined,
+            deviceId,
+          });
+        } else {
+          this.rateLimiter.recordFailure(rateLimitKey);
+        }
+      } else if (!requirePairing) {
+        if (!deviceId && !originalDeviceId) {
+          const existing = this.sessionManager
+            .getActiveSessions()
+            .find(
+              (s) =>
+                s.clientIp === clientIp &&
+                s.userAgent === userAgent &&
+                s.socketState === "disconnected",
+            );
+          if (existing) {
+            session = existing;
+          }
+        }
+        if (!session) {
+          if (!deviceId) {
+            deviceId = `dev_${crypto.randomUUID()}`;
+          }
+          session = this.sessionManager.createSession({
+            clientIp,
+            userAgent,
             deviceId,
           });
           this.notifyStatusUpdated();
@@ -1290,9 +2405,6 @@ export class RelayServer {
     session.userAgent = userAgent;
     if (deviceId && !session.deviceId) {
       this.sessionManager.updateSessionDeviceId(session.sessionId, deviceId);
-    }
-    if (token && session.token !== token) {
-      this.sessionManager.updateSessionToken(session.sessionId, token);
     }
 
     const sessionId = session.sessionId;
@@ -1327,7 +2439,7 @@ export class RelayServer {
       rejectUnauthorized: false,
     });
 
-    const pair: ActiveWsPair = { clientWs, upstreamWs, sessionId };
+    const pair: ActiveWsPair = { clientWs, upstreamWs, sessionId, deviceId };
     this.activeWsConnections.add(pair);
 
     const pendingMessages: Array<{ data: RawData; isBinary: boolean }> = [];
@@ -1433,7 +2545,7 @@ export class RelayServer {
   private wireSessionEvents(): void {
     this.unhookSessionRevoked = this.sessionManager.onSessionRevoked(
       (revokedSessionId) => {
-        for (const pair of this.activeWsConnections) {
+        for (const pair of Array.from(this.activeWsConnections)) {
           if (pair.sessionId === revokedSessionId) {
             safeClose(pair.clientWs, 4401, "Session revoked");
             safeClose(pair.upstreamWs, 4401, "Session revoked");

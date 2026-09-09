@@ -7,6 +7,7 @@ import {
   RelayServer,
   generateAutoReloadScript,
   extractDeviceId,
+  generateRevokedHtml,
 } from "@/modules/relay/relay-server";
 import { SessionManager } from "@/modules/relay/session-manager";
 import { UpstreamBridge } from "@/modules/relay/upstream-bridge";
@@ -17,6 +18,7 @@ import {
   TEST_TLS_CERT,
 } from "../helpers/mock-upstream";
 import { AutoSwitchService } from "@/modules/cloud-account/services/AutoSwitchService";
+import { AuthRateLimiter } from "@/modules/relay/relay-auth";
 import https from "node:https";
 import { request as undiciRequest } from "undici";
 
@@ -895,7 +897,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(updatedSession?.lastActiveAt).toBeGreaterThan(initialActiveAt);
     });
 
-    it("deduplicates multiple tabs opening WebSocket on the same device and supersedes previous socket", async () => {
+    it("supports multiple tabs opening WebSocket on the same device concurrently without closing sibling sockets", async () => {
       const csrfToken = mockUpstream.getCsrfToken();
       const testDeviceId = "dev_multi_tab_test_device";
 
@@ -923,16 +925,9 @@ describe("RelayServer Reverse Proxy Mirror", () => {
         .getSessionByDeviceId(testDeviceId)!;
       expect(sessionTab1).toBeDefined();
       expect(sessionTab1.socketState).toBe("connected");
-
-      let tab1CloseCode: number | null = null;
-      let tab1CloseReason: string | null = null;
-      const tab1ClosePromise = new Promise<void>((resolve) => {
-        wsTab1.on("close", (code, reason) => {
-          tab1CloseCode = code;
-          tab1CloseReason = reason.toString();
-          resolve();
-        });
-      });
+      expect(
+        relayServer.getSessionManager().getSocketCount(sessionTab1.sessionId),
+      ).toBe(1);
 
       const wsTab2 = new WebSocket(
         `ws://127.0.0.1:${relayPort}/connect-websocket`,
@@ -950,10 +945,9 @@ describe("RelayServer Reverse Proxy Mirror", () => {
         wsTab2.on("error", reject);
       });
 
-      await tab1ClosePromise;
-      expect(tab1CloseCode).toBe(1000);
-      expect(tab1CloseReason).toBe("Superseded by new connection");
-
+      // Both tabs are open simultaneously
+      expect(wsTab1.readyState).toBe(WebSocket.OPEN);
+      expect(wsTab2.readyState).toBe(WebSocket.OPEN);
       expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
         1,
       );
@@ -962,10 +956,33 @@ describe("RelayServer Reverse Proxy Mirror", () => {
         .getSessionByDeviceId(testDeviceId)!;
       expect(sessionTab2.sessionId).toBe(sessionTab1.sessionId);
       expect(sessionTab2.socketState).toBe("connected");
+      expect(
+        relayServer.getSessionManager().getSocketCount(sessionTab2.sessionId),
+      ).toBe(2);
 
+      // Tab 1 closes -> session remains connected via refcount
+      wsTab1.close();
+      await vi.waitFor(
+        () => {
+          expect(
+            relayServer
+              .getSessionManager()
+              .getSocketCount(sessionTab2.sessionId),
+          ).toBe(1);
+          expect(sessionTab2.socketState).toBe("connected");
+        },
+        { timeout: 1000, interval: 20 },
+      );
+
+      // Tab 2 closes -> session transitions to disconnected
       wsTab2.close();
       await vi.waitFor(
         () => {
+          expect(
+            relayServer
+              .getSessionManager()
+              .getSocketCount(sessionTab2.sessionId),
+          ).toBe(0);
           expect(sessionTab2.socketState).toBe("disconnected");
         },
         { timeout: 1000, interval: 20 },
@@ -1020,20 +1037,29 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
         0,
       );
+      expect(
+        relayServer.getSessionManager().isDeviceRevoked(revokedDeviceId),
+      ).toBe(true);
 
+      // Subsequent API request is blocked with HTTP 401 and session_revoked error
       const subsequentRes = await fetch(
         `http://127.0.0.1:${relayPort}/api/chat`,
         {
           method: "POST",
           headers: {
             cookie: `ag_device_id=${revokedDeviceId}`,
+            "x-device-id": revokedDeviceId,
             "x-session-token": session.token,
             "content-type": "application/json",
           },
           body: JSON.stringify({ message: "attempt resurrect" }),
         },
       );
-      expect(subsequentRes.status).toBe(200);
+      expect(subsequentRes.status).toBe(401);
+      const subJson = (await subsequentRes.json()) as any;
+      expect(subJson.error).toBe("session_revoked");
+      expect(subJson.message).toBe("Access was revoked by the desktop host");
+      expect(subJson.revoked).toBe(true);
 
       expect(
         relayServer.getSessionManager().getSessionByDeviceId(revokedDeviceId),
@@ -1041,6 +1067,113 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
         0,
       );
+    });
+
+    it("returns HTTP 401 with generateRevokedHtml() for revoked deviceId on HTML GET", async () => {
+      const revokedDeviceId = "dev_revoked_html_test";
+      const session = relayServer.getSessionManager().createSession({
+        deviceId: revokedDeviceId,
+      });
+
+      relayServer.getSessionManager().revokeSession(session.sessionId);
+      expect(
+        relayServer.getSessionManager().isDeviceRevoked(revokedDeviceId),
+      ).toBe(true);
+
+      const res = await fetch(`http://127.0.0.1:${relayPort}/`, {
+        headers: {
+          cookie: `ag_device_id=${revokedDeviceId}`,
+          "x-device-id": revokedDeviceId,
+          accept: "text/html",
+        },
+      });
+
+      expect(res.status).toBe(401);
+      expect(res.headers.get("content-type")).toContain("text/html");
+      const html = await res.text();
+      expect(html).toContain("Access Revoked by Host");
+      expect(html).toContain(
+        "Session Revoked: Access was revoked by the desktop host",
+      );
+      expect(html).toContain("Disconnected by Host");
+      expect(html).toContain('name="pair"');
+    });
+
+    it("clears tombstone and restores access when revoked device provides valid pair parameter", async () => {
+      const revokedDeviceId = "dev_revoked_repair_test";
+      const session = relayServer.getSessionManager().createSession({
+        deviceId: revokedDeviceId,
+      });
+
+      relayServer.getSessionManager().revokeSession(session.sessionId);
+      expect(
+        relayServer.getSessionManager().isDeviceRevoked(revokedDeviceId),
+      ).toBe(true);
+
+      const pairingKey = relayServer.getPairingKey();
+
+      // Submit valid pairing key
+      const res = await fetch(
+        `http://127.0.0.1:${relayPort}/?pair=${encodeURIComponent(pairingKey)}`,
+        {
+          headers: {
+            cookie: `ag_device_id=${revokedDeviceId}`,
+            "x-device-id": revokedDeviceId,
+            accept: "text/html",
+          },
+        },
+      );
+
+      expect(res.status).toBe(200);
+      expect(
+        relayServer.getSessionManager().isDeviceRevoked(revokedDeviceId),
+      ).toBe(false);
+
+      const newSession = relayServer
+        .getSessionManager()
+        .getSessionByDeviceId(revokedDeviceId);
+      expect(newSession).toBeDefined();
+      expect(newSession?.authenticated).toBe(true);
+    });
+
+    it("rejects WebSocket upgrade when deviceId is in revoked tombstone cache", async () => {
+      const revokedDeviceId = "dev_ws_revoked_test";
+      const session = relayServer.getSessionManager().createSession({
+        deviceId: revokedDeviceId,
+      });
+      relayServer.getSessionManager().revokeSession(session.sessionId);
+
+      const csrfToken = mockUpstream.getCsrfToken();
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+            cookie: `ag_device_id=${revokedDeviceId}`,
+            "x-device-id": revokedDeviceId,
+          },
+        },
+      );
+
+      const closeResult = await new Promise<{
+        status?: number;
+        code?: number;
+        error?: any;
+      }>((resolve) => {
+        ws.on("unexpected-response", (_req, res) => {
+          resolve({ status: res.statusCode });
+        });
+        ws.on("close", (code) => resolve({ code }));
+        ws.on("error", (error) => resolve({ error }));
+      });
+
+      // ws upgrade rejects with 401 or closes with 4401
+      expect(
+        closeResult.status === 401 ||
+          closeResult.code === 4401 ||
+          closeResult.code === 1006 ||
+          closeResult.error,
+      ).toBeTruthy();
     });
 
     it("extracts deviceId case-insensitively from headers, cookie, or query parameters", () => {
@@ -1330,6 +1463,364 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(secureServer.getStatus().activeSessions).toBe(0);
       const session = secureServer.getSessionManager().getActiveSessions()[0];
       expect(session.socketState).toBe("disconnected");
+    });
+  });
+
+  describe("Per-Device Pairing Key, Auto-Regeneration, and Revocation (PRD AC-01 to AC-04)", () => {
+    let prdServer: RelayServer;
+    let prdPort: number;
+
+    beforeEach(async () => {
+      prdServer = new RelayServer({
+        config: {
+          port: 0,
+          host: "127.0.0.1",
+          requirePairing: true,
+        },
+        portDiscovery,
+      });
+      const st = await prdServer.start();
+      prdPort = st.port;
+    });
+
+    afterEach(async () => {
+      if (prdServer) {
+        await prdServer.stop();
+        prdServer.dispose();
+      }
+    });
+
+    it("consumePairingKey atomically consumes key, regenerates new key, and tracks retired key", () => {
+      const initialKey = prdServer.getPairingKey();
+      expect(initialKey).toBeTruthy();
+
+      const res1 = prdServer.consumePairingKey(initialKey);
+      expect(res1.success).toBe(true);
+      expect(res1.reason).toBeUndefined();
+
+      const newKey = prdServer.getPairingKey();
+      expect(newKey).not.toBe(initialKey);
+      expect(prdServer.isKeyConsumed(initialKey)).toBe(true);
+
+      // Re-consuming same key returns consumed
+      const res2 = prdServer.consumePairingKey(initialKey);
+      expect(res2.success).toBe(false);
+      expect(res2.reason).toBe("consumed");
+
+      // Random invalid key returns invalid
+      const res3 = prdServer.consumePairingKey("random-invalid-key-999");
+      expect(res3.success).toBe(false);
+      expect(res3.reason).toBe("invalid");
+    });
+
+    it("enforces sliding retired keys history with max boundary and TTL", () => {
+      for (let i = 0; i < 205; i++) {
+        prdServer.regeneratePairingKey();
+      }
+      expect(prdServer.getRetiredPairingKeys().size).toBeLessThanOrEqual(
+        RelayServer.MAX_RETIRED_KEYS,
+      );
+    });
+
+    it("AC-01: single-device consumption, decoupled session token, and rejection of consumed key", async () => {
+      const keyAlpha = prdServer.getPairingKey();
+      const device1Id = "dev_alpha_001";
+
+      // Device 1 pairs with KEY-ALPHA
+      const res1 = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=${keyAlpha}`,
+        {
+          headers: {
+            cookie: `ag_device_id=${device1Id}`,
+            accept: "application/json",
+          },
+        },
+      );
+      expect(res1.statusCode).toBe(200);
+
+      // Verify KEY-ALPHA is now retired
+      expect(prdServer.isKeyConsumed(keyAlpha)).toBe(true);
+      const hostKeyAfterPair = prdServer.getPairingKey();
+      expect(hostKeyAfterPair).not.toBe(keyAlpha);
+
+      // Verify Device 1 session has decoupled session token
+      const session1 = prdServer
+        .getSessionManager()
+        .getSessionByDeviceId(device1Id);
+      expect(session1).toBeDefined();
+      expect(session1?.token).toBeDefined();
+      expect(session1?.token).not.toBe(keyAlpha);
+
+      // Subsequent request by Device 1 with cookie bypasses pairing re-check
+      const res1Subsequent = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/`,
+        {
+          headers: {
+            cookie: `ag_device_id=${device1Id}`,
+            accept: "application/json",
+          },
+        },
+      );
+      expect(res1Subsequent.statusCode).toBe(200);
+
+      // Device 2 attempts to pair using consumed KEY-ALPHA
+      const device2Id = "dev_beta_002";
+      const res2 = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=${keyAlpha}`,
+        {
+          headers: {
+            cookie: `ag_device_id=${device2Id}`,
+            accept: "application/json",
+          },
+        },
+      );
+      expect(res2.statusCode).toBe(401);
+      const json2 = (await res2.body.json()) as any;
+      expect(json2.error).toBe("key_consumed");
+      expect(json2.message).toContain("already been consumed");
+
+      // Device 3 attempts to pair using random unrecognized key
+      const device3Id = "dev_gamma_003";
+      const res3 = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=KEY-INVALID-XYZ`,
+        {
+          headers: {
+            cookie: `ag_device_id=${device3Id}`,
+            accept: "application/json",
+          },
+        },
+      );
+      expect(res3.statusCode).toBe(401);
+      const json3 = (await res3.body.json()) as any;
+      expect(json3.error).toBe("invalid_key");
+    });
+
+    it("AC-02: host pairing key auto-regenerates immediately and routine reload with stale ?pair= succeeds", async () => {
+      const key1 = prdServer.getPairingKey();
+      const statusUpdates: string[] = [];
+      const unsub = prdServer.onStatusUpdated((status) => {
+        if (status.pairingKey) {
+          statusUpdates.push(status.pairingKey);
+        }
+      });
+
+      const startTime = Date.now();
+      const res = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=${key1}`,
+      );
+      const duration = Date.now() - startTime;
+      expect(res.statusCode).toBe(200);
+      expect(duration).toBeLessThan(500);
+
+      const key2 = prdServer.getPairingKey();
+      expect(key2).not.toBe(key1);
+      expect(statusUpdates).toContain(key2);
+
+      const setCookie = res.headers["set-cookie"];
+      const cookieStr = Array.isArray(setCookie)
+        ? setCookie.join("; ")
+        : setCookie!;
+      const match = cookieStr.match(/ag_device_id=([^;]+)/);
+      const deviceId = decodeURIComponent(match![1]);
+
+      // Routine reload with stale ?pair= succeeds because session is already authenticated
+      const reloadRes = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=${key1}`,
+        {
+          headers: {
+            cookie: `ag_device_id=${encodeURIComponent(deviceId)}`,
+            accept: "application/json",
+          },
+        },
+      );
+      expect(reloadRes.statusCode).toBe(200);
+
+      unsub();
+    });
+
+    it("AC-03: revocation terminates WebSocket with code 4401 in <500ms and blocks stale reconnection", async () => {
+      const key = prdServer.getPairingKey();
+      const revokedDeviceId = "dev_target_ac03";
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${prdPort}/connect-websocket?pair=${key}`,
+        {
+          headers: {
+            "x-codeium-csrf-token": mockUpstream.getCsrfToken(),
+            cookie: `ag_device_id=${revokedDeviceId}`,
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.on("open", () => resolve());
+        ws.on("error", reject);
+      });
+
+      const session = prdServer
+        .getSessionManager()
+        .getSessionByDeviceId(revokedDeviceId);
+      expect(session).toBeDefined();
+
+      const closePromise = new Promise<{ code: number; reason: string }>(
+        (resolve) => {
+          ws.on("close", (code, reason) => {
+            resolve({ code, reason: reason.toString() });
+          });
+        },
+      );
+
+      const revokeStart = Date.now();
+      const revoked = prdServer.revokeDevice(revokedDeviceId);
+      expect(revoked).toBe(true);
+
+      const closeResult = await closePromise;
+      const revokeDuration = Date.now() - revokeStart;
+      expect(revokeDuration).toBeLessThan(500);
+      expect(closeResult.code).toBe(4401);
+      expect(closeResult.reason).toBe("Session revoked");
+
+      expect(
+        prdServer.getSessionManager().isDeviceRevoked(revokedDeviceId),
+      ).toBe(true);
+
+      // Stale reconnection attempt via API returns session_revoked
+      const staleRes = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/api/chat`,
+        {
+          headers: {
+            cookie: `ag_device_id=${revokedDeviceId}`,
+            accept: "application/json",
+          },
+        },
+      );
+      expect(staleRes.statusCode).toBe(401);
+      const staleJson = (await staleRes.body.json()) as any;
+      expect(staleJson.error).toBe("session_revoked");
+      expect(staleJson.revoked).toBe(true);
+
+      // Stale reconnection attempt with previously consumed key returns key_consumed
+      const consumedKeyRes = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=${key}`,
+        {
+          headers: {
+            cookie: `ag_device_id=${revokedDeviceId}`,
+            accept: "application/json",
+          },
+        },
+      );
+      expect(consumedKeyRes.statusCode).toBe(401);
+      const consumedJson = (await consumedKeyRes.body.json()) as any;
+      expect(consumedJson.error).toBe("key_consumed");
+    });
+
+    it("AC-03: composite rate limiting (IP + deviceId) isolates failed attempts per device", () => {
+      const limiter = prdServer.getRateLimiter();
+      const ip = "192.168.1.100";
+      const dev1 = "dev_ratelimit_1";
+      const dev2 = "dev_ratelimit_2";
+
+      const key1 = AuthRateLimiter.buildKey(ip, dev1);
+      const key2 = AuthRateLimiter.buildKey(ip, dev2);
+
+      // Exhaust attempts on dev1
+      for (let i = 0; i < 5; i++) {
+        limiter.recordFailure(key1);
+      }
+
+      expect(limiter.isRateLimited(key1)).toBe(true);
+      // dev2 on the same IP must NOT be rate limited
+      expect(limiter.isRateLimited(key2)).toBe(false);
+    });
+
+    it("AC-04: revoked device recovery via fresh host pairing key clears revocation and regenerates key", async () => {
+      const initialKey = prdServer.getPairingKey();
+      const deviceId = "dev_recovery_test";
+
+      // Connect and pair device
+      await undiciRequest(`http://127.0.0.1:${prdPort}/?pair=${initialKey}`, {
+        headers: { cookie: `ag_device_id=${deviceId}` },
+      });
+
+      // Revoke device
+      prdServer.revokeDevice(deviceId);
+      expect(prdServer.getSessionManager().isDeviceRevoked(deviceId)).toBe(
+        true,
+      );
+
+      // Host has active fresh key
+      const freshKey = prdServer.getPairingKey();
+      expect(freshKey).not.toBe(initialKey);
+
+      // Revoked device submits fresh key
+      const recoveryRes = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=${freshKey}`,
+        {
+          headers: {
+            cookie: `ag_device_id=${deviceId}`,
+            accept: "application/json",
+          },
+        },
+      );
+      expect(recoveryRes.statusCode).toBe(200);
+
+      // Revocation tombstone cleared
+      expect(prdServer.getSessionManager().isDeviceRevoked(deviceId)).toBe(
+        false,
+      );
+
+      // freshKey is now retired and placed in consumed registry
+      expect(prdServer.isKeyConsumed(freshKey)).toBe(true);
+
+      // Host pairing key immediately regenerated to KEY-NEXT
+      const nextKey = prdServer.getPairingKey();
+      expect(nextKey).not.toBe(freshKey);
+      expect(nextKey).not.toBe(initialKey);
+
+      // Restored session is active and authenticated
+      const restoredSession = prdServer
+        .getSessionManager()
+        .getSessionByDeviceId(deviceId);
+      expect(restoredSession).toBeDefined();
+      expect(restoredSession?.authenticated).toBe(true);
+    });
+
+    it("WebSocket pairing: consumes key, auto-regenerates, and closes with 4401 on revoke", async () => {
+      const key = prdServer.getPairingKey();
+      const wsDeviceId = "dev_ws_pair_test";
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${prdPort}/connect-websocket?pair=${key}`,
+        {
+          headers: {
+            "x-codeium-csrf-token": mockUpstream.getCsrfToken(),
+            cookie: `ag_device_id=${wsDeviceId}`,
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.on("open", () => resolve());
+        ws.on("error", reject);
+      });
+
+      // Key is consumed and host key rotated
+      expect(prdServer.isKeyConsumed(key)).toBe(true);
+      expect(prdServer.getPairingKey()).not.toBe(key);
+
+      // Revoke device closes WS with 4401
+      const closePromise = new Promise<{ code: number; reason: string }>(
+        (resolve) => {
+          ws.on("close", (code, reason) => {
+            resolve({ code, reason: reason.toString() });
+          });
+        },
+      );
+
+      prdServer.revokeDevice(wsDeviceId);
+      const closeEv = await closePromise;
+      expect(closeEv.code).toBe(4401);
+      expect(closeEv.reason).toBe("Session revoked");
     });
   });
 });

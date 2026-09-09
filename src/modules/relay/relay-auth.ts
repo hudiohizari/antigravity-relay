@@ -16,39 +16,47 @@ export class AuthRateLimiter {
     this.windowMs = options?.windowMs ?? 60000;
   }
 
-  public isRateLimited(ip: string): boolean {
-    const record = this.attempts.get(ip);
+  public static buildKey(ip: string, deviceId?: string): string {
+    return deviceId ? `${ip}:${deviceId}` : ip;
+  }
+
+  public isRateLimited(keyOrIp: string, deviceId?: string): boolean {
+    const key = deviceId ? `${keyOrIp}:${deviceId}` : keyOrIp;
+    const record = this.attempts.get(key);
     if (!record) {
       return false;
     }
 
     const now = Date.now();
     if (now - record.firstAttemptAt > this.windowMs) {
-      this.attempts.delete(ip);
+      this.attempts.delete(key);
       return false;
     }
 
     return record.count >= this.maxAttempts;
   }
 
-  public recordFailure(ip: string): void {
+  public recordFailure(keyOrIp: string, deviceId?: string): void {
+    const key = deviceId ? `${keyOrIp}:${deviceId}` : keyOrIp;
     const now = Date.now();
-    const record = this.attempts.get(ip);
+    const record = this.attempts.get(key);
 
     if (!record || now - record.firstAttemptAt > this.windowMs) {
-      this.attempts.set(ip, { count: 1, firstAttemptAt: now });
+      this.attempts.set(key, { count: 1, firstAttemptAt: now });
     } else {
       record.count += 1;
     }
   }
 
-  public recordSuccess(ip: string): void {
-    this.attempts.delete(ip);
+  public recordSuccess(keyOrIp: string, deviceId?: string): void {
+    const key = deviceId ? `${keyOrIp}:${deviceId}` : keyOrIp;
+    this.attempts.delete(key);
   }
 
-  public reset(ip?: string): void {
-    if (ip) {
-      this.attempts.delete(ip);
+  public reset(keyOrIp?: string, deviceId?: string): void {
+    if (keyOrIp) {
+      const key = deviceId ? `${keyOrIp}:${deviceId}` : keyOrIp;
+      this.attempts.delete(key);
     } else {
       this.attempts.clear();
     }

@@ -190,6 +190,13 @@ const en = {
     linkCopied: "Pairing link copied to clipboard",
     serverInactive: "Relay Server Inactive",
     startServerToPair: "Start relay server to enable mobile pairing",
+    keySingleUseBadge: "Single-Use Per Device",
+    autoRegeneratedNotice:
+      "Pairing key auto-regenerated after device connection",
+    keyConsumedError:
+      "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+    keyInvalidError:
+      "Invalid pairing key. Please verify the active key on your desktop dashboard.",
   },
   sessions: {
     title: "Connected Phone Sessions",
@@ -234,6 +241,31 @@ const en = {
       "Scan the pairing QR code above with your smartphone to tether your first remote session.",
     revokedToast: "Session for {{device}} has been revoked",
     revokeFailed: "Failed to revoke session: {{error}}",
+  },
+  revocation: {
+    screenHeading: "Access Revoked by Host",
+    screenDescription:
+      "This device session has been terminated by the desktop host. Please enter a valid pairing key to re-establish your connection.",
+    overlayBadge: "Disconnected by Host",
+    inputLabel: "New Pairing Key",
+    inputPlaceholder: "Enter fresh pairing key",
+    reconnectButton: "Reconnect Device",
+    reconnecting: "Authenticating...",
+    reconnectedSuccess: "Device re-connected successfully!",
+    reconnectButtonAria:
+      "Submit new pairing key to reconnect this revoked device",
+    staleKeyError:
+      "The previous pairing key is no longer valid. Enter the newly generated key shown on the desktop dashboard.",
+    emptyKeyError: "Please enter a pairing key before submitting.",
+    rateLimitedError:
+      "Too many pairing attempts. Please wait a moment before trying again.",
+    networkError:
+      "Unable to reach the relay server. Please check your network connection.",
+    syncingSiblingTabs:
+      "Device re-paired successfully. Synchronizing open tabs...",
+    fallbackTitle: "Session Revoked - Antigravity Relay",
+    fallbackNotice:
+      "Session Revoked: Access was revoked by the desktop host. Please enter a valid pairing key to re-establish your connection.",
   },
   editionSelection: {
     title: "Choose Your Antigravity Edition",

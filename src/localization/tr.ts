@@ -190,6 +190,13 @@ const tr = {
     serverInactive: "Relay Sunucusu Etkin Değil",
     startServerToPair:
       "Mobil eşleştirmeyi etkinleştirmek için relay sunucusunu başlatın",
+    keySingleUseBadge: "Cihaz Başına Tek Kullanımlık",
+    autoRegeneratedNotice:
+      "Cihaz bağlantısından sonra eşleştirme anahtarı otomatik olarak yenilendi",
+    keyConsumedError:
+      "Bu eşleştirme anahtarı başka bir cihaz tarafından kullanıldı. Lütfen masaüstü ana bilgisayarından yeni bir anahtar alın.",
+    keyInvalidError:
+      "Geçersiz eşleştirme anahtarı. Lütfen masaüstü panelindeki etkin anahtarı doğrulayın.",
   },
   sessions: {
     title: "Bağlı Telefon Oturumları",
@@ -234,6 +241,31 @@ const tr = {
       "İlk uzaktan oturumunuzu bağlamak için yukarıdaki eşleştirme QR kodunu akıllı telefonunuzla tarayın.",
     revokedToast: "{{device}} için oturum iptal edildi",
     revokeFailed: "Oturum iptal edilemedi: {{error}}",
+  },
+  revocation: {
+    screenHeading: "Erişim Ana Bilgisayar Tarafından İptal Edildi",
+    screenDescription:
+      "Bu cihaz oturumu masaüstü ana bilgisayarı tarafından sonlandırıldı. Bağlantınızı yeniden kurmak için lütfen geçerli bir eşleştirme anahtarı girin.",
+    overlayBadge: "Ana Bilgisayar Tarafından Bağlantı Kesildi",
+    inputLabel: "Yeni Eşleştirme Anahtarı",
+    inputPlaceholder: "Yeni eşleştirme anahtarını girin",
+    reconnectButton: "Cihazı Yeniden Bağla",
+    reconnecting: "Kimlik doğrulanıyor...",
+    reconnectedSuccess: "Cihaz başarıyla yeniden bağlandı!",
+    reconnectButtonAria:
+      "İptal edilen bu cihazı yeniden bağlamak için yeni eşleştirme anahtarını gönderin",
+    staleKeyError:
+      "Önceki eşleştirme anahtarı artık geçerli değil. Masaüstü panelinde gösterilen yeni oluşturulan anahtarı girin.",
+    emptyKeyError: "Lütfen göndermeden önce bir eşleştirme anahtarı girin.",
+    rateLimitedError:
+      "Çok fazla eşleştirme denemesi. Lütfen tekrar denemeden önce bir süre bekleyin.",
+    networkError:
+      "Relay sunucusuna ulaşılamıyor. Lütfen ağ bağlantınızı kontrol edin.",
+    syncingSiblingTabs:
+      "Cihaz başarıyla yeniden eşleştirildi. Açık sekmeler senkronize ediliyor...",
+    fallbackTitle: "Oturum İptal Edildi - Antigravity Relay",
+    fallbackNotice:
+      "Oturum İptal Edildi: Erişim masaüstü ana bilgisayarı tarafından iptal edildi. Bağlantınızı yeniden kurmak için lütfen geçerli bir eşleştirme anahtarı girin.",
   },
   editionSelection: {
     title: "Antigravity Sürümünüzü Seçin",

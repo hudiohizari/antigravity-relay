@@ -963,4 +963,105 @@ describe("RelayDashboard Component", () => {
       );
     });
   });
+
+  it("renders Single-Use Per Device badge adjacent to Pairing Key label in Ephemeral Pairing Token section", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const singleUseBadge = await screen.findByText("pairing.keySingleUseBadge");
+    expect(singleUseBadge).toBeDefined();
+
+    const badgeContainer = singleUseBadge.closest(".border-emerald-300");
+    expect(badgeContainer).not.toBeNull();
+    expect(badgeContainer?.className).toContain("bg-emerald-500/10");
+    expect(badgeContainer?.className).toContain("text-emerald-600");
+  });
+
+  it("displays transient auto-regeneration notice and input pulse ring when server pairing key rotates", async () => {
+    vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
+      isRunning: true,
+      port: 4040,
+      host: "127.0.0.1",
+      pairingKey: "KEY-INITIAL-111",
+      activeSessions: 0,
+      isBuffering: false,
+      upstream: {
+        state: "connected",
+        targetHost: "127.0.0.1",
+        targetPort: 4040,
+        reconnectAttempts: 0,
+        bufferedCommandCount: 0,
+        flushedCommandCount: 0,
+      },
+      startedAt: Date.now() - 30000,
+    });
+
+    const testQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    const { rerender } = render(
+      <QueryClientProvider client={testQueryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    // Wait for initial query resolution with KEY-INITIAL-111
+    await waitFor(() => {
+      const input = screen.getByLabelText(
+        "pairing.tokenLabel",
+      ) as HTMLInputElement;
+      expect(input.value).toBe("KEY-INITIAL-111");
+    });
+    expect(screen.queryByText("pairing.autoRegeneratedNotice")).toBeNull();
+
+    // Client connects: server rotates pairingKey to KEY-ROTATED-222
+    vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
+      isRunning: true,
+      port: 4040,
+      host: "127.0.0.1",
+      pairingKey: "KEY-ROTATED-222",
+      activeSessions: 1,
+      isBuffering: false,
+      upstream: {
+        state: "connected",
+        targetHost: "127.0.0.1",
+        targetPort: 4040,
+        reconnectAttempts: 0,
+        bufferedCommandCount: 0,
+        flushedCommandCount: 0,
+      },
+      startedAt: Date.now() - 30000,
+    });
+
+    // Refetch query to trigger status update
+    await testQueryClient.refetchQueries({ queryKey: ["relay", "status"] });
+
+    await waitFor(() => {
+      expect(screen.getByText("pairing.autoRegeneratedNotice")).toBeDefined();
+    });
+
+    // Verify pulse highlight is applied to the pairing token input
+    const tokenInput = screen.getByLabelText("pairing.tokenLabel");
+    expect(tokenInput.className).toContain("ring-2 ring-emerald-500/50");
+  });
+
+  it("enforces responsive wrapping down to 320px in ephemeral pairing section", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const singleUseBadge = await screen.findByText("pairing.keySingleUseBadge");
+    const container = singleUseBadge.closest(".flex-wrap");
+    expect(container).not.toBeNull();
+    expect(container?.className).toContain("min-w-0");
+
+    const tokenInput = screen.getByLabelText("pairing.tokenLabel");
+    expect(tokenInput.className).toContain("min-w-0");
+  });
 });

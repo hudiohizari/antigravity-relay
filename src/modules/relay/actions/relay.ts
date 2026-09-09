@@ -25,6 +25,14 @@ export async function revokeRelaySession(sessionId: string): Promise<boolean> {
   return ipc.client.relay.revokeSession({ sessionId });
 }
 
+export async function revokeDevice(deviceId: string): Promise<boolean> {
+  return ipc.client.relay.revokeDevice({ deviceId });
+}
+
+export async function revokeRelayDevice(deviceId: string): Promise<boolean> {
+  return ipc.client.relay.revokeDevice({ deviceId });
+}
+
 export async function createPairingToken(): Promise<{
   sessionId: string;
   token: string;

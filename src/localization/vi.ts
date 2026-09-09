@@ -191,6 +191,13 @@ const vi = {
     linkCopied: "Đã sao chép liên kết ghép nối vào khay nhớ tạm",
     serverInactive: "Máy chủ Relay không hoạt động",
     startServerToPair: "Khởi động máy chủ relay để bật ghép nối điện thoại",
+    keySingleUseBadge: "Dùng một lần cho mỗi thiết bị",
+    autoRegeneratedNotice:
+      "Khóa ghép nối được tạo lại tự động sau khi thiết bị kết nối",
+    keyConsumedError:
+      "Khóa ghép nối này đã được sử dụng bởi thiết bị khác. Vui lòng lấy khóa mới từ máy chủ desktop.",
+    keyInvalidError:
+      "Khóa ghép nối không hợp lệ. Vui lòng kiểm tra khóa đang hoạt động trên bảng điều khiển desktop.",
   },
   sessions: {
     title: "Phiên điện thoại đã kết nối",
@@ -235,6 +242,31 @@ const vi = {
       "Quét mã QR ghép nối ở trên bằng điện thoại thông minh để liên kết phiên từ xa đầu tiên.",
     revokedToast: "Phiên cho {{device}} đã bị thu hồi",
     revokeFailed: "Không thể thu hồi phiên: {{error}}",
+  },
+  revocation: {
+    screenHeading: "Quyền truy cập đã bị máy chủ thu hồi",
+    screenDescription:
+      "Phiên thiết bị này đã bị chấm dứt bởi máy chủ desktop. Vui lòng nhập khóa ghép nối hợp lệ để thiết lập lại kết nối.",
+    overlayBadge: "Đã ngắt kết nối bởi máy chủ",
+    inputLabel: "Khóa ghép nối mới",
+    inputPlaceholder: "Nhập khóa ghép nối mới",
+    reconnectButton: "Kết nối lại thiết bị",
+    reconnecting: "Đang xác thực...",
+    reconnectedSuccess: "Đã kết nối lại thiết bị thành công!",
+    reconnectButtonAria:
+      "Gửi khóa ghép nối mới để kết nối lại thiết bị đã bị thu hồi này",
+    staleKeyError:
+      "Khóa ghép nối trước đó không còn hợp lệ. Hãy nhập khóa mới hiển thị trên bảng điều khiển desktop.",
+    emptyKeyError: "Vui lòng nhập khóa ghép nối trước khi gửi.",
+    rateLimitedError:
+      "Quá nhiều lần thử ghép nối. Vui lòng đợi một lát trước khi thử lại.",
+    networkError:
+      "Không thể kết nối đến máy chủ relay. Vui lòng kiểm tra kết nối mạng của bạn.",
+    syncingSiblingTabs:
+      "Đã ghép nối lại thiết bị thành công. Đang đồng bộ hóa các tab đang mở...",
+    fallbackTitle: "Phiên đã bị thu hồi - Antigravity Relay",
+    fallbackNotice:
+      "Phiên đã bị thu hồi: Quyền truy cập đã bị máy chủ desktop thu hồi. Vui lòng nhập khóa ghép nối hợp lệ để thiết lập lại kết nối.",
   },
   editionSelection: {
     title: "Chọn phiên bản Antigravity",

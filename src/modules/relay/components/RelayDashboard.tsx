@@ -214,16 +214,31 @@ export const RelayDashboard: React.FC = () => {
     return recommended?.address || localIps[0].address;
   }, [localIps]);
 
+  const [showAutoRegenBanner, setShowAutoRegenBanner] = useState(false);
+  const prevServerPairingKeyRef = React.useRef<string | undefined>(undefined);
+
   const serverPairingKey = relayStatus?.pairingKey;
   useEffect(() => {
-    if (serverPairingKey && serverPairingKey !== pairingToken) {
+    if (serverPairingKey) {
+      if (
+        prevServerPairingKeyRef.current !== undefined &&
+        prevServerPairingKeyRef.current !== serverPairingKey
+      ) {
+        setShowAutoRegenBanner(true);
+        const timer = setTimeout(() => setShowAutoRegenBanner(false), 4000);
+        setPairingToken(serverPairingKey);
+        prevServerPairingKeyRef.current = serverPairingKey;
+        return () => clearTimeout(timer);
+      }
+      prevServerPairingKeyRef.current = serverPairingKey;
       setPairingToken(serverPairingKey);
     }
-  }, [serverPairingKey, pairingToken]);
+  }, [serverPairingKey]);
 
   const regenerateKeyMutation = useMutation({
     mutationFn: regeneratePairingKey,
     onSuccess: (newKey) => {
+      prevServerPairingKeyRef.current = newKey;
       setPairingToken(newKey);
       queryClient.invalidateQueries({ queryKey: ["relay", "status"] });
     },
@@ -1029,6 +1044,18 @@ export const RelayDashboard: React.FC = () => {
               </div>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-5">
+              {/* Transient Auto-Regen Indicator Banner */}
+              {showAutoRegenBanner && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium transition-all duration-300"
+                >
+                  <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                  <span>{t("pairing.autoRegeneratedNotice")}</span>
+                </div>
+              )}
+
               {/* QR Code */}
               <div className="relative p-4 rounded-xl border bg-white dark:bg-zinc-950 shadow-sm overflow-hidden">
                 <div
@@ -1140,18 +1167,27 @@ export const RelayDashboard: React.FC = () => {
                   !isRelayRunning ? "opacity-50" : ""
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                    <Shield className="h-3.5 w-3.5 text-primary" />
-                    {t("pairing.tokenLabel")}
-                  </label>
+                <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 shrink-0">
+                      <Shield className="h-3.5 w-3.5 text-primary" />
+                      {t("pairing.tokenLabel")}
+                    </label>
+                    <Badge
+                      variant="outline"
+                      className="gap-1 px-2 py-0.5 text-[10px] font-medium bg-emerald-500/10 text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800 shrink-0"
+                    >
+                      <Shield className="h-3 w-3" />
+                      <span>{t("pairing.keySingleUseBadge")}</span>
+                    </Badge>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
                     disabled={
                       !isRelayRunning || regenerateKeyMutation.isPending
                     }
-                    className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                    className="h-7 text-xs text-muted-foreground hover:text-foreground shrink-0"
                     onClick={() => regenerateKeyMutation.mutate()}
                   >
                     <RotateCw
@@ -1169,7 +1205,12 @@ export const RelayDashboard: React.FC = () => {
                     disabled={!isRelayRunning}
                     value={pairingToken}
                     type="password"
-                    className="font-mono text-xs select-all bg-muted/30 min-w-0 flex-1"
+                    aria-label={t("pairing.tokenLabel")}
+                    className={cn(
+                      "font-mono text-xs select-all bg-muted/30 min-w-0 flex-1 transition-all duration-300",
+                      showAutoRegenBanner &&
+                        "ring-2 ring-emerald-500/50 border-emerald-500",
+                    )}
                   />
                   <Button
                     variant="outline"
