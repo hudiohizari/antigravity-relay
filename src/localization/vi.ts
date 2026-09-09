@@ -6,6 +6,7 @@ const vi = {
     unknown: "Không rõ",
     notAvailable: "Không có",
     openMenu: "Mở menu",
+    cancel: "Hủy",
   },
   status: {
     checking: "Đang kiểm tra trạng thái...",
@@ -30,6 +31,7 @@ const vi = {
     retry: "Thử lại",
     details: "Chi tiết",
     openLogs: "Mở thư mục log",
+    cancel: "Hủy",
   },
   update: {
     title: "Cập nhật",

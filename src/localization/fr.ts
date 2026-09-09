@@ -9,8 +9,10 @@ const fr = {
     unknown: "Inconnu",
     notAvailable: "N/A",
     openMenu: "Ouvrir le menu",
+    cancel: "Annuler",
   },
   status: {
+    ...en.status,
     checking: "Verification du statut...",
     running: "Antigravity fonctionne en arriere-plan",
     stopped: "Service Antigravity arrete",
@@ -33,6 +35,7 @@ const fr = {
     retry: "Reessayer",
     details: "Details",
     openLogs: "Ouvrir le dossier des journaux",
+    cancel: "Annuler",
   },
   update: {
     title: "Mises a jour",

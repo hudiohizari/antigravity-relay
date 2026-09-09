@@ -132,9 +132,11 @@ describe("Cloudflare Tunnel Subprocess Supervisor", () => {
 
     beforeEach(() => {
       spawnedCommands = [];
+      let nextPid = 12345;
       const mockSpawn = (cmd: string, args: string[]) => {
         spawnedCommands.push({ cmd, args });
         currentMockProcess = new MockChildProcess();
+        currentMockProcess.pid = nextPid++;
         return currentMockProcess;
       };
 
@@ -506,6 +508,110 @@ describe("Cloudflare Tunnel Subprocess Supervisor", () => {
       });
       const status = await timeoutManager.start();
       expect(status.state).toBe("starting");
+    });
+
+    it("should restart running tunnel process, transition states, terminate old process, and spawn new process", async () => {
+      const states: string[] = [];
+      manager.onStatusUpdated((s) => states.push(s.state));
+
+      const startPromise = manager.start();
+      setTimeout(() => {
+        currentMockProcess.simulateOutput(
+          "stderr",
+          "https://initial-tunnel.trycloudflare.com\n",
+        );
+      }, 10);
+      const initialStatus = await startPromise;
+      expect(initialStatus.state).toBe("connected");
+      expect(initialStatus.pid).toBe(12345);
+      const firstProc = currentMockProcess;
+
+      const restartPromise = manager.restart();
+      setTimeout(() => {
+        currentMockProcess.simulateOutput(
+          "stderr",
+          "https://restarted-tunnel.trycloudflare.com\n",
+        );
+      }, 15);
+
+      const restartedStatus = await restartPromise;
+      expect(firstProc.killed).toBe(true);
+      expect(firstProc.killCalls).toContain("SIGTERM");
+      expect(restartedStatus.state).toBe("connected");
+      expect(restartedStatus.publicUrl).toBe(
+        "https://restarted-tunnel.trycloudflare.com",
+      );
+      expect(restartedStatus.pid).toBe(12346);
+      expect(states).toContain("stopped");
+      expect(states).toContain("starting");
+      expect(states).toContain("connected");
+    });
+
+    it("should restart with configuration overrides", async () => {
+      const startPromise = manager.start();
+      setTimeout(() => {
+        currentMockProcess.simulateOutput(
+          "stderr",
+          "https://first.trycloudflare.com\n",
+        );
+      }, 10);
+      await startPromise;
+
+      const restartPromise = manager.restart({ targetPort: 8080 });
+      setTimeout(() => {
+        currentMockProcess.simulateOutput(
+          "stderr",
+          "https://second.trycloudflare.com\n",
+        );
+      }, 10);
+      const status = await restartPromise;
+      expect(status.state).toBe("connected");
+      const lastSpawn = spawnedCommands[spawnedCommands.length - 1];
+      expect(lastSpawn.args).toContain("http://127.0.0.1:8080");
+    });
+
+    it("should restart cleanly when process is currently stopped", async () => {
+      expect(manager.getStatus().state).toBe("stopped");
+
+      const restartPromise = manager.restart();
+      setTimeout(() => {
+        currentMockProcess.simulateOutput(
+          "stderr",
+          "https://from-stopped.trycloudflare.com\n",
+        );
+      }, 10);
+      const status = await restartPromise;
+      expect(status.state).toBe("connected");
+      expect(status.publicUrl).toBe("https://from-stopped.trycloudflare.com");
+    });
+
+    it("should escalate to SIGKILL during restart if stubborn process ignores SIGTERM", async () => {
+      const stubbornRestartManager = new TunnelManager({
+        escalationTimeoutMs: 30,
+        spawnFn: () => {
+          const proc = new MockChildProcess();
+          proc.kill = vi.fn((sig) => {
+            proc.killCalls.push(sig);
+            if (sig === "SIGKILL") {
+              setTimeout(() => proc.emit("exit", 0, "SIGKILL"), 5);
+            }
+            return true;
+          });
+          setTimeout(() => {
+            proc.simulateOutput(
+              "stderr",
+              "https://stubborn-restart.trycloudflare.com\n",
+            );
+          }, 5);
+          return proc;
+        },
+      });
+
+      await stubbornRestartManager.start();
+      const restartPromise = stubbornRestartManager.restart();
+      const status = await restartPromise;
+      expect(status.state).toBe("connected");
+      await stubbornRestartManager.stop();
     });
   });
 });

@@ -529,4 +529,285 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(() => relayServer.dispose()).not.toThrow();
     });
   });
+
+  describe("Phone Session Tracking and Revocation in Reverse Proxy", () => {
+    it("registers a phone session on HTTP root request with client IP and User-Agent", async () => {
+      const initialCount = relayServer
+        .getSessionManager()
+        .getActiveSessions().length;
+      expect(initialCount).toBe(0);
+
+      const res = await fetch(`http://127.0.0.1:${relayPort}/`, {
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)",
+          "x-forwarded-for": "192.168.1.55",
+        },
+      });
+      expect(res.status).toBe(200);
+
+      const sessions = relayServer.getSessionManager().getActiveSessions();
+      expect(sessions).toHaveLength(1);
+      const session = sessions[0];
+      expect(session.clientIp).toBe("192.168.1.55");
+      expect(session.userAgent).toContain("iPhone");
+      expect(session.socketState).toBe("disconnected");
+      expect(session.authenticated).toBe(true);
+    });
+
+    it("registers a phone session with explicit pairing token from query parameter", async () => {
+      const res = await fetch(
+        `http://127.0.0.1:${relayPort}/?pair=token-xyz-123`,
+        {
+          headers: {
+            "user-agent": "AndroidPhone/1.0",
+          },
+        },
+      );
+      expect(res.status).toBe(200);
+
+      const session = relayServer
+        .getSessionManager()
+        .getSessionByToken("token-xyz-123");
+      expect(session).toBeDefined();
+      expect(session?.token).toBe("token-xyz-123");
+      expect(session?.userAgent).toBe("AndroidPhone/1.0");
+      expect(session?.authenticated).toBe(true);
+    });
+
+    it("updates session activity on repeated HTTP requests without creating duplicate sessions", async () => {
+      await fetch(`http://127.0.0.1:${relayPort}/?pair=repeat-token`, {
+        headers: { "user-agent": "MobileClient/1.0" },
+      });
+      const firstSession = relayServer
+        .getSessionManager()
+        .getSessionByToken("repeat-token")!;
+      const initialActiveAt = firstSession.lastActiveAt;
+
+      await new Promise((r) => setTimeout(r, 15));
+
+      await fetch(`http://127.0.0.1:${relayPort}/?pair=repeat-token`, {
+        headers: { "user-agent": "MobileClient/1.0" },
+      });
+
+      expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
+        1,
+      );
+      const updatedSession = relayServer
+        .getSessionManager()
+        .getSessionByToken("repeat-token")!;
+      expect(updatedSession.lastActiveAt).toBeGreaterThan(initialActiveAt);
+    });
+
+    it("registers and binds client WebSocket on /connect-websocket, transitioning socketState to connected", async () => {
+      const csrfToken = mockUpstream.getCsrfToken();
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket?pair=ws-session-token`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+            "user-agent": "CustomMobileApp/3.0",
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.on("open", () => resolve());
+        ws.on("error", reject);
+      });
+
+      const session = relayServer
+        .getSessionManager()
+        .getSessionByToken("ws-session-token");
+      expect(session).toBeDefined();
+      expect(session?.socketState).toBe("connected");
+      expect(session?.userAgent).toBe("CustomMobileApp/3.0");
+
+      ws.close();
+      await new Promise<void>((resolve) => ws.on("close", () => resolve()));
+    });
+
+    it("updates session lastActiveAt on message frames flowing through WebSocket bridge", async () => {
+      const csrfToken = mockUpstream.getCsrfToken();
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket?pair=activity-token`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.on("open", () => resolve());
+        ws.on("error", reject);
+      });
+
+      const session = relayServer
+        .getSessionManager()
+        .getSessionByToken("activity-token")!;
+      const beforeMessageAt = session.lastActiveAt;
+
+      await new Promise((r) => setTimeout(r, 15));
+
+      await new Promise<void>((resolve, reject) => {
+        ws.send("message-from-client");
+        ws.on("message", (data) => {
+          expect(data.toString()).toBe("message-from-client");
+          resolve();
+        });
+        ws.on("error", reject);
+      });
+
+      expect(session.lastActiveAt).toBeGreaterThan(beforeMessageAt);
+
+      ws.close();
+      await new Promise<void>((resolve) => ws.on("close", () => resolve()));
+    });
+
+    it("transitions session socketState to disconnected when client WebSocket closes", async () => {
+      const csrfToken = mockUpstream.getCsrfToken();
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket?pair=disconnect-token`,
+        {
+          headers: { "x-codeium-csrf-token": csrfToken },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.on("open", () => resolve());
+        ws.on("error", reject);
+      });
+
+      const session = relayServer
+        .getSessionManager()
+        .getSessionByToken("disconnect-token")!;
+      expect(session.socketState).toBe("connected");
+
+      ws.close(1000, "Normal disconnection");
+      await new Promise<void>((resolve) => ws.on("close", () => resolve()));
+
+      await new Promise<void>((resolve) => {
+        if (session.socketState === "disconnected") return resolve();
+        const check = setInterval(() => {
+          if (session.socketState === "disconnected") {
+            clearInterval(check);
+            resolve();
+          }
+        }, 10);
+      });
+
+      expect(session.socketState).toBe("disconnected");
+      expect(
+        relayServer.getSessionManager().getActiveSessions(),
+      ).toContainEqual(session);
+    });
+
+    it("closes client WebSocket with code 4401 and removes session upon revocation", async () => {
+      const csrfToken = mockUpstream.getCsrfToken();
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket?pair=revocation-token`,
+        {
+          headers: { "x-codeium-csrf-token": csrfToken },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.on("open", () => resolve());
+        ws.on("error", reject);
+      });
+
+      const session = relayServer
+        .getSessionManager()
+        .getSessionByToken("revocation-token")!;
+      expect(session.socketState).toBe("connected");
+
+      let receivedCloseCode: number | null = null;
+      let receivedCloseReason: string | null = null;
+
+      const closePromise = new Promise<void>((resolve) => {
+        ws.on("close", (code, reason) => {
+          receivedCloseCode = code;
+          receivedCloseReason = reason.toString();
+          resolve();
+        });
+      });
+
+      const revoked = relayServer
+        .getSessionManager()
+        .revokeSession(session.sessionId);
+      expect(revoked).toBe(true);
+
+      await closePromise;
+      expect(receivedCloseCode).toBe(4401);
+      expect(receivedCloseReason).toBe("Session revoked");
+
+      expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
+        0,
+      );
+      expect(
+        relayServer.getSessionManager().getSession(session.sessionId),
+      ).toBeUndefined();
+    });
+
+    it("supports multiple concurrent phone sessions independently", async () => {
+      const csrfToken = mockUpstream.getCsrfToken();
+      const ws1 = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket?pair=phone-1`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+            "user-agent": "Phone1",
+          },
+        },
+      );
+      const ws2 = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket?pair=phone-2`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+            "user-agent": "Phone2",
+          },
+        },
+      );
+
+      await Promise.all([
+        new Promise<void>((r, rej) => {
+          ws1.on("open", () => r());
+          ws1.on("error", rej);
+        }),
+        new Promise<void>((r, rej) => {
+          ws2.on("open", () => r());
+          ws2.on("error", rej);
+        }),
+      ]);
+
+      const active = relayServer.getSessionManager().getActiveSessions();
+      expect(active).toHaveLength(2);
+
+      const session1 = relayServer
+        .getSessionManager()
+        .getSessionByToken("phone-1")!;
+      const session2 = relayServer
+        .getSessionManager()
+        .getSessionByToken("phone-2")!;
+      expect(session1.socketState).toBe("connected");
+      expect(session2.socketState).toBe("connected");
+
+      const closePromise1 = new Promise<number>((resolve) => {
+        ws1.on("close", (code) => resolve(code));
+      });
+      relayServer.getSessionManager().revokeSession(session1.sessionId);
+      const closeCode1 = await closePromise1;
+      expect(closeCode1).toBe(4401);
+
+      expect(relayServer.getSessionManager().getActiveSessions()).toHaveLength(
+        1,
+      );
+      expect(session2.socketState).toBe("connected");
+
+      ws2.close();
+      await new Promise<void>((r) => ws2.on("close", () => r()));
+    });
+  });
 });

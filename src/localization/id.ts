@@ -9,12 +9,16 @@ const id = {
     unknown: "Tidak Diketahui",
     notAvailable: "T/A",
     openMenu: "Buka menu",
+    cancel: "Batal",
   },
   status: {
     checking: "Memeriksa status...",
     running: "Antigravity berjalan di latar belakang",
     stopped: "Layanan Antigravity berhenti",
     services: "Layanan",
+    antigravity: "Runtime Antigravity",
+    relay: "Server Relay",
+    tunnel: "Tunnel Cloudflare",
     dashboard_title: "Status layanan",
     open_dashboard: "Buka status layanan",
     checking_short: "Memeriksa...",
@@ -33,6 +37,7 @@ const id = {
     retry: "Coba Lagi",
     details: "Rincian",
     openLogs: "Buka Direktori Log",
+    cancel: "Batal",
   },
   nav: {
     accounts: "Akun",
@@ -80,6 +85,11 @@ const id = {
     urlCopied: "URL tunnel disalin ke papan klip",
     restartTunnel: "Mulai Ulang Tunnel",
     restarting: "Memulai ulang...",
+    stop: "Hentikan Tunnel",
+    stopping: "Menghentikan...",
+    start: "Mulai Tunnel",
+    starting: "Memulai...",
+    restartFailed: "Gagal memulai ulang tunnel: {{error}}",
     pid: "PID Proses: {{pid}}",
     startFailed: "Gagal memulai tunnel Cloudflare: {{error}}",
     stopFailed: "Gagal menghentikan tunnel Cloudflare: {{error}}",
@@ -119,7 +129,7 @@ const id = {
     colActions: "Tindakan",
     revoke: "Cabut",
     revoking: "Mencabut...",
-    revokeTooltip: "Segera hentikan sesi dan putuskan koneksi soket",
+    revokeTooltip: "Hentikan sesi dan putuskan koneksi",
     confirmRevokeTitle: "Cabut Sesi Seluler?",
     confirmRevokeMessage:
       "Yakin ingin mencabut sesi untuk {{device}} ({{ip}})? Koneksi seluler akan segera diputuskan.",
@@ -127,6 +137,10 @@ const id = {
     emptyTitle: "Tidak ada perangkat seluler yang terhubung",
     emptyDescription:
       "Pindai kode QR pemasangan di atas dengan ponsel pintar Anda untuk menautkan sesi pertama.",
+    statusConnected: "Aktif",
+    statusDisconnected: "Terputus",
+    unknownDevice: "Perangkat Seluler",
+    unknownBrowser: "Browser Web",
     revokedToast: "Sesi untuk {{device}} telah dicabut",
     revokeFailed: "Gagal mencabut sesi: {{error}}",
   },
@@ -159,6 +173,6 @@ const id = {
       description: "Informasi aplikasi.",
     },
   },
-};
+} satisfies typeof en;
 
 export default id;

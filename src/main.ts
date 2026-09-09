@@ -264,6 +264,27 @@ function isTrustedReleaseUrl(url: string): boolean {
   }
 }
 
+function isTrustedExternalUrl(url: string): boolean {
+  if (isTrustedReleaseUrl(url)) return true;
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
+      const hostname = parsedUrl.hostname.toLowerCase();
+      return (
+        hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname.endsWith(".trycloudflare.com") ||
+        hostname.startsWith("192.168.") ||
+        hostname.startsWith("10.") ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
+      );
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function checkWindowsUpdate(): Promise<
   Awaited<ReturnType<typeof checkManualUpdate>>
 > {
@@ -327,7 +348,7 @@ ipcMain.handle(
 );
 
 ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL_URL, async (_event, url: unknown) => {
-  if (typeof url !== "string" || !isTrustedReleaseUrl(url)) {
+  if (typeof url !== "string" || !isTrustedExternalUrl(url)) {
     logger.warn(`Blocked untrusted external URL request: ${String(url)}`);
     return;
   }
@@ -470,6 +491,13 @@ function createWindow({ startHidden }: { startHidden: boolean }) {
 
   logger.info("Window created");
   showWindowsInstallNoticeIfNeeded();
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isTrustedExternalUrl(url)) {
+      shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
 
   mainWindow.on("close", (event) => {
     if (!isQuitting) {

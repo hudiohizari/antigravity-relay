@@ -51,6 +51,7 @@ vi.mock("@/modules/relay/actions/relay", () => ({
   revokeRelaySession: vi.fn(),
   getTunnelStatus: vi.fn(),
   startTunnel: vi.fn(),
+  restartTunnel: vi.fn(),
   stopTunnel: vi.fn(),
   getTunnelUrl: vi.fn(),
 }));
@@ -104,6 +105,14 @@ describe("RelayDashboard Component", () => {
     vi.mocked(relayActions.getTunnelUrl).mockResolvedValue(
       "https://test-subdomain.trycloudflare.com",
     );
+
+    vi.mocked(relayActions.restartTunnel).mockResolvedValue({
+      state: "connected",
+      pid: 12346,
+      publicUrl: "https://test-subdomain.trycloudflare.com",
+      startedAt: Date.now(),
+      reconnectAttempts: 0,
+    });
 
     vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
       {
@@ -307,5 +316,180 @@ describe("RelayDashboard Component", () => {
     const copyButtons = screen.getAllByText("pairing.copyLink");
     const copyButton = copyButtons[copyButtons.length - 1].closest("button");
     expect(copyButton?.disabled).toBe(true);
+  });
+
+  it("renders dual restart and stop buttons when tunnel is connected", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const restartBtn = await screen.findByRole("button", {
+      name: "tunnel.restartTunnel",
+    });
+    const stopBtn = await screen.findByRole("button", {
+      name: "tunnel.stop",
+    });
+
+    expect(restartBtn).toBeDefined();
+    expect(stopBtn).toBeDefined();
+    expect(restartBtn.hasAttribute("disabled")).toBe(false);
+    expect(stopBtn.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("triggers restart tunnel action with target port when restart button is clicked", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const restartBtn = await screen.findByRole("button", {
+      name: "tunnel.restartTunnel",
+    });
+    fireEvent.click(restartBtn);
+
+    await waitFor(() => {
+      expect(relayActions.restartTunnel).toHaveBeenCalledWith({
+        targetPort: 4040,
+      });
+    });
+  });
+
+  it("triggers stop tunnel action without relaunching when stop button is clicked", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const stopBtn = await screen.findByRole("button", {
+      name: "tunnel.stop",
+    });
+    fireEvent.click(stopBtn);
+
+    await waitFor(() => {
+      expect(relayActions.stopTunnel).toHaveBeenCalled();
+      expect(relayActions.restartTunnel).not.toHaveBeenCalled();
+    });
+  });
+
+  it("disables restart button while enabling stop button when tunnel is starting", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "starting",
+      publicUrl: null,
+      pid: 12345,
+      startedAt: Date.now(),
+      reconnectAttempts: 0,
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const restartBtn = await screen.findByRole("button", {
+      name: "tunnel.restartTunnel",
+    });
+    const stopBtn = await screen.findByRole("button", {
+      name: "tunnel.stop",
+    });
+
+    expect(restartBtn.hasAttribute("disabled")).toBe(true);
+    expect(stopBtn.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("renders start tunnel button when tunnel is stopped and triggers start action", async () => {
+    vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
+      state: "stopped",
+      publicUrl: null,
+      pid: null,
+      startedAt: null,
+      reconnectAttempts: 0,
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "tunnel.restartTunnel" }),
+    ).toBeNull();
+    const startBtn = await screen.findByRole("button", {
+      name: "tunnel.start",
+    });
+    expect(startBtn).toBeDefined();
+
+    fireEvent.click(startBtn);
+
+    await waitFor(() => {
+      expect(relayActions.startTunnel).toHaveBeenCalledWith({
+        targetPort: 4040,
+      });
+    });
+  });
+
+  it("renders socket connection state badge and handles session revoke confirmation", async () => {
+    vi.mocked(relayActions.revokeRelaySession).mockResolvedValue(true);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("sessions.statusConnected")).toBeDefined();
+
+    const revokeBtn = screen.getByRole("button", {
+      name: "sessions.revoke",
+    });
+    fireEvent.click(revokeBtn);
+
+    // Confirmation dialog should open
+    expect(
+      await screen.findByText("sessions.confirmRevokeTitle"),
+    ).toBeDefined();
+
+    const confirmBtn = screen.getByRole("button", {
+      name: "sessions.confirmRevokeAction",
+    });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(relayActions.revokeRelaySession).toHaveBeenCalledWith(
+        "test-session-1",
+      );
+    });
+  });
+
+  it("closes revocation dialog without revoking session when cancel button is clicked", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RelayDashboard />
+      </QueryClientProvider>,
+    );
+
+    const revokeBtn = await screen.findByRole("button", {
+      name: "sessions.revoke",
+    });
+    fireEvent.click(revokeBtn);
+
+    expect(
+      await screen.findByText("sessions.confirmRevokeTitle"),
+    ).toBeDefined();
+
+    const cancelBtn = screen.getByRole("button", {
+      name: "action.cancel",
+    });
+    fireEvent.click(cancelBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText("sessions.confirmRevokeTitle")).toBeNull();
+      expect(relayActions.revokeRelaySession).not.toHaveBeenCalled();
+    });
   });
 });

@@ -6,6 +6,7 @@ const ru = {
     unknown: "Неизвестно",
     notAvailable: "Н/Д",
     openMenu: "Открыть меню",
+    cancel: "Отмена",
   },
   status: {
     checking: "Проверка статуса...",
@@ -21,6 +22,7 @@ const ru = {
     retry: "Повторить",
     details: "Подробности",
     openLogs: "Открыть папку логов",
+    cancel: "Отмена",
   },
   update: {
     title: "Обновления",

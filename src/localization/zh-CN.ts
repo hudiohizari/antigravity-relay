@@ -6,6 +6,7 @@ const zhCn = {
     unknown: "未知",
     notAvailable: "不适用",
     openMenu: "打开菜单",
+    cancel: "取消",
   },
   status: {
     checking: "正在检查状态...",
@@ -21,6 +22,7 @@ const zhCn = {
     retry: "重试",
     details: "详情",
     openLogs: "打开日志目录",
+    cancel: "取消",
   },
   update: {
     title: "更新",

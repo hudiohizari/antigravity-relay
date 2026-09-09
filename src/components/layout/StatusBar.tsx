@@ -5,15 +5,25 @@ import {
   startAntigravity,
   closeAntigravity,
 } from "@/modules/antigravity-runtime/actions/process";
-import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import {
+  getRelayStatus,
+  startRelay,
+  stopRelay,
+  getTunnelStatus,
+  startTunnel,
+  stopTunnel,
+} from "@/modules/relay/actions/relay";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/utils";
 import {
   Activity,
   ChevronUp,
+  Cloud,
+  ExternalLink,
   Loader2,
   Play,
   Power,
+  Server,
   Square,
   Workflow,
 } from "lucide-react";
@@ -26,41 +36,43 @@ import {
 
 interface StatusBarProps {
   isCollapsed?: boolean;
+  defaultOpen?: boolean;
 }
 
-interface ServiceStatus {
-  target: AntigravityAppTarget;
-  label: string;
+interface ManagedService {
+  id: "classic" | "relay" | "tunnel";
+  labelKey: string;
   icon: React.ElementType;
   isRunning: boolean;
   isLoading: boolean;
   isPending: boolean;
   toggle: () => void;
+  url?: string | null;
 }
 
-function useServiceStatus(target: AntigravityAppTarget) {
+function useClassicService() {
   const queryClient = useQueryClient();
 
   const { data: isRunning, isLoading } = useQuery({
-    queryKey: ["process", "status", target],
-    queryFn: () => isProcessRunning(target),
+    queryKey: ["process", "status", "classic"],
+    queryFn: () => isProcessRunning("classic"),
     refetchInterval: 10000,
   });
 
   const startMutation = useMutation({
-    mutationFn: () => startAntigravity(target),
+    mutationFn: () => startAntigravity("classic"),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["process", "status", target],
+        queryKey: ["process", "status", "classic"],
       });
     },
   });
 
   const stopMutation = useMutation({
-    mutationFn: () => closeAntigravity(target),
+    mutationFn: () => closeAntigravity("classic"),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["process", "status", target],
+        queryKey: ["process", "status", "classic"],
       });
     },
   });
@@ -81,34 +93,130 @@ function useServiceStatus(target: AntigravityAppTarget) {
   };
 }
 
-function ServiceRow({ service }: { service: ServiceStatus }) {
+function useRelayService() {
+  const queryClient = useQueryClient();
+
+  const { data: relayStatus, isLoading } = useQuery({
+    queryKey: ["relay", "status"],
+    queryFn: getRelayStatus,
+    refetchInterval: 3000,
+  });
+
+  const startMutation = useMutation({
+    mutationFn: () => startRelay(),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["relay", "status"], data);
+      queryClient.invalidateQueries({ queryKey: ["relay"] });
+    },
+  });
+
+  const stopMutation = useMutation({
+    mutationFn: () => stopRelay(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["relay"] });
+    },
+  });
+
+  const isRunning = Boolean(relayStatus?.isRunning);
+
+  const toggle = () => {
+    if (isRunning) {
+      stopMutation.mutate();
+    } else {
+      startMutation.mutate();
+    }
+  };
+
+  const port = relayStatus?.port || 4040;
+  const url = isRunning ? `http://127.0.0.1:${port}` : null;
+
+  return {
+    isRunning,
+    isLoading,
+    isPending: startMutation.isPending || stopMutation.isPending,
+    toggle,
+    url,
+  };
+}
+
+function useTunnelService() {
+  const queryClient = useQueryClient();
+
+  const { data: tunnelStatus, isLoading } = useQuery({
+    queryKey: ["tunnel", "status"],
+    queryFn: getTunnelStatus,
+    refetchInterval: 3000,
+  });
+
+  const startMutation = useMutation({
+    mutationFn: () => startTunnel({ targetPort: 4040 }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["tunnel", "status"], data);
+      queryClient.invalidateQueries({ queryKey: ["tunnel"] });
+    },
+  });
+
+  const stopMutation = useMutation({
+    mutationFn: () => stopTunnel(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tunnel"] });
+    },
+  });
+
+  const isRunning = tunnelStatus?.state === "connected";
+  const isStartingOrReconnecting =
+    tunnelStatus?.state === "starting" ||
+    tunnelStatus?.state === "reconnecting";
+
+  const toggle = () => {
+    if (isRunning || isStartingOrReconnecting) {
+      stopMutation.mutate();
+    } else {
+      startMutation.mutate();
+    }
+  };
+
+  const url = isRunning ? tunnelStatus?.publicUrl || null : null;
+
+  return {
+    isRunning,
+    isLoading,
+    isPending: startMutation.isPending || stopMutation.isPending,
+    toggle,
+    url,
+  };
+}
+
+function ServiceRow({ service }: { service: ManagedService }) {
   const { t } = useTranslation();
   const Icon = service.icon;
   const isBusy = service.isLoading || service.isPending;
 
   return (
-    <div className="hover:bg-accent/60 flex min-h-12 items-center justify-between gap-3 rounded-md px-2 py-1.5 transition-colors">
-      <div className="flex min-w-0 items-center gap-3">
+    <div className="flex min-h-[48px] items-center justify-between gap-2.5 rounded-md px-2.5 py-2 hover:bg-accent/60 transition-colors">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <div
           className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
             service.isRunning
-              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+              : "bg-red-500/15 text-red-600 dark:text-red-400",
           )}
         >
           <Icon className="h-4 w-4" />
         </div>
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{service.label}</div>
-          <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-foreground whitespace-nowrap">
+            {t(service.labelKey)}
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
             {service.isLoading ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <span
                 className={cn(
                   "h-1.5 w-1.5 rounded-full",
-                  service.isRunning ? "bg-green-500" : "bg-red-500",
+                  service.isRunning ? "bg-emerald-500" : "bg-red-500",
                 )}
               />
             )}
@@ -120,6 +228,26 @@ function ServiceRow({ service }: { service: ServiceStatus }) {
                   : t("status.stopped_short")}
             </span>
           </div>
+          {service.isRunning && service.url && (
+            <div className="mt-0.5 flex items-center">
+              <a
+                href={service.url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => {
+                  if (window.electron?.openExternalUrl) {
+                    e.preventDefault();
+                    window.electron.openExternalUrl(service.url!);
+                  }
+                }}
+                className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 hover:underline truncate max-w-[180px]"
+                title={service.url}
+              >
+                <span className="truncate">{service.url}</span>
+                <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-70" />
+              </a>
+            </div>
+          )}
         </div>
       </div>
       <Button
@@ -128,10 +256,10 @@ function ServiceRow({ service }: { service: ServiceStatus }) {
         onClick={service.toggle}
         disabled={isBusy}
         className={cn(
-          "h-8 shrink-0 rounded-md border px-2.5",
+          "h-8 shrink-0 rounded-md border px-2.5 text-xs font-semibold min-w-[68px]",
           service.isRunning
-            ? "border-green-200 text-green-700 hover:bg-green-100 dark:border-green-800 dark:text-green-300 dark:hover:bg-green-900/30"
-            : "border-red-200 text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/30",
+            ? "border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+            : "border-emerald-200 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-900/60 dark:text-emerald-400 dark:hover:bg-emerald-950/40",
         )}
       >
         {service.isPending ? (
@@ -141,7 +269,7 @@ function ServiceRow({ service }: { service: ServiceStatus }) {
         ) : (
           <Play className="h-3.5 w-3.5 fill-current" />
         )}
-        <span className="ml-1.5 text-xs font-semibold">
+        <span className="ml-1.5">
           {service.isRunning ? t("action.stop") : t("action.start")}
         </span>
       </Button>
@@ -151,15 +279,31 @@ function ServiceRow({ service }: { service: ServiceStatus }) {
 
 export const StatusBar: React.FC<StatusBarProps> = ({
   isCollapsed = false,
+  defaultOpen = false,
 }) => {
   const { t } = useTranslation();
-  const classicStatus = useServiceStatus("classic");
-  const services: ServiceStatus[] = [
+  const classic = useClassicService();
+  const relay = useRelayService();
+  const tunnel = useTunnelService();
+
+  const services: ManagedService[] = [
     {
-      target: "classic",
-      label: "Antigravity",
+      id: "classic",
+      labelKey: "status.antigravity",
       icon: Workflow,
-      ...classicStatus,
+      ...classic,
+    },
+    {
+      id: "relay",
+      labelKey: "status.relay",
+      icon: Server,
+      ...relay,
+    },
+    {
+      id: "tunnel",
+      labelKey: "status.tunnel",
+      icon: Cloud,
+      ...tunnel,
     },
   ];
 
@@ -180,10 +324,10 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
   const triggerClassName = isCollapsed
     ? "mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-background/80 text-foreground shadow-sm transition-colors hover:bg-accent"
-    : "flex w-full items-center justify-between overflow-hidden rounded-lg border border-border bg-background/80 px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-accent/70";
+    : "flex w-full min-h-[44px] items-center justify-between overflow-hidden rounded-lg border border-border bg-background/80 px-3 py-2 text-sm shadow-sm transition-colors hover:bg-accent/70";
 
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} defaultOpen={defaultOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -200,7 +344,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
               <span
                 className={cn(
                   "border-background absolute -right-1 -bottom-1 h-2.5 w-2.5 rounded-full border-2",
-                  runningCount > 0 ? "bg-green-500" : "bg-red-500",
+                  runningCount > 0 ? "bg-emerald-500" : "bg-red-500",
                 )}
               />
             </div>
@@ -216,15 +360,15 @@ export const StatusBar: React.FC<StatusBarProps> = ({
                   <span
                     className={cn(
                       "border-background absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border-2",
-                      runningCount > 0 ? "bg-green-500" : "bg-red-500",
+                      runningCount > 0 ? "bg-emerald-500" : "bg-red-500",
                     )}
                   />
                 </div>
                 <div className="min-w-0 text-left">
-                  <div className="text-xs font-semibold tracking-wider uppercase opacity-80">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     {t("status.services")}
                   </div>
-                  <div className="truncate text-sm leading-tight font-medium">
+                  <div className="truncate text-xs font-semibold text-foreground">
                     {summary}
                   </div>
                 </div>
@@ -238,17 +382,17 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         side="top"
         align="start"
         sideOffset={8}
-        className="w-72 p-2"
+        className="w-84 p-2.5 rounded-lg border shadow-lg"
       >
         <div className="px-2 pb-2">
-          <div className="text-sm font-semibold">
+          <div className="text-sm font-semibold text-foreground">
             {t("status.dashboard_title")}
           </div>
           <div className="text-muted-foreground mt-0.5 text-xs">{summary}</div>
         </div>
-        <div className="space-y-1">
+        <div className="space-y-1.5 pt-1.5">
           {services.map((service) => (
-            <ServiceRow key={service.target} service={service} />
+            <ServiceRow key={service.id} service={service} />
           ))}
         </div>
       </DropdownMenuContent>

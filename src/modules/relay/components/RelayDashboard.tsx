@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
+import { cn } from "@/shared/ui/utils";
 import { QRCode } from "./QRCode";
 import {
   getRelayStatus,
@@ -30,6 +31,7 @@ import {
   revokeRelaySession,
   getTunnelStatus,
   startTunnel,
+  restartTunnel,
   stopTunnel,
   getTunnelUrl,
 } from "../actions/relay";
@@ -51,6 +53,8 @@ import {
   Loader2,
   Wifi,
   PowerOff,
+  Play,
+  Square,
 } from "lucide-react";
 
 function formatDuration(ms: number): string {
@@ -250,6 +254,21 @@ export const RelayDashboard: React.FC = () => {
     },
   });
 
+  const restartTunnelMutation = useMutation({
+    mutationFn: (params?: { targetPort?: number }) => restartTunnel(params),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["tunnel", "status"], data);
+      queryClient.invalidateQueries({ queryKey: ["tunnel"] });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: t("common.error"),
+        description: t("tunnel.restartFailed", { error: err.message }),
+        variant: "destructive",
+      });
+    },
+  });
+
   const revokeSessionMutation = useMutation({
     mutationFn: (sessionId: string) => revokeRelaySession(sessionId),
     onSuccess: (_data, sessionId) => {
@@ -335,21 +354,21 @@ export const RelayDashboard: React.FC = () => {
     }
   }, [relayStatus?.isRunning, startRelayMutation, stopRelayMutation]);
 
-  const handleToggleTunnel = useCallback(() => {
-    if (
-      tunnelStatus?.state === "connected" ||
-      tunnelStatus?.state === "starting"
-    ) {
-      stopTunnelMutation.mutate();
-    } else {
-      startTunnelMutation.mutate({ targetPort: relayStatus?.port || 4040 });
-    }
-  }, [
-    tunnelStatus?.state,
-    relayStatus?.port,
-    startTunnelMutation,
-    stopTunnelMutation,
-  ]);
+  const isStarting = startTunnelMutation.isPending;
+  const isRestarting = restartTunnelMutation.isPending;
+  const isStopping = stopTunnelMutation.isPending;
+
+  const handleStartTunnel = useCallback(() => {
+    startTunnelMutation.mutate({ targetPort: relayStatus?.port || 4040 });
+  }, [relayStatus?.port, startTunnelMutation]);
+
+  const handleRestartTunnel = useCallback(() => {
+    restartTunnelMutation.mutate({ targetPort: relayStatus?.port || 4040 });
+  }, [relayStatus?.port, restartTunnelMutation]);
+
+  const handleStopTunnel = useCallback(() => {
+    stopTunnelMutation.mutate();
+  }, [stopTunnelMutation]);
 
   const handleConfirmRevoke = useCallback(() => {
     if (!sessionToRevoke) return;
@@ -439,7 +458,7 @@ export const RelayDashboard: React.FC = () => {
   const bufferCount = relayStatus?.upstream?.bufferedCommandCount || 0;
 
   return (
-    <div className="container mx-auto max-w-6xl space-y-6 p-6">
+    <div className="container mx-auto max-w-6xl space-y-6 p-4 sm:p-6 overflow-hidden">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -475,12 +494,12 @@ export const RelayDashboard: React.FC = () => {
           {/* Card 1: Fastify Relay Server */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
+              <div className="flex flex-wrap sm:flex-nowrap items-start sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
                     <Server className="h-5 w-5" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <CardTitle className="text-lg">
                       {t("relay.title")}
                     </CardTitle>
@@ -489,7 +508,7 @@ export const RelayDashboard: React.FC = () => {
                     </CardDescription>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${
                       relayStatus?.isRunning
@@ -506,7 +525,7 @@ export const RelayDashboard: React.FC = () => {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-3 rounded-lg border bg-muted/30">
                 <div className="space-y-0.5">
                   <div className="text-xs font-medium text-muted-foreground">
                     {t("relay.port", { port: relayStatus?.port || 4040 })}
@@ -524,7 +543,7 @@ export const RelayDashboard: React.FC = () => {
                     startRelayMutation.isPending || stopRelayMutation.isPending
                   }
                   onClick={handleToggleRelay}
-                  className="gap-2"
+                  className="w-full sm:w-auto gap-2"
                 >
                   {(startRelayMutation.isPending ||
                     stopRelayMutation.isPending) && (
@@ -564,12 +583,12 @@ export const RelayDashboard: React.FC = () => {
           {/* Card 2: Cloudflare Quick Tunnel */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500">
+              <div className="flex flex-wrap sm:flex-nowrap items-start sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
                     <Cloud className="h-5 w-5" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <CardTitle className="text-lg">
                       {t("tunnel.title")}
                     </CardTitle>
@@ -580,7 +599,7 @@ export const RelayDashboard: React.FC = () => {
                 </div>
                 <Badge
                   variant="outline"
-                  className={`gap-1.5 px-2.5 py-1 text-xs font-medium ${tunnelStateInfo.color}`}
+                  className={`gap-1.5 px-2.5 py-1 text-xs font-medium shrink-0 ${tunnelStateInfo.color}`}
                 >
                   <span
                     className={`h-2 w-2 rounded-full ${tunnelStateInfo.dot}`}
@@ -607,7 +626,7 @@ export const RelayDashboard: React.FC = () => {
                     readOnly
                     value={publicUrl || ""}
                     placeholder={t("tunnel.urlPlaceholder")}
-                    className="font-mono text-xs select-all bg-muted/30"
+                    className="font-mono text-xs select-all bg-muted/30 min-w-0 flex-1"
                   />
                   <Button
                     variant="outline"
@@ -615,6 +634,7 @@ export const RelayDashboard: React.FC = () => {
                     disabled={!publicUrl}
                     onClick={handleCopyUrl}
                     title={t("tunnel.copyUrl")}
+                    className="shrink-0"
                   >
                     {copiedUrl ? (
                       <Check className="h-4 w-4 text-emerald-500" />
@@ -628,6 +648,7 @@ export const RelayDashboard: React.FC = () => {
                       size="icon"
                       asChild
                       title="Open Tunnel in Browser"
+                      className="shrink-0"
                     >
                       <a href={publicUrl} target="_blank" rel="noreferrer">
                         <ExternalLink className="h-4 w-4" />
@@ -637,31 +658,69 @@ export const RelayDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Tunnel Control Button */}
-              <div className="flex justify-end pt-1">
-                <Button
-                  size="sm"
-                  variant={
-                    tunnelStatus?.state === "connected"
-                      ? "outline"
-                      : "secondary"
-                  }
-                  disabled={
-                    startTunnelMutation.isPending ||
-                    stopTunnelMutation.isPending
-                  }
-                  onClick={handleToggleTunnel}
-                  className="gap-2"
-                >
-                  {(startTunnelMutation.isPending ||
-                    stopTunnelMutation.isPending) && (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  )}
-                  {tunnelStatus?.state === "connected"
-                    ? t("tunnel.restartTunnel")
-                    : t("action.start")}
-                </Button>
-              </div>
+              {/* Tunnel Control Buttons */}
+              {tunnelStatus?.state === "connected" ||
+              tunnelStatus?.state === "starting" ||
+              tunnelStatus?.state === "reconnecting" ? (
+                <div className="flex flex-wrap sm:flex-nowrap gap-2 justify-end pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      tunnelStatus.state !== "connected" ||
+                      isRestarting ||
+                      isStopping
+                    }
+                    onClick={handleRestartTunnel}
+                    className="w-full sm:w-auto min-h-[40px] px-3.5 gap-2 border-border text-foreground hover:bg-accent"
+                  >
+                    <RotateCw
+                      className={cn("h-4 w-4", isRestarting && "animate-spin")}
+                    />
+                    <span>
+                      {isRestarting
+                        ? t("tunnel.restarting")
+                        : t("tunnel.restartTunnel")}
+                    </span>
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={isStopping || isRestarting}
+                    onClick={handleStopTunnel}
+                    className="w-full sm:w-auto min-h-[40px] px-3.5 gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isStopping ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Square className="h-4 w-4 fill-current" />
+                    )}
+                    <span>
+                      {isStopping ? t("tunnel.stopping") : t("tunnel.stop")}
+                    </span>
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap sm:flex-nowrap gap-2 justify-end pt-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    disabled={isStarting}
+                    onClick={handleStartTunnel}
+                    className="w-full sm:w-auto min-h-[40px] px-4 gap-2"
+                  >
+                    {isStarting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Play className="h-4 w-4 fill-current" />
+                    )}
+                    <span>
+                      {isStarting ? t("tunnel.starting") : t("tunnel.start")}
+                    </span>
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -804,7 +863,7 @@ export const RelayDashboard: React.FC = () => {
                     disabled={!isRelayRunning}
                     value={pairingUrl}
                     aria-label={t("pairing.copyLink")}
-                    className="font-mono text-xs select-all bg-muted/30"
+                    className="font-mono text-xs select-all bg-muted/30 min-w-0 flex-1"
                   />
                   <Button
                     variant="outline"
@@ -851,7 +910,7 @@ export const RelayDashboard: React.FC = () => {
                     disabled={!isRelayRunning}
                     value={pairingToken}
                     type="password"
-                    className="font-mono text-xs select-all bg-muted/30"
+                    className="font-mono text-xs select-all bg-muted/30 min-w-0 flex-1"
                   />
                   <Button
                     variant="outline"
@@ -880,19 +939,19 @@ export const RelayDashboard: React.FC = () => {
       {/* Full Width Bottom: Connected Phone Sessions Table */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+          <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
                 <Smartphone className="h-5 w-5" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <CardTitle className="text-lg">{t("sessions.title")}</CardTitle>
                 <CardDescription className="text-xs">
                   {t("sessions.subtitle")}
                 </CardDescription>
               </div>
             </div>
-            <Badge variant="secondary" className="font-mono text-xs">
+            <Badge variant="secondary" className="font-mono text-xs shrink-0">
               {t("sessions.activeCount", { count: sessions.length })}
             </Badge>
           </div>
@@ -911,22 +970,40 @@ export const RelayDashboard: React.FC = () => {
           ) : (
             <div className="rounded-lg border overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table
+                  className="w-full min-w-[540px] text-left text-xs"
+                  aria-label={t("sessions.title")}
+                >
                   <thead className="bg-muted/50 border-b text-muted-foreground font-semibold">
                     <tr>
-                      <th className="py-3 px-4 uppercase tracking-wider">
+                      <th
+                        scope="col"
+                        className="py-3 px-4 uppercase tracking-wider"
+                      >
                         {t("sessions.colDevice")}
                       </th>
-                      <th className="py-3 px-4 uppercase tracking-wider">
+                      <th
+                        scope="col"
+                        className="py-3 px-4 uppercase tracking-wider"
+                      >
                         {t("sessions.colIp")}
                       </th>
-                      <th className="py-3 px-4 uppercase tracking-wider">
+                      <th
+                        scope="col"
+                        className="py-3 px-4 uppercase tracking-wider"
+                      >
                         {t("sessions.colDuration")}
                       </th>
-                      <th className="py-3 px-4 uppercase tracking-wider">
+                      <th
+                        scope="col"
+                        className="py-3 px-4 uppercase tracking-wider"
+                      >
                         {t("sessions.colLastActive")}
                       </th>
-                      <th className="py-3 px-4 uppercase tracking-wider text-right">
+                      <th
+                        scope="col"
+                        className="py-3 px-4 uppercase tracking-wider text-right"
+                      >
                         {t("sessions.colActions")}
                       </th>
                     </tr>
@@ -953,9 +1030,32 @@ export const RelayDashboard: React.FC = () => {
                             <div className="flex items-center gap-2.5">
                               <Smartphone className="h-4 w-4 text-muted-foreground shrink-0" />
                               <div className="flex flex-col min-w-0">
-                                <span className="font-semibold text-foreground truncate">
-                                  {parsed.device}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-foreground truncate">
+                                    {parsed.device}
+                                  </span>
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "gap-1 px-1.5 py-0 text-[10px] font-normal",
+                                      sess.socketState === "connected"
+                                        ? "border-emerald-300 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400"
+                                        : "border-zinc-300 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400",
+                                    )}
+                                  >
+                                    <span
+                                      className={cn(
+                                        "h-1.5 w-1.5 rounded-full",
+                                        sess.socketState === "connected"
+                                          ? "bg-emerald-500"
+                                          : "bg-zinc-400",
+                                      )}
+                                    />
+                                    {sess.socketState === "connected"
+                                      ? t("sessions.statusConnected")
+                                      : t("sessions.statusDisconnected")}
+                                  </Badge>
+                                </div>
                                 <span className="text-[11px] text-muted-foreground truncate">
                                   {parsed.browser}
                                 </span>
@@ -977,6 +1077,8 @@ export const RelayDashboard: React.FC = () => {
                               size="sm"
                               disabled={isRevoking}
                               onClick={() => setSessionToRevoke(sess)}
+                              title={t("sessions.revokeTooltip")}
+                              aria-label={t("sessions.revoke")}
                               className="text-red-500 hover:text-red-600 hover:bg-red-500/10 gap-1.5 h-8 px-2.5"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1024,7 +1126,7 @@ export const RelayDashboard: React.FC = () => {
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setSessionToRevoke(null)}>
-              {t("action.details")}
+              {t("action.cancel")}
             </Button>
             <Button variant="destructive" onClick={handleConfirmRevoke}>
               {t("sessions.confirmRevokeAction")}

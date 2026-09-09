@@ -84,6 +84,13 @@ export const tunnelRouter = os.router({
       return RelayController.getInstance().tunnelManager.start(input);
     }),
 
+  restart: os
+    .input(TunnelStartInputSchema)
+    .output(z.custom<TunnelStatus>())
+    .handler(async ({ input }) => {
+      return RelayController.getInstance().tunnelManager.restart(input);
+    }),
+
   stop: os.output(z.void()).handler(async () => {
     await RelayController.getInstance().tunnelManager.stop();
   }),

@@ -8,6 +8,7 @@ import {
   RelayConfig,
   RelayServerStatus,
   RemoteEvent,
+  Session,
   DEFAULT_RELAY_CONFIG,
 } from "./types";
 import { AuthRateLimiter } from "./relay-auth";
@@ -27,6 +28,39 @@ export interface RelayServerOptions {
 interface ActiveWsPair {
   clientWs: WebSocket;
   upstreamWs: WebSocket;
+  sessionId?: string;
+}
+
+function extractClientIp(
+  headers: Record<string, string | string[] | undefined>,
+  remoteAddress?: string,
+): string {
+  const forwarded = headers["x-forwarded-for"];
+  if (forwarded) {
+    const raw = Array.isArray(forwarded)
+      ? forwarded[0]
+      : forwarded.split(",")[0];
+    const trimmed = raw?.trim();
+    if (trimmed) {
+      return trimmed.startsWith("::ffff:") ? trimmed.slice(7) : trimmed;
+    }
+  }
+  if (remoteAddress) {
+    return remoteAddress.startsWith("::ffff:")
+      ? remoteAddress.slice(7)
+      : remoteAddress;
+  }
+  return "127.0.0.1";
+}
+
+function extractUserAgent(
+  headers: Record<string, string | string[] | undefined>,
+): string {
+  const ua = headers["user-agent"];
+  if (Array.isArray(ua)) {
+    return ua[0] || "AntigravityRemote/1.0";
+  }
+  return ua || "AntigravityRemote/1.0";
 }
 
 const HOP_BY_HOP_HEADERS = new Set([
@@ -88,6 +122,7 @@ export class RelayServer {
   private startedAt?: number;
   private statusListeners: Set<(status: RelayServerStatus) => void> = new Set();
   private unhookUpstream?: () => void;
+  private unhookSessionRevoked?: () => void;
   private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(options?: RelayServerOptions) {
@@ -124,6 +159,7 @@ export class RelayServer {
 
     this.wireUpstreamEvents();
     this.wirePortDiscoveryEvents();
+    this.wireSessionEvents();
   }
 
   public getSessionManager(): SessionManager {
@@ -253,6 +289,58 @@ export class RelayServer {
       method: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
       url: "/*",
       handler: async (request, reply) => {
+        const clientIp = extractClientIp(
+          request.headers,
+          request.socket?.remoteAddress,
+        );
+        const userAgent = extractUserAgent(request.headers);
+
+        const rawUrl = request.url || "/";
+        const parsedUrl = new URL(rawUrl, "http://127.0.0.1");
+        const token =
+          parsedUrl.searchParams.get("pair") ||
+          parsedUrl.searchParams.get("token") ||
+          (request.headers["x-session-token"] as string | undefined);
+
+        if (token) {
+          const existing = this.sessionManager.getSessionByToken(token);
+          if (existing) {
+            existing.clientIp = clientIp;
+            existing.userAgent = userAgent;
+            this.sessionManager.updateSessionActivity(existing.sessionId);
+          } else {
+            this.sessionManager.createSession({
+              clientIp,
+              userAgent,
+              token,
+            });
+            this.notifyStatusUpdated();
+          }
+        } else if (
+          parsedUrl.pathname === "/" ||
+          parsedUrl.pathname === "/index.html"
+        ) {
+          const existing = this.sessionManager
+            .getActiveSessions()
+            .find((s) => s.clientIp === clientIp && s.userAgent === userAgent);
+          if (existing) {
+            this.sessionManager.updateSessionActivity(existing.sessionId);
+          } else {
+            this.sessionManager.createSession({
+              clientIp,
+              userAgent,
+            });
+            this.notifyStatusUpdated();
+          }
+        } else {
+          const existing = this.sessionManager
+            .getActiveSessions()
+            .find((s) => s.clientIp === clientIp && s.userAgent === userAgent);
+          if (existing) {
+            this.sessionManager.updateSessionActivity(existing.sessionId);
+          }
+        }
+
         const port = this.portDiscovery.getPort();
         if (!port) {
           return reply.status(503).header("Retry-After", "2").send({
@@ -449,6 +537,10 @@ export class RelayServer {
       this.unhookUpstream();
       this.unhookUpstream = undefined;
     }
+    if (this.unhookSessionRevoked) {
+      this.unhookSessionRevoked();
+      this.unhookSessionRevoked = undefined;
+    }
     this.upstreamBridge.dispose();
     this.statusListeners.clear();
   }
@@ -557,6 +649,47 @@ export class RelayServer {
     req: IncomingMessage,
     upstreamPort: number,
   ): void {
+    const clientIp = extractClientIp(req.headers, req.socket?.remoteAddress);
+    const userAgent = extractUserAgent(req.headers);
+
+    const parsedUrl = req.url ? new URL(req.url, "http://127.0.0.1") : null;
+    const token =
+      parsedUrl?.searchParams.get("pair") ||
+      parsedUrl?.searchParams.get("token") ||
+      (req.headers["x-session-token"] as string | undefined);
+
+    let session: Session | undefined;
+    if (token) {
+      session = this.sessionManager.getSessionByToken(token);
+    }
+
+    if (!session) {
+      const existing = this.sessionManager
+        .getActiveSessions()
+        .find(
+          (s) =>
+            s.clientIp === clientIp &&
+            s.userAgent === userAgent &&
+            s.socketState === "disconnected",
+        );
+      if (existing) {
+        session = existing;
+        if (token) {
+          session.token = token;
+        }
+      } else {
+        session = this.sessionManager.createSession({
+          clientIp,
+          userAgent,
+          token: token || undefined,
+        });
+      }
+    }
+
+    const sessionId = session.sessionId;
+    this.sessionManager.bindSocket(sessionId, clientWs);
+    this.notifyStatusUpdated();
+
     const forwardHeaders: Record<string, string> = {};
     for (const [key, value] of Object.entries(req.headers)) {
       if (value === undefined) continue;
@@ -585,7 +718,7 @@ export class RelayServer {
       rejectUnauthorized: false,
     });
 
-    const pair: ActiveWsPair = { clientWs, upstreamWs };
+    const pair: ActiveWsPair = { clientWs, upstreamWs, sessionId };
     this.activeWsConnections.add(pair);
 
     const pendingMessages: Array<{ data: RawData; isBinary: boolean }> = [];
@@ -604,6 +737,7 @@ export class RelayServer {
     });
 
     clientWs.on("message", (data: RawData, isBinary: boolean) => {
+      this.sessionManager.updateSessionActivity(sessionId);
       if (isUpstreamOpen && upstreamWs.readyState === WebSocket.OPEN) {
         try {
           upstreamWs.send(data, { binary: isBinary });
@@ -616,6 +750,7 @@ export class RelayServer {
     });
 
     upstreamWs.on("message", (data: RawData, isBinary: boolean) => {
+      this.sessionManager.updateSessionActivity(sessionId);
       if (clientWs.readyState === WebSocket.OPEN) {
         try {
           clientWs.send(data, { binary: isBinary });
@@ -627,27 +762,38 @@ export class RelayServer {
 
     clientWs.on("close", (code: number, reason: Buffer) => {
       this.activeWsConnections.delete(pair);
+      this.sessionManager.unbindSocket(sessionId);
       safeClose(upstreamWs, code, reason);
+      this.notifyStatusUpdated();
     });
 
     upstreamWs.on("close", (code: number, reason: Buffer) => {
       this.activeWsConnections.delete(pair);
+      this.sessionManager.unbindSocket(sessionId);
       safeClose(clientWs, code, reason);
+      this.notifyStatusUpdated();
     });
 
     clientWs.on("error", () => {
       this.activeWsConnections.delete(pair);
+      this.sessionManager.unbindSocket(sessionId);
       safeClose(upstreamWs);
+      this.notifyStatusUpdated();
     });
 
     upstreamWs.on("error", () => {
       this.activeWsConnections.delete(pair);
+      this.sessionManager.unbindSocket(sessionId);
       safeClose(clientWs, 1011, "Upstream connection error");
+      this.notifyStatusUpdated();
     });
   }
 
   private handlePortChanged(_oldPort: number | null, _newPort: number): void {
     for (const pair of this.activeWsConnections) {
+      if (pair.sessionId) {
+        this.sessionManager.unbindSocket(pair.sessionId);
+      }
       safeClose(pair.clientWs, 1012, "Service Restart");
       safeClose(pair.upstreamWs, 1012, "Service Restart");
     }
@@ -657,11 +803,29 @@ export class RelayServer {
 
   private handleRestarting(): void {
     for (const pair of this.activeWsConnections) {
+      if (pair.sessionId) {
+        this.sessionManager.unbindSocket(pair.sessionId);
+      }
       safeClose(pair.clientWs, 1012, "Service Restart");
       safeClose(pair.upstreamWs, 1012, "Service Restart");
     }
     this.activeWsConnections.clear();
     this.notifyStatusUpdated();
+  }
+
+  private wireSessionEvents(): void {
+    this.unhookSessionRevoked = this.sessionManager.onSessionRevoked(
+      (revokedSessionId) => {
+        for (const pair of this.activeWsConnections) {
+          if (pair.sessionId === revokedSessionId) {
+            safeClose(pair.clientWs, 4401, "Session revoked");
+            safeClose(pair.upstreamWs, 4401, "Session revoked");
+            this.activeWsConnections.delete(pair);
+          }
+        }
+        this.notifyStatusUpdated();
+      },
+    );
   }
 
   private wirePortDiscoveryEvents(): void {

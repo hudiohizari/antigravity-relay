@@ -112,13 +112,22 @@ export class TunnelManager {
     }
 
     this.isStopping = false;
+    this.reconnectAttempts = 0;
     this.clearReconnectTimer();
 
     return this.launchSubprocess();
   }
 
+  public async restart(
+    overrides?: Partial<TunnelConfig>,
+  ): Promise<TunnelStatus> {
+    await this.stop();
+    return this.start(overrides);
+  }
+
   public async stop(): Promise<void> {
     this.isStopping = true;
+    this.reconnectAttempts = 0;
     this.clearReconnectTimer();
 
     if (!this.currentProcess) {

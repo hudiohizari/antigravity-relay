@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createRouterClient } from "@orpc/server";
 import { SessionManager } from "@/modules/relay/session-manager";
 import {
   AuthRateLimiter,
@@ -6,6 +7,8 @@ import {
   extractTokenFromHeader,
 } from "@/modules/relay/relay-auth";
 import { RelayController } from "@/modules/relay/relay-controller";
+import { tunnelRouter } from "@/modules/relay/ipc/router";
+import type { TunnelStatus } from "@/modules/tunnel/types";
 
 describe("Relay Subsystems", () => {
   describe("SessionManager", () => {
@@ -174,6 +177,31 @@ describe("Relay Subsystems", () => {
       expect(instance1).toBe(instance2);
       expect(instance1.relayServer).toBeDefined();
       expect(instance1.tunnelManager).toBeDefined();
+    });
+  });
+
+  describe("IPC tunnelRouter and restart", () => {
+    it("routes restart call through tunnelManager.restart", async () => {
+      const client = createRouterClient(tunnelRouter);
+      const controller = RelayController.getInstance();
+      const mockStatus: TunnelStatus = {
+        state: "connected",
+        publicUrl: "https://ipc-restart.trycloudflare.com",
+        pid: 77777,
+        startedAt: Date.now(),
+        reconnectAttempts: 0,
+        protocol: "quic",
+      };
+
+      vi.spyOn(controller.tunnelManager, "restart").mockResolvedValueOnce(
+        mockStatus,
+      );
+
+      const res = await client.restart({ targetPort: 8080 });
+      expect(res).toEqual(mockStatus);
+      expect(controller.tunnelManager.restart).toHaveBeenCalledWith({
+        targetPort: 8080,
+      });
     });
   });
 });

@@ -6,6 +6,7 @@ const tr = {
     unknown: "Bilinmeyen",
     notAvailable: "Yok",
     openMenu: "Menüyü aç",
+    cancel: "İptal",
   },
   status: {
     checking: "Durum kontrol ediliyor...",
@@ -30,6 +31,7 @@ const tr = {
     retry: "Yeniden Dene",
     details: "Ayrıntılar",
     openLogs: "Log Klasörünü Aç",
+    cancel: "İptal",
   },
   update: {
     title: "Güncellemeler",

@@ -44,6 +44,14 @@ export async function startTunnel(params?: {
   return ipc.client.tunnel.start(params);
 }
 
+export async function restartTunnel(params?: {
+  targetPort?: number;
+  customDomain?: string;
+  namedTunnelToken?: string;
+}): Promise<TunnelStatus> {
+  return ipc.client.tunnel.restart(params);
+}
+
 export async function stopTunnel(): Promise<void> {
   return ipc.client.tunnel.stop();
 }

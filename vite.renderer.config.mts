@@ -6,6 +6,9 @@ import path from 'path';
 
 export default defineConfig(({ mode }) => {
   return {
+    server: {
+      port: 51730,
+    },
     plugins: [
       tanstackRouter({
         target: 'react',
