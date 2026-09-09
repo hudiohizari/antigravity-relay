@@ -155,16 +155,15 @@ export function toSyncLocalAccountORPCError(
     normalizedMessage.includes("unauthenticated") ||
     normalizedMessage.includes("unauthorized") ||
     normalizedMessage.includes("token may be expired") ||
-    normalizedMessage.includes("re-login in antigravity ide")
+    normalizedMessage.includes("re-login in antigravity")
   ) {
     return createSyncLocalAccountORPCError("UNAUTHORIZED", error);
   }
 
   if (
-    normalizedMessage.includes("no cloud account found in ide") ||
-    normalizedMessage.includes("no oauth token found in ide state") ||
+    normalizedMessage.includes("no cloud account found") ||
+    normalizedMessage.includes("no oauth token found") ||
     normalizedMessage.includes("antigravity database not found") ||
-    normalizedMessage.includes("no cloud account found in antigravity") ||
     normalizedMessage.includes("antigravity cli token file not found") ||
     normalizedMessage.includes(
       AGY_SYNC_FROM_IDE_UNSUPPORTED_MESSAGE.toLowerCase(),

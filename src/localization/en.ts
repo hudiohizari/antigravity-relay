@@ -719,11 +719,11 @@ const en = {
     toast: {
       syncSuccess: {
         title: "Sync Successful",
-        description: "Imported {{email}} from IDE.",
+        description: "Imported {{email}} from Antigravity.",
       },
       syncFailed: {
         title: "Sync Failed",
-        description: "No active account found in IDE database.",
+        description: "No active account found in Antigravity.",
       },
       addSuccess: "Account added successfully!",
       addFailed: {

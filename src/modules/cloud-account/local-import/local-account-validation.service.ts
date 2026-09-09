@@ -1,30 +1,33 @@
-import { z } from 'zod';
+import { z } from "zod";
 import {
   GoogleAPIService,
   type TokenResponse,
   type UserInfo,
-} from '@/modules/cloud-account/services/GoogleAPIService';
-import type { LocalAccountDiscoverySession } from './local-account-discovery.service';
+} from "@/modules/cloud-account/services/GoogleAPIService";
+import type { LocalAccountDiscoverySession } from "./local-account-discovery.service";
 import type {
   DiscoveredCredential,
   LocalAccountSourceReference,
   ValidatedLocalAccountIdentity,
-} from './types';
+} from "./types";
 import type {
   LocalAccountValidationFailure,
   LocalAccountValidationFailureCode,
   LocalAccountValidationMerge,
   LocalAccountValidationResult,
   ValidatedLocalAccountSummary,
-} from './validation-types';
+} from "./validation-types";
 
-const VALIDATION_FAILURE_MESSAGES: Record<LocalAccountValidationFailureCode, string> = {
-  'credential-unavailable': 'The discovered credential is no longer available.',
-  'authentication-failed': 'The account credential could not be authenticated.',
-  'network-failed': 'The account identity request failed.',
-  'timed-out': 'The account identity request timed out.',
-  'unverified-email': 'The account email is not verified.',
-  'invalid-profile': 'The account identity response is invalid.',
+const VALIDATION_FAILURE_MESSAGES: Record<
+  LocalAccountValidationFailureCode,
+  string
+> = {
+  "credential-unavailable": "The discovered credential is no longer available.",
+  "authentication-failed": "The account credential could not be authenticated.",
+  "network-failed": "The account identity request failed.",
+  "timed-out": "The account identity request timed out.",
+  "unverified-email": "The account email is not verified.",
+  "invalid-profile": "The account identity response is invalid.",
 };
 
 const VerifiedEmailSchema = z
@@ -35,7 +38,10 @@ const VerifiedEmailSchema = z
 
 export interface LocalAccountValidationDependencies {
   getUserInfo: (accessToken: string, signal: AbortSignal) => Promise<UserInfo>;
-  refreshAccessToken: (refreshToken: string, signal: AbortSignal) => Promise<TokenResponse>;
+  refreshAccessToken: (
+    refreshToken: string,
+    signal: AbortSignal,
+  ) => Promise<TokenResponse>;
   now: () => number;
 }
 
@@ -52,25 +58,28 @@ interface ValidatedCandidate {
 
 type CandidateValidationResult =
   | {
-      status: 'validated';
+      status: "validated";
       candidate: ValidatedCandidate;
     }
   | {
-      status: 'failed';
+      status: "failed";
       failure: LocalAccountValidationFailure;
     };
 
 class LocalAccountValidationIssue extends Error {
   constructor(readonly code: LocalAccountValidationFailureCode) {
     super(VALIDATION_FAILURE_MESSAGES[code]);
-    this.name = 'LocalAccountValidationIssue';
+    this.name = "LocalAccountValidationIssue";
   }
 }
 
 export class LocalAccountValidationSession {
   constructor(
     readonly result: LocalAccountValidationResult,
-    private readonly credentialsByFingerprint: ReadonlyMap<string, DiscoveredCredential>,
+    private readonly credentialsByFingerprint: ReadonlyMap<
+      string,
+      DiscoveredCredential
+    >,
   ) {}
 
   getCredential(fingerprint: string): DiscoveredCredential | undefined {
@@ -84,62 +93,96 @@ function createDefaultDependencies(): LocalAccountValidationDependencies {
     getUserInfo: (accessToken, signal) =>
       GoogleAPIService.getUserInfo(accessToken, undefined, signal),
     refreshAccessToken: (refreshToken, signal) =>
-      GoogleAPIService.refreshAccessToken(refreshToken, undefined, undefined, signal),
+      GoogleAPIService.refreshAccessToken(
+        refreshToken,
+        undefined,
+        undefined,
+        signal,
+      ),
     now: () => Math.floor(Date.now() / 1000),
   };
 }
 
 function getErrorStatus(error: unknown): number | undefined {
-  if (!error || typeof error !== 'object') {
+  if (!error || typeof error !== "object") {
     return undefined;
   }
-  const status = 'status' in error ? error.status : undefined;
-  return typeof status === 'number' ? status : undefined;
+  const status = "status" in error ? error.status : undefined;
+  return typeof status === "number" ? status : undefined;
 }
 
 function isAuthenticationError(error: unknown): boolean {
   if (getErrorStatus(error) === 401) {
     return true;
   }
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
   return (
-    message.includes('http 401') ||
+    message.includes("http 401") ||
     message.includes('"code":401') ||
-    message.includes('unauthenticated') ||
-    message.includes('invalid_token') ||
-    message.includes('missing required authentication credential')
+    message.includes("unauthenticated") ||
+    message.includes("invalid_token") ||
+    message.includes("missing required authentication credential")
   );
 }
 
 function isNetworkError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (!error) {
+    return false;
+  }
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase();
+  const code =
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code.toLowerCase()
+      : "";
   return (
-    message.includes('network') ||
-    message.includes('socket') ||
-    message.includes('fetch failed') ||
-    message.includes('econn') ||
-    message.includes('dns')
+    message.includes("network") ||
+    message.includes("socket") ||
+    message.includes("fetch failed") ||
+    message.includes("econn") ||
+    message.includes("dns") ||
+    message.includes("enotfound") ||
+    message.includes("eai_again") ||
+    message.includes("etimedout") ||
+    message.includes("ehostunreach") ||
+    message.includes("enetunreach") ||
+    message.includes("getaddrinfo") ||
+    message.includes("err_network") ||
+    message.includes("err_name_not_resolved") ||
+    code === "enotfound" ||
+    code === "eai_again" ||
+    code === "etimedout" ||
+    code === "econnrefused" ||
+    code === "econnreset"
   );
 }
 
 function classifyValidationError(
   error: unknown,
   signal: AbortSignal,
-  phase: 'user-info' | 'refresh',
+  phase: "user-info" | "refresh",
 ): LocalAccountValidationFailureCode {
-  if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
-    return 'timed-out';
+  if (
+    signal.aborted ||
+    (error instanceof Error && error.name === "AbortError")
+  ) {
+    return "timed-out";
   }
   if (error instanceof LocalAccountValidationIssue) {
     return error.code;
   }
   if (isAuthenticationError(error)) {
-    return 'authentication-failed';
+    return "authentication-failed";
   }
-  if (phase === 'refresh' && !isNetworkError(error)) {
-    return 'authentication-failed';
+  if (phase === "refresh" && !isNetworkError(error)) {
+    return "authentication-failed";
   }
-  return 'network-failed';
+  return "network-failed";
 }
 
 function createFailure(
@@ -158,7 +201,10 @@ function appendUniqueSource(
   candidate: LocalAccountSourceReference,
 ): void {
   if (
-    sources.some((source) => source.id === candidate.id && source.location === candidate.location)
+    sources.some(
+      (source) =>
+        source.id === candidate.id && source.location === candidate.location,
+    )
   ) {
     return;
   }
@@ -171,10 +217,13 @@ function mergeValidatedCredential(
 ): DiscoveredCredential {
   const useCandidateAccess =
     !current.accessToken ||
-    (candidate.accessToken && (candidate.expiryTimestamp ?? 0) > (current.expiryTimestamp ?? 0));
+    (candidate.accessToken &&
+      (candidate.expiryTimestamp ?? 0) > (current.expiryTimestamp ?? 0));
   return {
     refreshToken: current.refreshToken,
-    accessToken: useCandidateAccess ? candidate.accessToken : current.accessToken,
+    accessToken: useCandidateAccess
+      ? candidate.accessToken
+      : current.accessToken,
     idToken: useCandidateAccess
       ? (candidate.idToken ?? current.idToken)
       : (current.idToken ?? candidate.idToken),
@@ -185,7 +234,10 @@ function mergeValidatedCredential(
   };
 }
 
-function containsCredentialSecret(value: string, credential: DiscoveredCredential): boolean {
+function containsCredentialSecret(
+  value: string,
+  credential: DiscoveredCredential,
+): boolean {
   return [credential.refreshToken, credential.accessToken, credential.idToken]
     .filter((secret): secret is string => Boolean(secret))
     .some((secret) => value.includes(secret));
@@ -196,22 +248,24 @@ function toValidatedIdentity(
   credential: DiscoveredCredential,
 ): ValidatedLocalAccountIdentity {
   if (!userInfo.verified_email) {
-    throw new LocalAccountValidationIssue('unverified-email');
+    throw new LocalAccountValidationIssue("unverified-email");
   }
   const parsedEmail = VerifiedEmailSchema.safeParse(userInfo.email);
   if (
     !parsedEmail.success ||
-    parsedEmail.data === 'unknown' ||
+    parsedEmail.data === "unknown" ||
     containsCredentialSecret(parsedEmail.data, credential)
   ) {
-    throw new LocalAccountValidationIssue('invalid-profile');
+    throw new LocalAccountValidationIssue("invalid-profile");
   }
   const name = userInfo.name.trim();
   const avatarUrl = userInfo.picture?.trim();
   return {
     email: parsedEmail.data,
     ...(name && !containsCredentialSecret(name, credential) ? { name } : {}),
-    ...(avatarUrl && !containsCredentialSecret(avatarUrl, credential) ? { avatarUrl } : {}),
+    ...(avatarUrl && !containsCredentialSecret(avatarUrl, credential)
+      ? { avatarUrl }
+      : {}),
   };
 }
 
@@ -222,19 +276,21 @@ export class LocalAccountValidationService {
 
   constructor(options: LocalAccountValidationServiceOptions = {}) {
     this.dependencies = options.dependencies ?? createDefaultDependencies();
-    const requestedConcurrency = options.maxConcurrency ?? 3;
+    const requestedConcurrency = options.maxConcurrency ?? 6;
     this.maxConcurrency =
       Number.isFinite(requestedConcurrency) && requestedConcurrency > 0
         ? Math.floor(requestedConcurrency)
-        : 3;
-    const requestedTimeoutMs = options.timeoutMs ?? 15_000;
+        : 6;
+    const requestedTimeoutMs = options.timeoutMs ?? 5_000;
     this.timeoutMs =
       Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
         ? Math.floor(requestedTimeoutMs)
-        : 15_000;
+        : 5_000;
   }
 
-  async validate(session: LocalAccountDiscoverySession): Promise<LocalAccountValidationSession> {
+  async validate(
+    session: LocalAccountDiscoverySession,
+  ): Promise<LocalAccountValidationSession> {
     const candidateResults = await this.validateCandidates(session);
     const accounts: ValidatedLocalAccountSummary[] = [];
     const failed: LocalAccountValidationFailure[] = [];
@@ -242,7 +298,7 @@ export class LocalAccountValidationService {
     const candidateByEmail = new Map<string, ValidatedCandidate>();
 
     for (const result of candidateResults) {
-      if (result.status === 'failed') {
+      if (result.status === "failed") {
         failed.push(result.failure);
         continue;
       }
@@ -266,9 +322,12 @@ export class LocalAccountValidationService {
       current.summary.projectId = current.credential.projectId;
       current.summary.identity = {
         ...current.summary.identity,
-        name: current.summary.identity.name ?? result.candidate.summary.identity.name,
+        name:
+          current.summary.identity.name ??
+          result.candidate.summary.identity.name,
         avatarUrl:
-          current.summary.identity.avatarUrl ?? result.candidate.summary.identity.avatarUrl,
+          current.summary.identity.avatarUrl ??
+          result.candidate.summary.identity.avatarUrl,
       };
 
       const merge = mergedByEmail.get(email) ?? {
@@ -282,7 +341,10 @@ export class LocalAccountValidationService {
 
     const credentialsByFingerprint = new Map<string, DiscoveredCredential>();
     for (const candidate of candidateByEmail.values()) {
-      credentialsByFingerprint.set(candidate.summary.fingerprint, candidate.credential);
+      credentialsByFingerprint.set(
+        candidate.summary.fingerprint,
+        candidate.credential,
+      );
     }
 
     return new LocalAccountValidationSession(
@@ -299,44 +361,74 @@ export class LocalAccountValidationService {
   private async validateCandidates(
     session: LocalAccountDiscoverySession,
   ): Promise<CandidateValidationResult[]> {
-    const results = new Array<CandidateValidationResult>(session.result.accounts.length);
+    const results = new Array<CandidateValidationResult>(
+      session.result.accounts.length,
+    );
     let nextIndex = 0;
+    let consecutiveNetworkFailures = 0;
 
     const worker = async (): Promise<void> => {
       while (nextIndex < session.result.accounts.length) {
         const candidateIndex = nextIndex;
         nextIndex += 1;
-        results[candidateIndex] = await this.validateCandidate(
-          session,
-          session.result.accounts[candidateIndex],
-        );
+        const candidateSummary = session.result.accounts[candidateIndex];
+
+        if (consecutiveNetworkFailures >= 2) {
+          results[candidateIndex] = {
+            status: "failed",
+            failure: createFailure(
+              candidateSummary.fingerprint,
+              "network-failed",
+            ),
+          };
+          continue;
+        }
+
+        const res = await this.validateCandidate(session, candidateSummary);
+        results[candidateIndex] = res;
+
+        if (
+          res.status === "failed" &&
+          (res.failure.code === "network-failed" ||
+            res.failure.code === "timed-out")
+        ) {
+          consecutiveNetworkFailures += 1;
+        } else if (res.status === "validated") {
+          consecutiveNetworkFailures = 0;
+        }
       }
     };
 
-    const workerCount = Math.min(this.maxConcurrency, session.result.accounts.length);
+    const workerCount = Math.min(
+      this.maxConcurrency,
+      session.result.accounts.length,
+    );
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
     return results;
   }
 
   private async validateCandidate(
     session: LocalAccountDiscoverySession,
-    sourceSummary: LocalAccountDiscoverySession['result']['accounts'][number],
+    sourceSummary: LocalAccountDiscoverySession["result"]["accounts"][number],
   ): Promise<CandidateValidationResult> {
     const fingerprint = sourceSummary.fingerprint;
     const credential = session.getCredential(fingerprint);
     if (!credential) {
       return {
-        status: 'failed',
-        failure: createFailure(fingerprint, 'credential-unavailable'),
+        status: "failed",
+        failure: createFailure(fingerprint, "credential-unavailable"),
       };
     }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const validated = await this.resolveIdentity(credential, controller.signal);
+      const validated = await this.resolveIdentity(
+        credential,
+        controller.signal,
+      );
       return {
-        status: 'validated',
+        status: "validated",
         candidate: {
           credential: validated.credential,
           summary: {
@@ -352,11 +444,12 @@ export class LocalAccountValidationService {
       };
     } catch (error) {
       const phase =
-        error instanceof LocalAccountValidationIssue && error.code === 'authentication-failed'
-          ? 'refresh'
-          : 'user-info';
+        error instanceof LocalAccountValidationIssue &&
+        error.code === "authentication-failed"
+          ? "refresh"
+          : "user-info";
       return {
-        status: 'failed',
+        status: "failed",
         failure: createFailure(
           fingerprint,
           classifyValidationError(error, controller.signal, phase),
@@ -370,13 +463,19 @@ export class LocalAccountValidationService {
   private async resolveIdentity(
     originalCredential: DiscoveredCredential,
     signal: AbortSignal,
-  ): Promise<{ credential: DiscoveredCredential; identity: ValidatedLocalAccountIdentity }> {
+  ): Promise<{
+    credential: DiscoveredCredential;
+    identity: ValidatedLocalAccountIdentity;
+  }> {
     let credential = { ...originalCredential };
     if (!credential.accessToken) {
       credential = await this.refreshCredential(credential, signal);
     } else {
       try {
-        const userInfo = await this.dependencies.getUserInfo(credential.accessToken, signal);
+        const userInfo = await this.dependencies.getUserInfo(
+          credential.accessToken,
+          signal,
+        );
         return {
           credential,
           identity: toValidatedIdentity(userInfo, credential),
@@ -391,9 +490,12 @@ export class LocalAccountValidationService {
 
     const refreshedAccessToken = credential.accessToken;
     if (!refreshedAccessToken) {
-      throw new LocalAccountValidationIssue('authentication-failed');
+      throw new LocalAccountValidationIssue("authentication-failed");
     }
-    const userInfo = await this.dependencies.getUserInfo(refreshedAccessToken, signal);
+    const userInfo = await this.dependencies.getUserInfo(
+      refreshedAccessToken,
+      signal,
+    );
     return {
       credential,
       identity: toValidatedIdentity(userInfo, credential),
@@ -405,22 +507,27 @@ export class LocalAccountValidationService {
     signal: AbortSignal,
   ): Promise<DiscoveredCredential> {
     try {
-      const refreshed = await this.dependencies.refreshAccessToken(credential.refreshToken, signal);
+      const refreshed = await this.dependencies.refreshAccessToken(
+        credential.refreshToken,
+        signal,
+      );
       if (!refreshed.access_token?.trim()) {
-        throw new LocalAccountValidationIssue('authentication-failed');
+        throw new LocalAccountValidationIssue("authentication-failed");
       }
       return {
-        refreshToken: refreshed.refresh_token?.trim() || credential.refreshToken,
+        refreshToken:
+          refreshed.refresh_token?.trim() || credential.refreshToken,
         accessToken: refreshed.access_token,
         idToken: refreshed.id_token ?? credential.idToken,
         projectId: credential.projectId,
-        expiryTimestamp: this.dependencies.now() + Math.max(0, refreshed.expires_in),
+        expiryTimestamp:
+          this.dependencies.now() + Math.max(0, refreshed.expires_in),
       };
     } catch (error) {
       if (error instanceof LocalAccountValidationIssue) {
         throw error;
       }
-      const code = classifyValidationError(error, signal, 'refresh');
+      const code = classifyValidationError(error, signal, "refresh");
       throw new LocalAccountValidationIssue(code);
     }
   }

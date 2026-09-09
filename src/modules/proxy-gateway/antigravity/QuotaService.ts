@@ -1,16 +1,15 @@
-import axios, { AxiosInstance } from 'axios';
-import { isNumber } from 'lodash-es';
-import { QuotaData, LoadProjectResponse, QuotaApiResponse } from './types';
-import { logger } from '@/shared/logging/logger';
+import axios, { AxiosInstance } from "axios";
+import { isNumber } from "lodash-es";
+import { QuotaData, LoadProjectResponse, QuotaApiResponse } from "./types";
+import { logger } from "@/shared/logging/logger";
 
 // Constants
 const QUOTA_API_ENDPOINTS = [
-  'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels',
-  'https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
-  'https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
+  "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+  "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
 ] as const;
-const CLOUD_CODE_BASE_URL = 'https://cloudcode-pa.googleapis.com';
-const USER_AGENT = 'antigravity/1.11.3 Darwin/arm64'; // Keeping the same UA as source
+const CLOUD_CODE_BASE_URL = "https://cloudcode-pa.googleapis.com";
+const USER_AGENT = "antigravity/1.11.3 Darwin/arm64"; // Keeping the same UA as source
 const QUOTA_FALLBACK_DELAY_MS = 1000;
 
 function getErrorMessage(error: unknown): string {
@@ -23,8 +22,8 @@ export class QuotaService {
     return axios.create({
       timeout: timeoutSecs * 1000,
       headers: {
-        'User-Agent': USER_AGENT,
-        'Content-Type': 'application/json',
+        "User-Agent": USER_AGENT,
+        "Content-Type": "application/json",
       },
     });
   }
@@ -37,7 +36,7 @@ export class QuotaService {
     email: string,
   ): Promise<[string | undefined, string | undefined]> {
     const client = this.createClient();
-    const meta = { metadata: { ideType: 'ANTIGRAVITY' } };
+    const meta = { metadata: { ideType: "ANTIGRAVITY" } };
 
     try {
       const res = await client.post<LoadProjectResponse>(
@@ -46,7 +45,7 @@ export class QuotaService {
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
-            'User-Agent': 'antigravity/windows/amd64',
+            "User-Agent": "antigravity/windows/amd64",
           },
         },
       );
@@ -59,15 +58,21 @@ export class QuotaService {
         const subscriptionTier = data.paidTier?.id || data.currentTier?.id;
 
         if (subscriptionTier) {
-          logger.info(`📊 [${email}] Subscription Identified: ${subscriptionTier}`);
+          logger.info(
+            `📊 [${email}] Subscription Identified: ${subscriptionTier}`,
+          );
         }
 
         return [projectId, subscriptionTier];
       } else {
-        logger.warn(`⚠️  [${email}] loadCodeAssist failed: Status: ${res.status}`);
+        logger.warn(
+          `⚠️  [${email}] loadCodeAssist failed: Status: ${res.status}`,
+        );
       }
     } catch (error: unknown) {
-      logger.error(`❌ [${email}] loadCodeAssist Network Error: ${getErrorMessage(error)}`);
+      logger.error(
+        `❌ [${email}] loadCodeAssist Network Error: ${getErrorMessage(error)}`,
+      );
     }
 
     return [undefined, undefined];
@@ -88,7 +93,10 @@ export class QuotaService {
     email: string,
   ): Promise<{ quotaData: QuotaData; projectId?: string }> {
     // 1. Get Project ID and Subscription Type
-    const [projectId, subscriptionTier] = await this.fetchProjectId(accessToken, email);
+    const [projectId, subscriptionTier] = await this.fetchProjectId(
+      accessToken,
+      email,
+    );
 
     const finalProjectId = projectId;
 
@@ -96,7 +104,11 @@ export class QuotaService {
     const payload = finalProjectId ? { project: finalProjectId } : {};
     let lastError: Error | null = null;
 
-    for (let endpointIndex = 0; endpointIndex < QUOTA_API_ENDPOINTS.length; endpointIndex++) {
+    for (
+      let endpointIndex = 0;
+      endpointIndex < QUOTA_API_ENDPOINTS.length;
+      endpointIndex++
+    ) {
       const endpoint = QUOTA_API_ENDPOINTS[endpointIndex];
       const hasNextEndpoint = endpointIndex + 1 < QUOTA_API_ENDPOINTS.length;
       logger.info(`Sending quota request to ${endpoint}`);
@@ -106,18 +118,24 @@ export class QuotaService {
 
       while (true) {
         try {
-          const response = await client.post<QuotaApiResponse>(endpoint, currentPayload, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'User-Agent': USER_AGENT,
+          const response = await client.post<QuotaApiResponse>(
+            endpoint,
+            currentPayload,
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "User-Agent": USER_AGENT,
+              },
             },
-          });
+          );
 
           const quotaResponse = response.data;
           const quotaData = this.toQuotaData(quotaResponse, subscriptionTier);
 
           if (endpointIndex > 0) {
-            logger.info(`Quota API fallback succeeded at endpoint #${endpointIndex + 1}`);
+            logger.info(
+              `Quota API fallback succeeded at endpoint #${endpointIndex + 1}`,
+            );
           }
 
           return { quotaData, projectId };
@@ -126,24 +144,26 @@ export class QuotaService {
 
           if (axios.isAxiosError(error)) {
             const status = error.response?.status;
-            let responseBodyText = '';
+            let responseBodyText = "";
             try {
-              responseBodyText = JSON.stringify(error.response?.data || '');
+              responseBodyText = JSON.stringify(error.response?.data || "");
             } catch {
-              responseBodyText = '[Unable to serialize response data]';
+              responseBodyText = "[Unable to serialize response data]";
             }
 
             // ✅ Handle 403 Forbidden specifically - return immediately, do not retry
             if (status === 403) {
-              if (!retriedWithoutProject && 'project' in currentPayload) {
-                logger.warn('Quota API returned 403 with project ID, retrying without project ID');
+              if (!retriedWithoutProject && "project" in currentPayload) {
+                logger.warn(
+                  "Quota API returned 403 with project ID, retrying without project ID",
+                );
                 currentPayload = {};
                 retriedWithoutProject = true;
                 continue;
               }
 
               logger.warn(
-                'Quota API returned 403 without project fallback; marking account as forbidden',
+                "Quota API returned 403 without project fallback; marking account as forbidden",
               );
               return {
                 quotaData: this.createForbiddenQuotaData(subscriptionTier),
@@ -164,22 +184,30 @@ export class QuotaService {
             lastError = new Error(`HTTP ${status} - ${responseBodyText}`);
             shouldFallback = !isNumber(status);
           } else {
-            logger.warn(`Quota API request failed at ${endpoint}: ${getErrorMessage(error)}`);
-            lastError = error instanceof Error ? error : new Error(String(error));
+            logger.warn(
+              `Quota API request failed at ${endpoint}: ${getErrorMessage(error)}`,
+            );
+            lastError =
+              error instanceof Error ? error : new Error(String(error));
           }
 
           if (hasNextEndpoint && shouldFallback) {
-            logger.warn(`Quota API request failed at ${endpoint}, falling back to next endpoint`);
+            logger.warn(
+              `Quota API request failed at ${endpoint}, falling back to next endpoint`,
+            );
             await this.waitBeforeNextQuotaEndpoint();
             break;
           } else {
-            throw lastError ?? new Error(`Quota query failed: ${getErrorMessage(error)}`);
+            throw (
+              lastError ??
+              new Error(`Quota query failed: ${getErrorMessage(error)}`)
+            );
           }
         }
       }
     }
 
-    throw lastError ?? new Error('Unknown error in fetchQuota');
+    throw lastError ?? new Error("Unknown error in fetchQuota");
   }
 
   private static toQuotaData(
@@ -192,7 +220,9 @@ export class QuotaService {
       subscriptionTier,
     };
 
-    logger.info(`Quota API returned ${Object.keys(quotaResponse.models || {}).length} models:`);
+    logger.info(
+      `Quota API returned ${Object.keys(quotaResponse.models || {}).length} models:`,
+    );
 
     if (!quotaResponse.models) {
       return quotaData;
@@ -206,11 +236,11 @@ export class QuotaService {
 
       const remainingFraction = modelInfo.quotaInfo.remainingFraction ?? 0;
       const percentage = Math.floor(remainingFraction * 100);
-      const resetTime = modelInfo.quotaInfo.resetTime || '';
+      const resetTime = modelInfo.quotaInfo.resetTime || "";
 
       // Only save models we care about, filtering out old versions (< 3.0)
-      const isGeminiModel = modelName.includes('gemini');
-      const isClaudeModel = modelName.includes('claude');
+      const isGeminiModel = modelName.includes("gemini");
+      const isClaudeModel = modelName.includes("claude");
       const isLegacyGeminiModel = /gemini-[12](\.|$|-)/.test(modelName);
 
       if ((isGeminiModel || isClaudeModel) && !isLegacyGeminiModel) {
@@ -221,7 +251,9 @@ export class QuotaService {
     return quotaData;
   }
 
-  private static createForbiddenQuotaData(subscriptionTier: string | undefined): QuotaData {
+  private static createForbiddenQuotaData(
+    subscriptionTier: string | undefined,
+  ): QuotaData {
     return {
       models: {},
       isForbidden: true,

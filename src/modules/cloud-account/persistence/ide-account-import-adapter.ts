@@ -29,6 +29,17 @@ import {
 export const AGY_SYNC_FROM_IDE_UNSUPPORTED_MESSAGE =
   "Antigravity CLI accounts are stored in the system credential store and cannot be synced from IDE SQLite state.";
 
+export function getTargetDisplayName(target?: AntigravityAppTarget): string {
+  const resolved = resolveAntigravityAppTarget(target);
+  if (resolved === "ide") {
+    return "Antigravity IDE";
+  }
+  if (resolved === "agy") {
+    return "Antigravity CLI";
+  }
+  return "Antigravity";
+}
+
 const SQLITE_BUSY_CODES = new Set(["SQLITE_BUSY", "SQLITE_LOCKED"]);
 const SQLITE_BUSY_TIMEOUT_MS = 3000;
 const SQLITE_RETRY_DELAY_MS = 150;
@@ -243,8 +254,8 @@ export class IdeAccountImportAdapter {
     const normalizedMessage = message.toLowerCase();
 
     return (
-      normalizedMessage.includes("no cloud account found in ide") ||
-      normalizedMessage.includes("no oauth token found in ide state")
+      normalizedMessage.includes("no cloud account found") ||
+      normalizedMessage.includes("no oauth token found")
     );
   }
 
@@ -323,6 +334,7 @@ export class IdeAccountImportAdapter {
     appTarget?: AntigravityAppTarget,
   ): Promise<CloudAccount | null> {
     const resolvedTarget = resolveAntigravityAppTarget(appTarget);
+    const targetName = getTargetDisplayName(appTarget);
     let tokenInfo: IdeTokenInfo | null = null;
     let sourceDescription = "";
 
@@ -369,10 +381,10 @@ export class IdeAccountImportAdapter {
         }
       }
 
-      // Tier 2: System Credential Store
+      // Tier 2: System Credential Store (if Tier 1 yielded no token)
       if (!tokenInfo) {
         logger.info(
-          "SyncLocal: IDE database missing or contains no account; checking System Credential Store",
+          "SyncLocal: Database missing or contains no account; checking System Credential Store",
         );
         try {
           const credentialStoreToken = readAntigravityCredentialStoreToken();
@@ -406,10 +418,10 @@ export class IdeAccountImportAdapter {
         }
       }
 
-      // Tier 3: CLI Token File
+      // Tier 3: CLI token fallback (if Tier 1 and Tier 2 yielded no token)
       if (!tokenInfo) {
         logger.info(
-          "SyncLocal: System Credential Store missing or empty; checking Antigravity CLI token file",
+          "SyncLocal: System Credential Store missing or empty; checking Antigravity CLI token",
         );
         try {
           tokenInfo = this.readCliToken();
@@ -425,8 +437,7 @@ export class IdeAccountImportAdapter {
       }
 
       if (!tokenInfo) {
-        const message =
-          "No cloud account found in Antigravity IDE, System Credential Store, or Antigravity CLI.";
+        const message = `No cloud account found in ${targetName}, System Credential Store, or Antigravity CLI.`;
         logger.error(`SyncLocal: ${message}`);
         throw new Error(message);
       }
@@ -447,7 +458,7 @@ export class IdeAccountImportAdapter {
           !effectiveTokenInfo.accessToken ||
           effectiveTokenInfo.accessToken.trim() === ""
         ) {
-          throw new Error("IDE OAuth access token is empty");
+          throw new Error("OAuth access token is empty");
         }
         googleUserInfo = await GoogleAPIService.getUserInfo(
           effectiveTokenInfo.accessToken,
@@ -461,7 +472,7 @@ export class IdeAccountImportAdapter {
         ) {
           const apiErrorMessage =
             apiError instanceof Error ? apiError.message : String(apiError);
-          const message = `Failed to validate token with Google API. The token may be expired. Please re-login in Antigravity IDE. Error: ${apiErrorMessage}`;
+          const message = `Failed to validate token with Google API. The token may be expired. Please re-login in ${targetName}. Error: ${apiErrorMessage}`;
           logger.error(`SyncLocal: ${message}`, apiError);
           throw new Error(message);
         }
@@ -485,7 +496,7 @@ export class IdeAccountImportAdapter {
             refreshError instanceof Error
               ? refreshError.message
               : String(refreshError);
-          const message = `Failed to refresh IDE token with Google API. Please re-login in Antigravity IDE. Error: ${refreshErrorMessage}`;
+          const message = `Failed to refresh token with Google API. Please re-login in ${targetName}. Error: ${refreshErrorMessage}`;
           logger.error(`SyncLocal: ${message}`, refreshError);
           throw new Error(message);
         }

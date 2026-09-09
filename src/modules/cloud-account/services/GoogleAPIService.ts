@@ -1,51 +1,48 @@
-import { z } from 'zod';
-import axios, { type AxiosProxyConfig, type AxiosRequestConfig } from 'axios';
-import { ConfigManager } from '@/modules/config/ipc/manager';
-import { AuthServer } from '@/modules/cloud-account/ipc/authServer';
+import { z } from "zod";
+import axios, { type AxiosProxyConfig, type AxiosRequestConfig } from "axios";
+import { ConfigManager } from "@/modules/config/ipc/manager";
+import { AuthServer } from "@/modules/cloud-account/ipc/authServer";
 import {
   buildUserAgent,
   FALLBACK_VERSION,
   resolveLocalInstalledVersion,
-} from '@/modules/proxy-gateway/server/common/utils/request-user-agent';
-import { isEmpty, isNumber, isString } from 'lodash-es';
-import { v4 } from 'uuid';
-import { logger } from '@/shared/logging/logger';
+} from "@/modules/proxy-gateway/server/common/utils/request-user-agent";
+import { isEmpty, isNumber, isString } from "lodash-es";
+import { v4 } from "uuid";
+import { logger } from "@/shared/logging/logger";
 import {
   type OAuthClientDescriptor,
   OAuthClientRegistryService,
-} from './OAuthClientRegistryService';
-import { GOOGLE_OAUTH_SCOPE } from '../oauthScopes';
+} from "./OAuthClientRegistryService";
+import { GOOGLE_OAUTH_SCOPE } from "../oauthScopes";
 
 // --- Constants & Config ---
 const URLS = {
-  TOKEN: 'https://oauth2.googleapis.com/token',
-  USER_INFO: 'https://www.googleapis.com/oauth2/v2/userinfo',
-  AUTH: 'https://accounts.google.com/o/oauth2/v2/auth',
-  LOAD_PROJECT: 'https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist',
-  SANDBOX_LOAD_PROJECT:
-    'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist',
-  DAILY_LOAD_PROJECT: 'https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist',
-  FETCH_CREDITS: 'https://cloudcode-pa.googleapis.com/v1internal:fetchCredits',
+  TOKEN: "https://oauth2.googleapis.com/token",
+  USER_INFO: "https://www.googleapis.com/oauth2/v2/userinfo",
+  AUTH: "https://accounts.google.com/o/oauth2/v2/auth",
+  LOAD_PROJECT: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+  DAILY_LOAD_PROJECT:
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+  FETCH_CREDITS: "https://cloudcode-pa.googleapis.com/v1internal:fetchCredits",
 };
 
 const QUOTA_API_ENDPOINTS = [
-  'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels',
-  'https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
-  'https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
+  "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+  "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
 ];
 
 const QUOTA_SUMMARY_ENDPOINTS = [
-  'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary',
-  'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
-  'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+  "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+  "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
 ];
 
 // Request timeout in milliseconds (30 seconds)
 const REQUEST_TIMEOUT_MS = 30000;
 const OAUTH_CLIENT_ERROR_CODES = new Set([
-  'invalid_client',
-  'unauthorized_client',
-  'deleted_client',
+  "invalid_client",
+  "unauthorized_client",
+  "deleted_client",
 ]);
 const INVALID_GRANT_RETRY_DELAY_MS = 500;
 
@@ -87,11 +84,11 @@ function extractOAuthErrorDescription(errorText: string): string | undefined {
   if (parsed?.error_description) {
     const normalized = Array.from(parsed.error_description, (character) => {
       const codePoint = character.codePointAt(0) ?? 0;
-      return codePoint <= 0x1f || codePoint === 0x7f ? ' ' : character;
+      return codePoint <= 0x1f || codePoint === 0x7f ? " " : character;
     })
-      .join('')
+      .join("")
       .trim();
-    return normalized === '' ? undefined : normalized.slice(0, 200);
+    return normalized === "" ? undefined : normalized.slice(0, 200);
   }
   return undefined;
 }
@@ -103,8 +100,10 @@ export class OAuthTokenRefreshError extends Error {
     readonly clientKey: string,
     readonly description?: string,
   ) {
-    super(`Token refresh failed for OAuth client [${clientKey}]: ${code ?? `HTTP ${status}`}`);
-    this.name = 'OAuthTokenRefreshError';
+    super(
+      `Token refresh failed for OAuth client [${clientKey}]: ${code ?? `HTTP ${status}`}`,
+    );
+    this.name = "OAuthTokenRefreshError";
   }
 }
 
@@ -125,7 +124,9 @@ function createGoogleApiRequestSignal(
 ): GoogleApiRequestSignal {
   const timeoutSignal = AbortSignal.timeout(ms);
   return {
-    signal: externalSignal ? AbortSignal.any([timeoutSignal, externalSignal]) : timeoutSignal,
+    signal: externalSignal
+      ? AbortSignal.any([timeoutSignal, externalSignal])
+      : timeoutSignal,
     timeoutSignal,
   };
 }
@@ -135,13 +136,13 @@ interface GoogleApiHttpResponse {
   status: number;
 }
 
-type GoogleApiProxyOptions = Pick<AxiosRequestConfig, 'proxy'>;
+type GoogleApiProxyOptions = Pick<AxiosRequestConfig, "proxy">;
 type GoogleApiRequestBody = URLSearchParams | string;
 
 interface GoogleApiRequestOptions extends GoogleApiProxyOptions {
   data?: GoogleApiRequestBody;
-  headers?: AxiosRequestConfig['headers'];
-  method: 'GET' | 'POST';
+  headers?: AxiosRequestConfig["headers"];
+  method: "GET" | "POST";
   signal: AbortSignal;
 }
 
@@ -154,7 +155,7 @@ function responseDataToText(data: unknown): string {
     return data;
   }
   if (data === null || data === undefined) {
-    return '';
+    return "";
   }
 
   try {
@@ -164,7 +165,10 @@ function responseDataToText(data: unknown): string {
   }
 }
 
-function isTimedOutHttpRequest(error: unknown, timeoutSignal: AbortSignal): boolean {
+function isTimedOutHttpRequest(
+  error: unknown,
+  timeoutSignal: AbortSignal,
+): boolean {
   if (!timeoutSignal.aborted) {
     return false;
   }
@@ -173,22 +177,32 @@ function isTimedOutHttpRequest(error: unknown, timeoutSignal: AbortSignal): bool
     return true;
   }
   if (axios.isAxiosError(error)) {
-    return error.code === 'ECONNABORTED' || error.code === 'ERR_CANCELED';
+    return error.code === "ECONNABORTED" || error.code === "ERR_CANCELED";
   }
 
-  return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  );
 }
 
 function parseAxiosProxyUrl(proxyUrl: string): AxiosProxyConfig {
   const parsed = new URL(proxyUrl);
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(`Unsupported HTTP proxy protocol: ${parsed.protocol}`);
   }
 
-  const host = parsed.hostname.startsWith('[') ? parsed.hostname.slice(1, -1) : parsed.hostname;
+  const host = parsed.hostname.startsWith("[")
+    ? parsed.hostname.slice(1, -1)
+    : parsed.hostname;
   const protocol = parsed.protocol.slice(0, -1);
-  const port = parsed.port === '' ? (protocol === 'https' ? 443 : 80) : Number(parsed.port);
-  const hasCredentials = parsed.username !== '' || parsed.password !== '';
+  const port =
+    parsed.port === ""
+      ? protocol === "https"
+        ? 443
+        : 80
+      : Number(parsed.port);
+  const hasCredentials = parsed.username !== "" || parsed.password !== "";
 
   return {
     auth: hasCredentials
@@ -223,21 +237,26 @@ async function requestGoogleApi(
   };
 }
 
-function waitForAbortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+function waitForAbortableDelay(
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
   if (signal?.aborted) {
-    return Promise.reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+    return Promise.reject(
+      signal.reason ?? new DOMException("Aborted", "AbortError"),
+    );
   }
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      signal?.removeEventListener('abort', handleAbort);
+      signal?.removeEventListener("abort", handleAbort);
       resolve();
     }, ms);
     const handleAbort = () => {
       clearTimeout(timeout);
-      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
     };
-    signal?.addEventListener('abort', handleAbort, { once: true });
+    signal?.addEventListener("abort", handleAbort, { once: true });
   });
 }
 
@@ -270,7 +289,7 @@ export interface UserInfo {
 export class GoogleUserInfoHttpError extends Error {
   constructor(readonly status: number) {
     super(`Failed to fetch user info: HTTP ${status}`);
-    this.name = 'GoogleUserInfoHttpError';
+    this.name = "GoogleUserInfoHttpError";
   }
 }
 
@@ -342,7 +361,9 @@ const LoadProjectResponseSchema = z.object({
   currentTier: TierRawSchema.optional(),
   paidTier: TierRawSchema.optional(),
   allowedTiers: z.array(TierRawSchema).optional(),
-  ineligibleTiers: z.array(z.object({ reasonCode: z.string().optional() })).optional(),
+  ineligibleTiers: z
+    .array(z.object({ reasonCode: z.string().optional() }))
+    .optional(),
 });
 
 const ModelInfoRawSchema = z.object({
@@ -402,10 +423,13 @@ interface ProjectContext {
   subscriptionTier?: string;
 }
 
-function parseTokenResponse(payload: unknown, oauthClientKey: string): TokenResponse {
+function parseTokenResponse(
+  payload: unknown,
+  oauthClientKey: string,
+): TokenResponse {
   const parsed = TokenResponseSchema.safeParse(payload);
   if (!parsed.success) {
-    throw new Error('Received malformed OAuth token response from Google APIs');
+    throw new Error("Received malformed OAuth token response from Google APIs");
   }
 
   return {
@@ -417,7 +441,9 @@ function parseTokenResponse(payload: unknown, oauthClientKey: string): TokenResp
 function parseLoadProjectResponse(payload: unknown): LoadProjectResponse {
   const parsed = LoadProjectResponseSchema.safeParse(payload);
   if (!parsed.success) {
-    throw new Error('Received malformed project context response from Google APIs');
+    throw new Error(
+      "Received malformed project context response from Google APIs",
+    );
   }
   return parsed.data;
 }
@@ -425,7 +451,7 @@ function parseLoadProjectResponse(payload: unknown): LoadProjectResponse {
 function parseFetchModelsResponse(payload: unknown): FetchModelsResponse {
   const parsed = FetchModelsResponseSchema.safeParse(payload);
   if (!parsed.success) {
-    throw new Error('Received malformed quota response from Google APIs');
+    throw new Error("Received malformed quota response from Google APIs");
   }
   return parsed.data;
 }
@@ -433,13 +459,15 @@ function parseFetchModelsResponse(payload: unknown): FetchModelsResponse {
 function parseQuotaSummaryResponse(payload: unknown): QuotaSummaryResponse {
   const parsed = QuotaSummaryResponseSchema.safeParse(payload);
   if (!parsed.success) {
-    throw new Error('Received malformed quota summary response from Google APIs');
+    throw new Error(
+      "Received malformed quota summary response from Google APIs",
+    );
   }
   return parsed.data;
 }
 
 function isHttp429Error(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith('HTTP 429');
+  return error instanceof Error && error.message.startsWith("HTTP 429");
 }
 
 function sleep(ms: number): Promise<void> {
@@ -452,12 +480,14 @@ function buildInternalApiHeaders(accessToken: string): Record<string, string> {
   const discoveryVersion = resolveLocalInstalledVersion() ?? FALLBACK_VERSION;
   return {
     Authorization: `Bearer ${accessToken}`,
-    'User-Agent': buildUserAgent(discoveryVersion),
-    'Content-Type': 'application/json',
+    "User-Agent": buildUserAgent(discoveryVersion),
+    "Content-Type": "application/json",
   };
 }
 
-function resolveSubscriptionTier(payload: LoadProjectResponse): string | undefined {
+function resolveSubscriptionTier(
+  payload: LoadProjectResponse,
+): string | undefined {
   const paidTier = payload.paidTier;
   if (isString(paidTier?.name) && !isEmpty(paidTier.name.trim())) {
     return paidTier.name;
@@ -466,7 +496,9 @@ function resolveSubscriptionTier(payload: LoadProjectResponse): string | undefin
     return paidTier.id;
   }
 
-  const ineligible = Array.isArray(payload.ineligibleTiers) && payload.ineligibleTiers.length > 0;
+  const ineligible =
+    Array.isArray(payload.ineligibleTiers) &&
+    payload.ineligibleTiers.length > 0;
   if (!ineligible) {
     const currentTier = payload.currentTier;
     if (isString(currentTier?.name) && !isEmpty(currentTier.name.trim())) {
@@ -479,12 +511,23 @@ function resolveSubscriptionTier(payload: LoadProjectResponse): string | undefin
 
   if (Array.isArray(payload.allowedTiers)) {
     const preferredAllowedTier =
-      payload.allowedTiers.find((tier) => tier.is_default === true) ?? payload.allowedTiers[0];
-    if (isString(preferredAllowedTier?.name) && !isEmpty(preferredAllowedTier.name.trim())) {
-      return ineligible ? `${preferredAllowedTier.name} (Restricted)` : preferredAllowedTier.name;
+      payload.allowedTiers.find((tier) => tier.is_default === true) ??
+      payload.allowedTiers[0];
+    if (
+      isString(preferredAllowedTier?.name) &&
+      !isEmpty(preferredAllowedTier.name.trim())
+    ) {
+      return ineligible
+        ? `${preferredAllowedTier.name} (Restricted)`
+        : preferredAllowedTier.name;
     }
-    if (isString(preferredAllowedTier?.id) && !isEmpty(preferredAllowedTier.id.trim())) {
-      return ineligible ? `${preferredAllowedTier.id} (Restricted)` : preferredAllowedTier.id;
+    if (
+      isString(preferredAllowedTier?.id) &&
+      !isEmpty(preferredAllowedTier.id.trim())
+    ) {
+      return ineligible
+        ? `${preferredAllowedTier.id} (Restricted)`
+        : preferredAllowedTier.id;
     }
   }
 
@@ -495,7 +538,10 @@ function isTrackedModel(modelName: string): boolean {
   return /^(gemini|claude|gpt|image|imagen)/i.test(modelName);
 }
 
-function toModelQuotaInfo(modelName: string, info: ModelInfoRaw): ModelQuotaInfo | null {
+function toModelQuotaInfo(
+  modelName: string,
+  info: ModelInfoRaw,
+): ModelQuotaInfo | null {
   if (!isTrackedModel(modelName) || !info.quotaInfo) {
     return null;
   }
@@ -503,7 +549,7 @@ function toModelQuotaInfo(modelName: string, info: ModelInfoRaw): ModelQuotaInfo
   const fraction = info.quotaInfo.remainingFraction ?? 0;
   return {
     percentage: Math.floor(fraction * 100),
-    resetTime: info.quotaInfo.resetTime || '',
+    resetTime: info.quotaInfo.resetTime || "",
     display_name: info.displayName,
     supports_images: info.supportsImages,
     supports_thinking: info.supportsThinking,
@@ -516,15 +562,20 @@ function toModelQuotaInfo(modelName: string, info: ModelInfoRaw): ModelQuotaInfo
 }
 
 function toModelForwardingRules(
-  deprecatedModelIds: FetchModelsResponse['deprecatedModelIds'],
+  deprecatedModelIds: FetchModelsResponse["deprecatedModelIds"],
 ): Record<string, string> | undefined {
   if (!deprecatedModelIds || Object.keys(deprecatedModelIds).length === 0) {
     return undefined;
   }
 
   const forwardingRules: Record<string, string> = {};
-  for (const [oldModelId, deprecatedInfo] of Object.entries(deprecatedModelIds)) {
-    if (isString(deprecatedInfo.newModelId) && deprecatedInfo.newModelId !== '') {
+  for (const [oldModelId, deprecatedInfo] of Object.entries(
+    deprecatedModelIds,
+  )) {
+    if (
+      isString(deprecatedInfo.newModelId) &&
+      deprecatedInfo.newModelId !== ""
+    ) {
       forwardingRules[oldModelId] = deprecatedInfo.newModelId;
     }
   }
@@ -538,14 +589,14 @@ function toQuotaGroups(data: QuotaSummaryResponse): QuotaGroup[] | undefined {
   }
 
   const groups = data.groups.map((group) => ({
-    display_name: group.displayName || '',
+    display_name: group.displayName || "",
     description: group.description,
     buckets: Array.isArray(group.buckets)
       ? group.buckets.map((bucket) => ({
-          bucket_id: bucket.bucketId || '',
-          window: bucket.window || '',
+          bucket_id: bucket.bucketId || "",
+          window: bucket.window || "",
           remaining_fraction: bucket.remainingFraction ?? 0,
-          reset_time: bucket.resetTime || '',
+          reset_time: bucket.resetTime || "",
           display_name: bucket.displayName,
           description: bucket.description,
         }))
@@ -580,7 +631,7 @@ function extractAiCreditsFromProjectContext(
 
   return {
     credits: parseCreditAmount(availableCredit.creditAmount),
-    expiryDate: '',
+    expiryDate: "",
   };
 }
 
@@ -610,11 +661,11 @@ export class GoogleAPIService {
   }
 
   private static getAxiosOptions(proxyUrl?: string): GoogleApiProxyOptions {
-    const proxyTraceEnabled = process.env.DEBUG_PROXY_TRACE === '1';
+    const proxyTraceEnabled = process.env.DEBUG_PROXY_TRACE === "1";
 
     if (proxyUrl && proxyUrl.length > 0) {
       if (proxyTraceEnabled) {
-        logger.info('[GoogleAPIService] Proxy source: account proxy_url');
+        logger.info("[GoogleAPIService] Proxy source: account proxy_url");
       }
       return {
         proxy: parseAxiosProxyUrl(proxyUrl),
@@ -624,28 +675,34 @@ export class GoogleAPIService {
       const config = ConfigManager.loadConfig();
       if (config.proxy?.upstream_proxy?.enabled) {
         if (!config.proxy.upstream_proxy.url) {
-          throw new Error('Upstream proxy is enabled but URL is not configured');
+          throw new Error(
+            "Upstream proxy is enabled but URL is not configured",
+          );
         }
         if (proxyTraceEnabled) {
-          logger.info('[GoogleAPIService] Proxy source: config.proxy.upstream_proxy.url');
+          logger.info(
+            "[GoogleAPIService] Proxy source: config.proxy.upstream_proxy.url",
+          );
         }
         return {
           proxy: parseAxiosProxyUrl(config.proxy.upstream_proxy.url),
         };
       }
     } catch (e) {
-      logger.error('[GoogleAPIService] Proxy configuration error', e);
+      logger.error("[GoogleAPIService] Proxy configuration error", e);
       throw e;
     }
 
-    const httpProxy = process.env.http_proxy?.trim() || process.env.HTTP_PROXY?.trim();
-    const httpsProxy = process.env.https_proxy?.trim() || process.env.HTTPS_PROXY?.trim();
+    const httpProxy =
+      process.env.http_proxy?.trim() || process.env.HTTP_PROXY?.trim();
+    const httpsProxy =
+      process.env.https_proxy?.trim() || process.env.HTTPS_PROXY?.trim();
     const electronProxyServer = process.env.ELECTRON_PROXY_SERVER?.trim();
 
     if (httpProxy || httpsProxy) {
       if (proxyTraceEnabled) {
         logger.info(
-          `[GoogleAPIService] Proxy source: HTTP(S)_PROXY env (http: ${httpProxy ?? 'none'}, https: ${httpsProxy ?? 'none'})`,
+          `[GoogleAPIService] Proxy source: HTTP(S)_PROXY env (http: ${httpProxy ?? "none"}, https: ${httpsProxy ?? "none"})`,
         );
       }
       // Axios' Node adapter reads HTTP(S)_PROXY and NO_PROXY through proxy-from-env.
@@ -664,7 +721,7 @@ export class GoogleAPIService {
     }
 
     if (proxyTraceEnabled) {
-      logger.info('[GoogleAPIService] Proxy source: none');
+      logger.info("[GoogleAPIService] Proxy source: none");
     }
 
     return {};
@@ -674,17 +731,18 @@ export class GoogleAPIService {
    * Generates the OAuth2 authorization URL.
    */
   static getAuthUrl(oauthClientKey?: string): string {
-    const oauthClient = OAuthClientRegistryService.selectAuthClient(oauthClientKey);
+    const oauthClient =
+      OAuthClientRegistryService.selectAuthClient(oauthClientKey);
     const redirectUri = AuthServer.getRedirectUri();
 
     const params = new URLSearchParams({
-      access_type: 'offline',
+      access_type: "offline",
       scope: GOOGLE_OAUTH_SCOPE,
-      prompt: 'consent',
-      response_type: 'code',
+      prompt: "consent",
+      response_type: "code",
       client_id: oauthClient.client_id,
       redirect_uri: redirectUri,
-      include_granted_scopes: 'true',
+      include_granted_scopes: "true",
       state: v4(),
     });
 
@@ -700,9 +758,10 @@ export class GoogleAPIService {
     preferredClientKey?: string,
   ): Promise<TokenResponse> {
     const redirectUri = AuthServer.getRedirectUri();
-    const candidates = OAuthClientRegistryService.getCandidateClients(preferredClientKey);
+    const candidates =
+      OAuthClientRegistryService.getCandidateClients(preferredClientKey);
     if (candidates.length === 0) {
-      throw new Error('No OAuth clients configured');
+      throw new Error("No OAuth clients configured");
     }
 
     const attemptErrors: string[] = [];
@@ -713,7 +772,7 @@ export class GoogleAPIService {
         client_secret: client.client_secret,
         code,
         redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
+        grant_type: "authorization_code",
       });
 
       logger.info(
@@ -729,16 +788,19 @@ export class GoogleAPIService {
       try {
         response = await requestGoogleApi(URLS.TOKEN, {
           data: params,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          method: 'POST',
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          method: "POST",
           signal: requestSignal.signal,
           ...axiosOptions,
         });
       } catch (error) {
-        logger.error(`[GoogleAPIService] Axios error for client=${client.key}:`, error);
+        logger.error(
+          `[GoogleAPIService] Axios error for client=${client.key}:`,
+          error,
+        );
         if (isTimedOutHttpRequest(error, requestSignal.timeoutSignal)) {
           throw new Error(
-            'Token exchange timed out. Please check your network connection and try again.',
+            "Token exchange timed out. Please check your network connection and try again.",
           );
         }
         throw error;
@@ -761,10 +823,14 @@ export class GoogleAPIService {
         continue;
       }
 
-      throw new Error(`Token exchange failed for client [${client.key}]: ${text}`);
+      throw new Error(
+        `Token exchange failed for client [${client.key}]: ${text}`,
+      );
     }
 
-    throw new Error(`Token exchange failed for all OAuth clients: ${attemptErrors.join(' | ')}`);
+    throw new Error(
+      `Token exchange failed for all OAuth clients: ${attemptErrors.join(" | ")}`,
+    );
   }
 
   /**
@@ -776,9 +842,10 @@ export class GoogleAPIService {
     preferredClientKey?: string,
     requestSignal?: AbortSignal,
   ): Promise<TokenResponse> {
-    const candidates = OAuthClientRegistryService.getCandidateClients(preferredClientKey);
+    const candidates =
+      OAuthClientRegistryService.getCandidateClients(preferredClientKey);
     if (candidates.length === 0) {
-      throw new Error('No OAuth clients configured');
+      throw new Error("No OAuth clients configured");
     }
 
     const attemptErrors: string[] = [];
@@ -788,24 +855,27 @@ export class GoogleAPIService {
         client_id: client.client_id,
         client_secret: client.client_secret,
         refresh_token: refreshToken,
-        grant_type: 'refresh_token',
+        grant_type: "refresh_token",
       });
 
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        const requestAbort = createGoogleApiRequestSignal(REQUEST_TIMEOUT_MS, requestSignal);
+        const requestAbort = createGoogleApiRequestSignal(
+          REQUEST_TIMEOUT_MS,
+          requestSignal,
+        );
         let response: GoogleApiHttpResponse;
         try {
           response = await requestGoogleApi(URLS.TOKEN, {
             data: params,
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            method: 'POST',
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            method: "POST",
             signal: requestAbort.signal,
             ...this.getAxiosOptions(proxyUrl),
           });
         } catch (error) {
           if (isTimedOutHttpRequest(error, requestAbort.timeoutSignal)) {
             throw new Error(
-              'Token refresh timed out. Please check your network connection and try again.',
+              "Token refresh timed out. Please check your network connection and try again.",
             );
           }
           throw error;
@@ -817,9 +887,14 @@ export class GoogleAPIService {
 
         const text = responseDataToText(response.data);
         const errorCode = extractOAuthErrorCode(text);
-        attemptErrors.push(`${client.key} => ${errorCode ?? `HTTP ${response.status}`}`);
-        if (errorCode === 'invalid_grant' && attempt === 0) {
-          await waitForAbortableDelay(INVALID_GRANT_RETRY_DELAY_MS, requestSignal);
+        attemptErrors.push(
+          `${client.key} => ${errorCode ?? `HTTP ${response.status}`}`,
+        );
+        if (errorCode === "invalid_grant" && attempt === 0) {
+          await waitForAbortableDelay(
+            INVALID_GRANT_RETRY_DELAY_MS,
+            requestSignal,
+          );
           continue;
         }
         if (isClientMismatchError(text)) {
@@ -838,7 +913,9 @@ export class GoogleAPIService {
       }
     }
 
-    throw new Error(`Token refresh failed for all OAuth clients: ${attemptErrors.join(' | ')}`);
+    throw new Error(
+      `Token refresh failed for all OAuth clients: ${attemptErrors.join(" | ")}`,
+    );
   }
 
   /**
@@ -849,19 +926,22 @@ export class GoogleAPIService {
     proxyUrl?: string,
     requestSignal?: AbortSignal,
   ): Promise<UserInfo> {
-    const requestAbort = createGoogleApiRequestSignal(REQUEST_TIMEOUT_MS, requestSignal);
+    const requestAbort = createGoogleApiRequestSignal(
+      REQUEST_TIMEOUT_MS,
+      requestSignal,
+    );
     let response: GoogleApiHttpResponse;
     try {
       response = await requestGoogleApi(URLS.USER_INFO, {
         headers: { Authorization: `Bearer ${accessToken}` },
-        method: 'GET',
+        method: "GET",
         signal: requestAbort.signal,
         ...this.getAxiosOptions(proxyUrl),
       });
     } catch (error) {
       if (isTimedOutHttpRequest(error, requestAbort.timeoutSignal)) {
         throw new Error(
-          'User info request timed out. Please check your network connection and try again.',
+          "User info request timed out. Please check your network connection and try again.",
         );
       }
       throw error;
@@ -880,8 +960,8 @@ export class GoogleAPIService {
         name: parsed.name ?? parsed.email,
       };
     } catch (err) {
-      logger.error('[GoogleAPIService] Malformed user info response:', err);
-      throw new Error('Received malformed user info from Google APIs');
+      logger.error("[GoogleAPIService] Malformed user info response:", err);
+      throw new Error("Received malformed user info from Google APIs");
     }
   }
 
@@ -890,20 +970,20 @@ export class GoogleAPIService {
     proxyUrl?: string,
   ): Promise<ProjectContext> {
     const body = {
-      metadata: { ideType: 'ANTIGRAVITY' },
+      metadata: { ideType: "ANTIGRAVITY" },
     };
 
     let projectId: string | undefined;
     let subscriptionTier: string | undefined;
     let lastError: unknown;
-    const endpoints = [URLS.LOAD_PROJECT, URLS.SANDBOX_LOAD_PROJECT];
+    const endpoints = [URLS.LOAD_PROJECT, URLS.DAILY_LOAD_PROJECT];
 
     for (const endpoint of endpoints) {
       try {
         const response = await requestGoogleApi(endpoint, {
           data: JSON.stringify(body),
           headers: buildInternalApiHeaders(accessToken),
-          method: 'POST',
+          method: "POST",
           signal: createGoogleApiRequestSignal(REQUEST_TIMEOUT_MS).signal,
           ...this.getAxiosOptions(proxyUrl),
         });
@@ -916,17 +996,22 @@ export class GoogleAPIService {
           subscriptionTier = resolveSubscriptionTier(data);
           break;
         } else {
-          lastError = new Error(`HTTP ${response.status}: ${responseDataToText(response.data)}`);
+          lastError = new Error(
+            `HTTP ${response.status}: ${responseDataToText(response.data)}`,
+          );
           if (endpoint === URLS.LOAD_PROJECT && response.status === 429) {
             logger.warn(
-              '[GoogleAPIService] Prod loadCodeAssist returned 429, falling back to sandbox endpoint',
+              "[GoogleAPIService] Prod loadCodeAssist returned 429, falling back to daily endpoint",
             );
             continue;
           }
         }
       } catch (error) {
         lastError = error;
-        logger.warn(`[GoogleAPIService] Failed to fetch project ID from ${endpoint} `, error);
+        logger.warn(
+          `[GoogleAPIService] Failed to fetch project ID from ${endpoint} `,
+          error,
+        );
         await sleep(500);
       }
 
@@ -940,7 +1025,10 @@ export class GoogleAPIService {
     }
 
     if (!projectId && !subscriptionTier) {
-      throw lastError || new Error('Failed to fetch project context after multiple attempts.');
+      throw (
+        lastError ||
+        new Error("Failed to fetch project context after multiple attempts.")
+      );
     }
 
     return {
@@ -963,24 +1051,25 @@ export class GoogleAPIService {
   ): Promise<{ credits: number; expiryDate: string } | null> {
     try {
       const axiosOptions = this.getAxiosOptions(proxyUrl);
-      const discoveryVersion = resolveLocalInstalledVersion() ?? FALLBACK_VERSION;
+      const discoveryVersion =
+        resolveLocalInstalledVersion() ?? FALLBACK_VERSION;
       const fallbackResponse = await requestGoogleApi(URLS.DAILY_LOAD_PROJECT, {
         data: JSON.stringify({
           metadata: {
-            ide_type: 'ANTIGRAVITY',
+            ide_type: "ANTIGRAVITY",
             ide_version: discoveryVersion,
-            ide_name: 'antigravity',
+            ide_name: "antigravity",
           },
         }),
         headers: buildInternalApiHeaders(accessToken),
-        method: 'POST',
+        method: "POST",
         signal: createGoogleApiRequestSignal(REQUEST_TIMEOUT_MS).signal,
         ...axiosOptions,
       });
 
       if (!isSuccessfulHttpStatus(fallbackResponse.status)) {
         if (fallbackResponse.status === 401) {
-          throw new Error('UNAUTHORIZED');
+          throw new Error("UNAUTHORIZED");
         }
         return null;
       }
@@ -988,7 +1077,7 @@ export class GoogleAPIService {
       const fallbackData = parseLoadProjectResponse(fallbackResponse.data);
       return extractAiCreditsFromProjectContext(fallbackData);
     } catch (error) {
-      if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      if (error instanceof Error && error.message === "UNAUTHORIZED") {
         throw error;
       }
       return null;
@@ -1012,7 +1101,9 @@ export class GoogleAPIService {
       }
     }
 
-    const modelForwardingRules = toModelForwardingRules(data.deprecatedModelIds);
+    const modelForwardingRules = toModelForwardingRules(
+      data.deprecatedModelIds,
+    );
     if (modelForwardingRules) {
       result.model_forwarding_rules = modelForwardingRules;
     }
@@ -1025,30 +1116,39 @@ export class GoogleAPIService {
   }
 
   private static isPermanentQuotaHttp4xx(errorMsg: string): boolean {
-    return /^HTTP 4\d{2}\b/.test(errorMsg) && !errorMsg.startsWith('HTTP 429');
+    return /^HTTP 4\d{2}\b/.test(errorMsg) && !errorMsg.startsWith("HTTP 429");
   }
 
   /**
    * Core logic: Fetches detailed model quota information.
    */
-  static async fetchQuota(accessToken: string, proxyUrl?: string): Promise<QuotaData> {
+  static async fetchQuota(
+    accessToken: string,
+    proxyUrl?: string,
+  ): Promise<QuotaData> {
     let projectContext: ProjectContext = {};
     try {
       projectContext = await this.fetchProjectContext(accessToken, proxyUrl);
     } catch (error) {
       logger.warn(
-        '[GoogleAPIService] Project context unavailable; continuing quota lookup without project',
+        "[GoogleAPIService] Project context unavailable; continuing quota lookup without project",
         error instanceof Error ? error.message : String(error),
       );
     }
 
     const { projectId, subscriptionTier } = projectContext;
 
-    const payload: { project?: string } = projectId ? { project: projectId } : {};
+    const payload: { project?: string } = projectId
+      ? { project: projectId }
+      : {};
     let lastError: Error | null = null;
     const axiosOptions = this.getAxiosOptions(proxyUrl);
 
-    for (let endpointIndex = 0; endpointIndex < QUOTA_API_ENDPOINTS.length; endpointIndex++) {
+    for (
+      let endpointIndex = 0;
+      endpointIndex < QUOTA_API_ENDPOINTS.length;
+      endpointIndex++
+    ) {
       const endpoint = QUOTA_API_ENDPOINTS[endpointIndex];
       const hasNextEndpoint = endpointIndex + 1 < QUOTA_API_ENDPOINTS.length;
       let currentPayload = { ...payload };
@@ -1059,7 +1159,7 @@ export class GoogleAPIService {
           const response = await requestGoogleApi(endpoint, {
             data: JSON.stringify(currentPayload),
             headers: buildInternalApiHeaders(accessToken),
-            method: 'POST',
+            method: "POST",
             signal: createGoogleApiRequestSignal(REQUEST_TIMEOUT_MS).signal,
             ...axiosOptions,
           });
@@ -1068,19 +1168,19 @@ export class GoogleAPIService {
             const status = response.status;
 
             if (status === 403) {
-              if ('project' in currentPayload && !retriedWithoutProject) {
+              if ("project" in currentPayload && !retriedWithoutProject) {
                 logger.warn(
-                  '[GoogleAPIService] Quota API returned 403 with project ID, retrying without project ID',
+                  "[GoogleAPIService] Quota API returned 403 with project ID, retrying without project ID",
                 );
                 currentPayload = {};
                 retriedWithoutProject = true;
                 continue;
               }
 
-              throw new Error('FORBIDDEN');
+              throw new Error("FORBIDDEN");
             }
             if (status === 401) {
-              throw new Error('UNAUTHORIZED');
+              throw new Error("UNAUTHORIZED");
             }
 
             const text = responseDataToText(response.data);
@@ -1100,7 +1200,11 @@ export class GoogleAPIService {
 
           const data = parseFetchModelsResponse(response.data);
           const result = this.toQuotaData(data, subscriptionTier);
-          const quotaGroups = await this.fetchQuotaSummary(accessToken, projectId, axiosOptions);
+          const quotaGroups = await this.fetchQuotaSummary(
+            accessToken,
+            projectId,
+            axiosOptions,
+          );
           if (quotaGroups) {
             result.quota_groups = quotaGroups;
           }
@@ -1113,11 +1217,12 @@ export class GoogleAPIService {
 
           return result;
         } catch (error: unknown) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
+          const errorMsg =
+            error instanceof Error ? error.message : String(error);
           lastError = error instanceof Error ? error : new Error(String(error));
 
           // Abort retries for auth errors
-          if (errorMsg === 'FORBIDDEN' || errorMsg === 'UNAUTHORIZED') {
+          if (errorMsg === "FORBIDDEN" || errorMsg === "UNAUTHORIZED") {
             throw error;
           }
 
@@ -1134,7 +1239,7 @@ export class GoogleAPIService {
       }
     }
 
-    throw lastError || new Error('Quota check failed');
+    throw lastError || new Error("Quota check failed");
   }
 
   private static async fetchQuotaSummary(
@@ -1142,7 +1247,9 @@ export class GoogleAPIService {
     projectId: string | undefined,
     axiosOptions: GoogleApiProxyOptions,
   ): Promise<QuotaGroup[] | undefined> {
-    const payload: { project?: string } = projectId ? { project: projectId } : {};
+    const payload: { project?: string } = projectId
+      ? { project: projectId }
+      : {};
 
     for (const endpoint of QUOTA_SUMMARY_ENDPOINTS) {
       let currentPayload = { ...payload };
@@ -1153,7 +1260,7 @@ export class GoogleAPIService {
           const response = await requestGoogleApi(endpoint, {
             data: JSON.stringify(currentPayload),
             headers: buildInternalApiHeaders(accessToken),
-            method: 'POST',
+            method: "POST",
             signal: createGoogleApiRequestSignal(REQUEST_TIMEOUT_MS).signal,
             ...axiosOptions,
           });
@@ -1162,15 +1269,23 @@ export class GoogleAPIService {
             logger.warn(
               `[GoogleAPIService] Quota summary API ${endpoint} returned ${response.status}`,
             );
-            if (response.status === 403 && 'project' in currentPayload && !retriedWithoutProject) {
+            if (
+              response.status === 403 &&
+              "project" in currentPayload &&
+              !retriedWithoutProject
+            ) {
               logger.warn(
-                '[GoogleAPIService] Quota summary returned 403 with project ID, retrying without project ID',
+                "[GoogleAPIService] Quota summary returned 403 with project ID, retrying without project ID",
               );
               currentPayload = {};
               retriedWithoutProject = true;
               continue;
             }
-            if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+            if (
+              response.status >= 400 &&
+              response.status < 500 &&
+              response.status !== 429
+            ) {
               return undefined;
             }
             break;
@@ -1178,7 +1293,10 @@ export class GoogleAPIService {
 
           return toQuotaGroups(parseQuotaSummaryResponse(response.data));
         } catch (error) {
-          logger.warn(`[GoogleAPIService] Quota summary API request failed at ${endpoint}`, error);
+          logger.warn(
+            `[GoogleAPIService] Quota summary API request failed at ${endpoint}`,
+            error,
+          );
           break;
         }
       }
