@@ -206,7 +206,9 @@ function mergeRefreshedToken(
 
 export class CloudMonitorService {
   private static intervalId: NodeJS.Timeout | null = null;
-  private static POLL_INTERVAL = 1000 * 60 * 5; // 5 minutes
+  private static activeIntervalId: NodeJS.Timeout | null = null;
+  private static POLL_INTERVAL = 1000 * 60 * 5; // 5 minutes (standby)
+  private static ACTIVE_POLL_INTERVAL = 1000 * 15; // 15 seconds (active)
   private static DEBOUNCE_TIME = 10000; // 10 seconds
   private static lastFocusTime: number = 0;
   private static activePollPromise: Promise<void> | null = null;
@@ -248,14 +250,18 @@ export class CloudMonitorService {
   }
 
   static start() {
-    if (this.intervalId) return;
+    this.stopped = false;
     logger.info("Starting CloudMonitorService...");
 
     // Set lastFocusTime to now to prevent "double-dip" on startup (focus event immediately after start)
-    this.lastFocusTime = Date.now();
+    if (!this.lastFocusTime) {
+      this.lastFocusTime = Date.now();
+    }
 
-    // Initial Poll
-    this.poll().catch((e) => logger.error("Initial poll failed", e));
+    // Initial Poll if not already running
+    if (!this.intervalId && !this.activeIntervalId) {
+      this.poll().catch((e) => logger.error("Initial poll failed", e));
+    }
 
     this.startInterval();
   }
@@ -267,8 +273,12 @@ export class CloudMonitorService {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
-      logger.info("Stopped CloudMonitorService");
     }
+    if (this.activeIntervalId) {
+      clearInterval(this.activeIntervalId);
+      this.activeIntervalId = null;
+    }
+    logger.info("Stopped CloudMonitorService");
   }
 
   /**
@@ -306,7 +316,14 @@ export class CloudMonitorService {
   private static startInterval() {
     if (this.intervalId) {
       clearInterval(this.intervalId);
+      this.intervalId = null;
     }
+    if (this.activeIntervalId) {
+      clearInterval(this.activeIntervalId);
+      this.activeIntervalId = null;
+    }
+
+    // 1. Standby / continuous 5m interval
     this.intervalId = setInterval(() => {
       if (!this.isContinuousPollingEnabled()) {
         this.stop();
@@ -314,18 +331,58 @@ export class CloudMonitorService {
       }
       this.poll().catch((e) => logger.error("Scheduled poll failed", e));
     }, this.POLL_INTERVAL);
+
+    // 2. Active 15s interval (only when auto-switch enabled)
+    if (this.isAutoSwitchEnabled()) {
+      this.activeIntervalId = setInterval(() => {
+        if (!this.isAutoSwitchEnabled()) {
+          if (this.activeIntervalId) {
+            clearInterval(this.activeIntervalId);
+            this.activeIntervalId = null;
+          }
+          return;
+        }
+        this.pollActive().catch((e) =>
+          logger.error("Scheduled active poll failed", e),
+        );
+      }, this.ACTIVE_POLL_INTERVAL);
+    }
   }
 
   private static resetInterval() {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.startInterval(); // Restart the 5-minute timer
+    if (this.intervalId || this.activeIntervalId) {
+      this.startInterval();
+    }
+  }
+
+  static async pollActive(): Promise<void> {
+    if (this.stopped || !this.isAutoSwitchEnabled()) {
+      return;
+    }
+
+    if (this.activePollPromise) {
+      return this.activePollPromise;
+    }
+
+    const pollPromise = this.executePoll({ onlyActive: true });
+    this.activePollPromise = pollPromise;
+
+    try {
+      await pollPromise;
+    } finally {
+      if (this.activePollPromise === pollPromise) {
+        this.activePollPromise = null;
+      }
     }
   }
 
   static async poll(): Promise<void> {
     this.stopped = false;
-    if (this.isContinuousPollingEnabled() && !this.intervalId) {
+    if (
+      this.isContinuousPollingEnabled() &&
+      (!this.intervalId ||
+        (this.isAutoSwitchEnabled() && !this.activeIntervalId))
+    ) {
       this.startInterval();
     }
 
@@ -345,12 +402,31 @@ export class CloudMonitorService {
     }
   }
 
-  private static async executePoll(): Promise<void> {
+  private static async executePoll(options?: {
+    onlyActive?: boolean;
+  }): Promise<void> {
     const epoch = this.stopEpoch;
     const refreshedAccounts: CloudAccount[] = [];
     logger.info("CloudMonitor: Polling quotas...");
-    const accounts = await CloudAccountRepo.getAccounts();
+    const allAccounts = await CloudAccountRepo.getAccounts();
     let now = Math.floor(Date.now() / 1000);
+
+    const autoSwitchTargets = resolveAutoSwitchTargets();
+    const activeAccountIds = new Set<string>();
+    for (const target of autoSwitchTargets) {
+      const activeId =
+        typeof CloudAccountSettingsStore.getActiveAccountIdForTarget ===
+        "function"
+          ? CloudAccountSettingsStore.getActiveAccountIdForTarget(target)
+          : undefined;
+      if (activeId) activeAccountIds.add(activeId);
+    }
+
+    const accounts = options?.onlyActive
+      ? allAccounts.filter(
+          (account) => account.is_active || activeAccountIds.has(account.id),
+        )
+      : allAccounts;
 
     for (const account of accounts) {
       try {
@@ -667,7 +743,7 @@ export class CloudMonitorService {
         );
       }
     }
-    if (epoch === this.stopEpoch) {
+    if (epoch === this.stopEpoch && !options?.onlyActive) {
       await this.runWeeklyWarmups(refreshedAccounts);
     }
   }

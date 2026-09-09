@@ -6,6 +6,7 @@ import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandl
 import { GoogleAPIService } from "@/modules/cloud-account/services/GoogleAPIService";
 import { configureTrayIcon, resolveTrayIconPath } from "./icon";
 import { isWeeklyQuotaBucket } from "@/modules/cloud-account/utils/quota-groups";
+import { AutoSwitchService } from "@/modules/cloud-account/services/AutoSwitchService";
 
 export interface TrayAccountActions {
   switchAccount?: (accountId: string) => Promise<void>;
@@ -23,6 +24,7 @@ let globalMainWindow: BrowserWindow | null = null;
 let lastAccount: CloudAccount | null = null;
 let lastLanguage: string = "en";
 let onQuitRequested: (() => void | Promise<void>) | null = null;
+let isSwitchingAccount = false;
 
 export function getQuotaText(
   account: CloudAccount | null,
@@ -66,7 +68,7 @@ export function getQuotaText(
 
     if (gHigh !== null) lines.push(`Gemini High: ${gHigh}%`);
     if (gImage !== null) lines.push(`Gemini Image: ${gImage}%`);
-    if (claude !== null) lines.push(`Claude 4.5: ${claude}%`);
+    if (claude !== null) lines.push(`Claude 4.6: ${claude}%`);
 
     if (gHigh === null && gImage === null && claude === null) {
       for (const [key, val] of Object.entries(models).slice(0, 3)) {
@@ -213,17 +215,36 @@ export function updateTrayMenu(
     {
       label: texts.switch_next,
       click: async () => {
+        if (isSwitchingAccount) {
+          logger.info(
+            "Tray: Switch account dropped (concurrent switch in progress)",
+          );
+          return;
+        }
+        isSwitchingAccount = true;
         try {
           const accounts = await CloudAccountRepo.getAccounts();
           if (accounts.length === 0) return;
 
           const current = accounts.find((a) => a.is_active);
-          let nextIndex = 0;
+          let next: CloudAccount | null = null;
           if (current) {
-            const idx = accounts.findIndex((a) => a.id === current.id);
-            nextIndex = (idx + 1) % accounts.length;
+            next = await AutoSwitchService.findBestAccount(current.id);
+          } else {
+            next = await AutoSwitchService.findBestAccount("");
           }
-          const next = accounts[nextIndex];
+
+          // Fallback to deterministic round robin if all null
+          if (!next) {
+            let nextIndex = 0;
+            if (current) {
+              const idx = accounts.findIndex((a) => a.id === current.id);
+              nextIndex = (idx + 1) % accounts.length;
+            }
+            next = accounts[nextIndex];
+          }
+
+          if (!next) return;
 
           const switchAccount = await resolveAccountSwitcher();
           if (switchAccount) {
@@ -245,6 +266,8 @@ export function updateTrayMenu(
           }
         } catch (e) {
           logger.error("Tray: Switch account failed", e);
+        } finally {
+          isSwitchingAccount = false;
         }
       },
     },
@@ -323,6 +346,7 @@ export function destroyTray() {
     tray = null;
     onQuitRequested = null;
     registeredActions = {};
+    isSwitchingAccount = false;
     logger.info("Tray destroyed");
   }
 }

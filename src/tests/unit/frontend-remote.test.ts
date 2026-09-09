@@ -6,6 +6,7 @@ import { generateQrMatrix } from "@/modules/relay/components/qr-generator";
 import {
   generateAutoReloadScript,
   generateRevokedHtml,
+  generatePairingHtml,
 } from "@/modules/relay/relay-server";
 
 describe("Remote Tethering Frontend Architecture & Components", () => {
@@ -412,6 +413,28 @@ describe("Remote Tethering Frontend Architecture & Components", () => {
         );
         expect(html).toContain("Invalid pairing key. Check desktop dashboard.");
         expect(html).toContain("background:rgba(239,68,68,0.12)");
+      });
+
+      it("embeds mobile safe-area insets, viewport-fit=cover, and 16px font-size to prevent iOS zoom", () => {
+        const html = generateRevokedHtml();
+        expect(html).toContain("viewport-fit=cover");
+        expect(html).toContain("env(safe-area-inset-top");
+        expect(html).toContain("env(safe-area-inset-bottom");
+        expect(html).toContain("font-size: 16px");
+      });
+    });
+
+    describe("Standalone Pairing HTML Page (generatePairingHtml)", () => {
+      it("embeds mobile viewport safety, 44px touch targets, safe-area insets, and branded icons", () => {
+        const html = generatePairingHtml();
+        expect(html).toContain("viewport-fit=cover");
+        expect(html).toContain("min-height: 44px");
+        expect(html).toContain("env(safe-area-inset-top");
+        expect(html).toContain("env(safe-area-inset-bottom");
+        expect(html).toContain("font-size: 16px");
+        expect(html).toContain('href="/favicon.ico"');
+        expect(html).toContain('href="/icon.png"');
+        expect(html).toContain("Device Pairing Required");
       });
     });
 

@@ -77,6 +77,16 @@ vi.mock("@/modules/cloud-account/services/GoogleAPIService", () => ({
   },
 }));
 
+vi.mock(
+  "@/modules/cloud-account/persistence/cloud-account-settings-store",
+  () => ({
+    CloudAccountSettingsStore: {
+      getSetting: vi.fn(() => ({})),
+      getActiveAccountIdForTarget: vi.fn(),
+    },
+  }),
+);
+
 describe("Tray Handler Functionality", () => {
   let handlerModule: typeof import("@/modules/app-shell/ipc/tray/handler");
 
@@ -218,7 +228,7 @@ describe("Tray Handler Functionality", () => {
       const lines = handlerModule.getQuotaText(account, texts);
       expect(lines).toContain("Gemini High: 90%");
       expect(lines).toContain("Gemini Image: 75%");
-      expect(lines).toContain("Claude 4.5: 60%");
+      expect(lines).toContain("Claude 4.6: 60%");
     });
 
     it("formats dynamic models when standard model keywords are absent", () => {
@@ -556,6 +566,128 @@ describe("Tray Handler Functionality", () => {
           undefined as any,
         ),
       ).resolves.not.toThrow();
+    });
+
+    it("chooses candidate with highest 5h quota bottleneck via AutoSwitchService.findBestAccount", async () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      const accCurrent = createMockAccount({
+        id: "acc-current",
+        email: "current@example.com",
+        is_active: true,
+        quota: {
+          models: {
+            "claude-3-7-sonnet": { percentage: 20, resetTime: "" },
+          },
+        },
+      });
+      const accAlpha = createMockAccount({
+        id: "acc-alpha",
+        email: "alpha@example.com",
+        is_active: false,
+        quota: {
+          models: {
+            "claude-3-7-sonnet": { percentage: 20, resetTime: "" },
+          },
+        },
+      });
+      const accBeta = createMockAccount({
+        id: "acc-beta",
+        email: "beta@example.com",
+        is_active: false,
+        quota: {
+          models: {
+            "claude-3-7-sonnet": { percentage: 85, resetTime: "" },
+          },
+        },
+      });
+      const accGamma = createMockAccount({
+        id: "acc-gamma",
+        email: "gamma@example.com",
+        is_active: false,
+        quota: {
+          models: {
+            "claude-3-7-sonnet": { percentage: 50, resetTime: "" },
+          },
+        },
+      });
+
+      mocks.accounts = [accCurrent, accAlpha, accBeta, accGamma];
+      const switchSpy = vi.fn();
+      handlerModule.registerTrayAccountHandlers({ switchAccount: switchSpy });
+
+      handlerModule.updateTrayMenu(accCurrent, "en");
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      const switchItem = tpl.find(
+        (item) => item.label === "Switch to Next Account",
+      );
+
+      await switchItem!.click!(
+        undefined as any,
+        undefined as any,
+        undefined as any,
+      );
+
+      // Beta has 85% remaining 5h quota, so it must be chosen over Alpha (20%) and Gamma (50%)
+      expect(switchSpy).toHaveBeenCalledWith("acc-beta");
+    });
+
+    it("drops concurrent rapid clicks via isSwitchingAccount async mutex", async () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      const acc1 = createMockAccount({ id: "acc-1", is_active: true });
+      const acc2 = createMockAccount({ id: "acc-2", is_active: false });
+      mocks.accounts = [acc1, acc2];
+
+      let resolveFirstSwitch!: () => void;
+      let switchStartedResolve!: () => void;
+      const switchStarted = new Promise<void>((res) => {
+        switchStartedResolve = res;
+      });
+
+      const switchSpy = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirstSwitch = resolve;
+            switchStartedResolve();
+          }),
+      );
+      handlerModule.registerTrayAccountHandlers({ switchAccount: switchSpy });
+
+      handlerModule.updateTrayMenu(acc1, "en");
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      const switchItem = tpl.find(
+        (item) => item.label === "Switch to Next Account",
+      );
+
+      // Trigger first click (in-flight)
+      const firstClick = switchItem!.click!(
+        undefined as any,
+        undefined as any,
+        undefined as any,
+      );
+
+      // Wait until first click enters switchAccount
+      await switchStarted;
+
+      // Trigger second click while first is still running
+      await switchItem!.click!(
+        undefined as any,
+        undefined as any,
+        undefined as any,
+      );
+
+      resolveFirstSwitch();
+      await firstClick;
+
+      // Only the first click should have invoked switchAccount; second was dropped by mutex
+      expect(switchSpy).toHaveBeenCalledTimes(1);
     });
 
     it("safely handles refresh_current when no active account exists", async () => {

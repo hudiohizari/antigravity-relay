@@ -267,6 +267,11 @@ const tr = {
     fallbackNotice:
       "Oturum İptal Edildi: Erişim masaüstü ana bilgisayarı tarafından iptal edildi. Bağlantınızı yeniden kurmak için lütfen geçerli bir eşleştirme anahtarı girin.",
   },
+  traySync: {
+    switchedTitle: "Hesap Değiştirildi",
+    switchedDescription:
+      "Etkin hesap sistem tepsisi üzerinden {{email}} olarak değiştirildi.",
+  },
   editionSelection: {
     title: "Antigravity Sürümünüzü Seçin",
     description:

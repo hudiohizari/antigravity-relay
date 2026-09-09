@@ -1,6 +1,8 @@
 import fastify, { FastifyInstance } from "fastify";
 import fastifyCors from "@fastify/cors";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { IncomingMessage } from "node:http";
 import { Duplex } from "node:stream";
 import { Agent, request as undiciRequest } from "undici";
@@ -24,6 +26,7 @@ import { UpstreamBridge } from "./upstream-bridge";
 import { PortDiscoveryService } from "./port-discovery";
 import { isRateLimitError } from "@/modules/cloud-account/utils/account-status";
 import { getRecommendedLocalIp } from "@/shared/platform/network";
+import { logger } from "@/shared/logging/logger";
 
 export interface RelayServerOptions {
   config?: Partial<RelayConfig>;
@@ -108,6 +111,46 @@ export function extractDeviceId(
     }
   }
   return undefined;
+}
+
+let cachedFaviconBuffer: Buffer | null = null;
+let cachedIconPngBuffer: Buffer | null = null;
+
+export function getFaviconBuffer(): Buffer | null {
+  if (cachedFaviconBuffer) return cachedFaviconBuffer;
+  const candidates = [
+    path.join(process.cwd(), "images", "favicon.ico"),
+    path.join(__dirname, "../../../images/favicon.ico"),
+    path.join(__dirname, "../../assets/icon.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        cachedFaviconBuffer = fs.readFileSync(p);
+        return cachedFaviconBuffer;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+export function getIconPngBuffer(): Buffer | null {
+  if (cachedIconPngBuffer) return cachedIconPngBuffer;
+  const candidates = [
+    path.join(process.cwd(), "images", "icon.png"),
+    path.join(process.cwd(), "src", "assets", "icon.png"),
+    path.join(__dirname, "../../../images/icon.png"),
+    path.join(__dirname, "../../assets/icon.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        cachedIconPngBuffer = fs.readFileSync(p);
+        return cachedIconPngBuffer;
+      }
+    } catch (_) {}
+  }
+  return null;
 }
 
 const HOP_BY_HOP_HEADERS = new Set([
@@ -322,6 +365,7 @@ export function generateAutoReloadScript(
         left: 0;
         width: 100vw;
         height: 100vh;
+        height: 100dvh;
         background: rgba(9, 13, 22, 0.88);
         backdrop-filter: blur(4px);
         -webkit-backdrop-filter: blur(4px);
@@ -329,6 +373,10 @@ export function generateAutoReloadScript(
         align-items: center;
         justify-content: center;
         padding: clamp(1rem, 5vw, 2rem);
+        padding-top: max(clamp(1rem, 5vw, 2rem), env(safe-area-inset-top, 0px));
+        padding-bottom: max(clamp(1rem, 5vw, 2rem), env(safe-area-inset-bottom, 0px));
+        padding-left: max(clamp(1rem, 5vw, 2rem), env(safe-area-inset-left, 0px));
+        padding-right: max(clamp(1rem, 5vw, 2rem), env(safe-area-inset-right, 0px));
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         z-index: 2147483647;
       }
@@ -419,7 +467,7 @@ export function generateAutoReloadScript(
         border-radius: 8px;
         color: #f9fafb;
         font-family: monospace;
-        font-size: 0.9375rem;
+        font-size: 16px;
         margin-bottom: 1.25rem;
         outline: none;
         box-sizing: border-box;
@@ -658,6 +706,13 @@ export function generateAutoReloadScript(
 
   function handleRevocation(shouldBroadcast) {
     window.__antigravitySessionRevoked = true;
+    reloading = false;
+    try {
+      var banner = document.getElementById("relay-reload-banner");
+      if (banner && banner.parentNode) {
+        banner.parentNode.removeChild(banner);
+      }
+    } catch (_) {}
     if (shouldBroadcast) {
       broadcastSessionRevoked();
     }
@@ -732,6 +787,10 @@ export function generateAutoReloadScript(
     var check = function() {
       if (window.__antigravitySessionRevoked) {
         reloading = false;
+        try {
+          var banner = document.getElementById("relay-reload-banner");
+          if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
+        } catch (_) {}
         return;
       }
       fetch("/health", { cache: "no-store" })
@@ -739,13 +798,17 @@ export function generateAutoReloadScript(
         .then(function(data) {
           if (window.__antigravitySessionRevoked) {
             reloading = false;
+            try {
+              var banner = document.getElementById("relay-reload-banner");
+              if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
+            } catch (_) {}
             return;
           }
           var portChanged = data && data.upstreamPort && initialPort && data.upstreamPort !== initialPort;
           var epochChanged = data && typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch;
           var isHealthy = data && data.isRunning && data.upstreamPort && !data.isRestarting;
 
-          if (isHealthy && (portChanged || epochChanged)) {
+          if (isHealthy && (portChanged || epochChanged || hasDeadSocket)) {
             window.location.reload();
           } else {
             setTimeout(check, 1000);
@@ -756,17 +819,25 @@ export function generateAutoReloadScript(
             setTimeout(check, 1000);
           } else {
             reloading = false;
+            try {
+              var banner = document.getElementById("relay-reload-banner");
+              if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
+            } catch (_) {}
           }
         });
     };
     setTimeout(check, 500);
   }
 
+  var trackedSockets = [];
+  var hasDeadSocket = false;
+
   if (typeof window.WebSocket !== "undefined") {
     var OrigWS = window.WebSocket;
     class PatchedWS extends OrigWS {
       constructor(...args) {
         super(...args);
+        trackedSockets.push(this);
         this.addEventListener("message", function(event) {
           try {
             var data = typeof event.data === "string" ? JSON.parse(event.data) : null;
@@ -784,6 +855,7 @@ export function generateAutoReloadScript(
             return;
           }
           if (event.code === 1012 || event.code === 1006 || event.code === 1011) {
+            hasDeadSocket = true;
             triggerReload();
           }
         });
@@ -792,27 +864,51 @@ export function generateAutoReloadScript(
     window.WebSocket = PatchedWS;
   }
 
+  function checkResumeHealth() {
+    if (window.__antigravitySessionRevoked) return;
+    var revokedAt = null;
+    try {
+      revokedAt = localStorage.getItem("ag_relay_revoked_at");
+    } catch (_) {}
+    if (revokedAt) {
+      handleRevocation(false);
+      return;
+    }
+    if (reloading) return;
+
+    var hadClosedSockets = hasDeadSocket || (trackedSockets.length > 0 && trackedSockets.some(function(s) {
+      return s.readyState === 2 || s.readyState === 3;
+    }));
+
+    fetch("/health", { cache: "no-store" })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (window.__antigravitySessionRevoked) return;
+        var portChanged = data && data.upstreamPort && initialPort && data.upstreamPort !== initialPort;
+        var epochChanged = data && typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch;
+        var isHealthy = data && data.isRunning && data.upstreamPort && !data.isRestarting;
+
+        if (portChanged || epochChanged) {
+          triggerReload();
+        } else if (isHealthy && hadClosedSockets) {
+          window.location.reload();
+        }
+      })
+      .catch(function() {
+        if (hadClosedSockets) {
+          triggerReload();
+        }
+      });
+  }
+
   document.addEventListener("visibilitychange", function() {
     if (document.visibilityState === "visible") {
-      var revokedAt = null;
-      try {
-        revokedAt = localStorage.getItem("ag_relay_revoked_at");
-      } catch (_) {}
-      if (revokedAt || window.__antigravitySessionRevoked) {
-        handleRevocation(false);
-        return;
-      }
-      if (reloading) return;
-      fetch("/health", { cache: "no-store" })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (window.__antigravitySessionRevoked) return;
-          if (data && data.upstreamPort && (data.upstreamPort !== initialPort || (typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch))) {
-            triggerReload();
-          }
-        })
-        .catch(function() {});
+      checkResumeHealth();
     }
+  });
+
+  window.addEventListener("pageshow", function() {
+    checkResumeHealth();
   });
 
   setInterval(function() {
@@ -821,7 +917,9 @@ export function generateAutoReloadScript(
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (window.__antigravitySessionRevoked) return;
-        if (data && data.upstreamPort && (data.upstreamPort !== initialPort || (typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch))) {
+        var portChanged = data && data.upstreamPort && initialPort && data.upstreamPort !== initialPort;
+        var epochChanged = data && typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch;
+        if (portChanged || epochChanged) {
           triggerReload();
         }
       })
@@ -840,8 +938,10 @@ export function generatePairingHtml(errorMessage?: string): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Antigravity Relay - Pairing Required</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/icon.png">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -852,7 +952,12 @@ export function generatePairingHtml(errorMessage?: string): string {
       align-items: center;
       justify-content: center;
       min-height: 100vh;
+      min-height: 100dvh;
       padding: 1rem;
+      padding-top: max(1rem, env(safe-area-inset-top, 0px));
+      padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+      padding-left: max(1rem, env(safe-area-inset-left, 0px));
+      padding-right: max(1rem, env(safe-area-inset-right, 0px));
     }
     .card {
       background: #111827;
@@ -880,19 +985,22 @@ export function generatePairingHtml(errorMessage?: string): string {
     label { display: block; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 0.5rem; }
     input {
       width: 100%;
+      min-height: 44px;
       padding: 0.75rem 1rem;
       background: #0d131f;
       border: 1px solid #1f2937;
       border-radius: 8px;
       color: #f3f4f6;
       font-family: monospace;
-      font-size: 0.9375rem;
+      font-size: 16px;
       margin-bottom: 1.25rem;
       outline: none;
+      box-sizing: border-box;
     }
     input:focus { border-color: #10b981; }
     button {
       width: 100%;
+      min-height: 44px;
       padding: 0.75rem;
       background: #10b981;
       color: #000;
@@ -901,6 +1009,7 @@ export function generatePairingHtml(errorMessage?: string): string {
       border: none;
       border-radius: 8px;
       cursor: pointer;
+      box-sizing: border-box;
     }
     button:hover { background: #059669; }
   </style>
@@ -933,8 +1042,10 @@ export function generateRevokedHtml(errorMessage?: string): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Session Revoked - Antigravity Relay</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/icon.png">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -947,6 +1058,10 @@ export function generateRevokedHtml(errorMessage?: string): string {
       min-height: 100vh;
       min-height: 100dvh;
       padding: clamp(1rem, 5vw, 2rem);
+      padding-top: max(clamp(1rem, 5vw, 2rem), env(safe-area-inset-top, 0px));
+      padding-bottom: max(clamp(1rem, 5vw, 2rem), env(safe-area-inset-bottom, 0px));
+      padding-left: max(clamp(1rem, 5vw, 2rem), env(safe-area-inset-left, 0px));
+      padding-right: max(clamp(1rem, 5vw, 2rem), env(safe-area-inset-right, 0px));
     }
     .card {
       background: #111827;
@@ -1005,7 +1120,7 @@ export function generateRevokedHtml(errorMessage?: string): string {
       border-radius: 8px;
       color: #f9fafb;
       font-family: monospace;
-      font-size: 0.9375rem;
+      font-size: 16px;
       margin-bottom: 1.25rem;
       outline: none;
       box-sizing: border-box;
@@ -1363,6 +1478,25 @@ export class RelayServer {
         (sessionId && pair.sessionId === sessionId) ||
         pair.deviceId === deviceId
       ) {
+        if (
+          pair.clientWs.readyState === WebSocket.OPEN ||
+          pair.clientWs.readyState === WebSocket.CONNECTING
+        ) {
+          try {
+            pair.clientWs.send(
+              JSON.stringify({
+                type: "SESSION_REVOKED",
+                reason: "Session revoked by host",
+                revokedAt: Date.now(),
+              }),
+            );
+          } catch (err) {
+            logger.warn(
+              "RelayServer: Failed to send SESSION_REVOKED frame",
+              err,
+            );
+          }
+        }
         safeClose(pair.clientWs, 4401, "Session revoked");
         safeClose(pair.upstreamWs, 4401, "Session revoked");
         this.activeWsConnections.delete(pair);
@@ -1470,6 +1604,30 @@ export class RelayServer {
         isRestarting: status.isRestarting,
         timestamp: Date.now(),
       };
+    });
+
+    // Branded favicon route
+    app.get("/favicon.ico", async (_request, reply) => {
+      const buffer = getFaviconBuffer();
+      if (!buffer) {
+        return reply.status(404).send("Not Found");
+      }
+      return reply
+        .header("Content-Type", "image/x-icon")
+        .header("Cache-Control", "public, max-age=86400")
+        .send(buffer);
+    });
+
+    // Branded app icon route
+    app.get("/icon.png", async (_request, reply) => {
+      const buffer = getIconPngBuffer();
+      if (!buffer) {
+        return reply.status(404).send("Not Found");
+      }
+      return reply
+        .header("Content-Type", "image/png")
+        .header("Cache-Control", "public, max-age=86400")
+        .send(buffer);
     });
 
     // Non-proxied status endpoint
@@ -1867,6 +2025,26 @@ export class RelayServer {
           ) {
             const rawHtml = await upstreamRes.body.text();
             let finalHtml = rawHtml;
+
+            const iconTags =
+              '<link rel="icon" type="image/x-icon" href="/favicon.ico">\n  <link rel="apple-touch-icon" href="/icon.png">';
+            if (
+              !finalHtml.includes('rel="icon"') &&
+              !finalHtml.includes("rel='icon'")
+            ) {
+              if (finalHtml.includes("<head>")) {
+                finalHtml = finalHtml.replace(
+                  "<head>",
+                  `<head>\n  ${iconTags}`,
+                );
+              } else if (/<head[^>]*>/i.test(finalHtml)) {
+                finalHtml = finalHtml.replace(
+                  /<head[^>]*>/i,
+                  (match) => `${match}\n  ${iconTags}`,
+                );
+              }
+            }
+
             if (!rawHtml.includes('id="antigravity-relay-autoreload"')) {
               const injectedScript = generateAutoReloadScript(
                 port,

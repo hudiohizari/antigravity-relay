@@ -42,6 +42,110 @@ export interface RateLimitSwitchResult {
 const BooleanSettingSchema = z.boolean();
 
 export class AutoSwitchService {
+  private static switchTimestamps: number[] = [];
+  private static lastExhaustionNotificationTime = 0;
+  private static readonly CIRCUIT_BREAKER_WINDOW_MS = 30 * 1000; // 30 seconds
+  private static readonly EXHAUSTION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
+  static resetCircuitBreakerForTesting(): void {
+    this.switchTimestamps = [];
+    this.lastExhaustionNotificationTime = 0;
+  }
+
+  private static isCircuitBreakerTripped(totalAccounts: number): boolean {
+    const now = Date.now();
+    this.switchTimestamps = this.switchTimestamps.filter(
+      (t) => now - t < this.CIRCUIT_BREAKER_WINDOW_MS,
+    );
+    const limit = Math.max(1, Math.min(totalAccounts, 5));
+    return this.switchTimestamps.length >= limit;
+  }
+
+  private static recordSwitch(): void {
+    this.switchTimestamps.push(Date.now());
+  }
+
+  private static notifyExhaustion(customBody?: string): void {
+    const now = Date.now();
+    if (
+      now - this.lastExhaustionNotificationTime <
+      this.EXHAUSTION_COOLDOWN_MS
+    ) {
+      logger.info(
+        "AutoSwitch: Suppressing pool exhaustion notification (5-minute cooldown active)",
+      );
+      return;
+    }
+    this.lastExhaustionNotificationTime = now;
+
+    try {
+      new Notification({
+        title: "Antigravity Relay: All Accounts Rate-Limited",
+        body:
+          customBody ??
+          "All Google Antigravity accounts are rate-limited or depleted. Please wait for quota reset or add another account.",
+      }).show();
+    } catch (err) {
+      logger.error(
+        "Failed to show rate-limit exhaustion desktop notification",
+        err,
+      );
+    }
+  }
+
+  /**
+   * Sorts candidate accounts prioritizing 5h rolling window quota:
+   * 1. bottleneck5h DESC
+   * 2. average5h DESC
+   * 3. priorityScore DESC (if configured)
+   * 4. fallbackScore DESC
+   * 5. last_used ASC (least recently used first)
+   * 6. email ASC (deterministic tie-breaker)
+   */
+  static sortCandidates(
+    candidates: CloudAccount[],
+    config: Record<string, AutoSwitchModelConfig> = {},
+  ): CloudAccount[] {
+    return [...candidates].sort((a, b) => {
+      const scoreA = this.calculateAccountScore(a, config);
+      const scoreB = this.calculateAccountScore(b, config);
+
+      // 1. Primary: highest remaining 5h limit (bottleneck)
+      if (scoreA.bottleneck5h !== scoreB.bottleneck5h) {
+        return scoreB.bottleneck5h - scoreA.bottleneck5h;
+      }
+
+      // 2. Secondary: highest 5h average
+      if (scoreA.average5h !== scoreB.average5h) {
+        return scoreB.average5h - scoreA.average5h;
+      }
+
+      // 3. Model priorityScore (if configured)
+      if (scoreA.priorityScore !== null || scoreB.priorityScore !== null) {
+        if (scoreA.priorityScore === null) return 1;
+        if (scoreB.priorityScore === null) return -1;
+        if (scoreA.priorityScore !== scoreB.priorityScore) {
+          return scoreB.priorityScore - scoreA.priorityScore;
+        }
+      }
+
+      // 4. Fallback model score
+      if (scoreA.fallbackScore !== scoreB.fallbackScore) {
+        return scoreB.fallbackScore - scoreA.fallbackScore;
+      }
+
+      // 5. Least recently used ASC
+      const lastUsedA = a.last_used ?? 0;
+      const lastUsedB = b.last_used ?? 0;
+      if (lastUsedA !== lastUsedB) {
+        return lastUsedA - lastUsedB;
+      }
+
+      // 6. Email ASC (deterministic tie-breaker)
+      return a.email.localeCompare(b.email);
+    });
+  }
+
   /**
    * Calculates the 5-hour rolling window quota score for an account.
    * Extracts non-weekly buckets from quota_groups, using the bottleneck minimum
@@ -118,33 +222,7 @@ export class AutoSwitchService {
 
     if (candidates.length === 0) return null;
 
-    // Sort by highest 5h limit
-    candidates.sort((a, b) => {
-      const scoreA = this.calculateAccountScore(a, config);
-      const scoreB = this.calculateAccountScore(b, config);
-
-      if (scoreA.priorityScore !== null || scoreB.priorityScore !== null) {
-        if (scoreA.priorityScore === null) return 1;
-        if (scoreB.priorityScore === null) return -1;
-        if (scoreA.priorityScore !== scoreB.priorityScore) {
-          return scoreB.priorityScore - scoreA.priorityScore;
-        }
-      }
-
-      // Primary: candidate with highest remaining 5h limit (bottleneck)
-      if (scoreA.bottleneck5h !== scoreB.bottleneck5h) {
-        return scoreB.bottleneck5h - scoreA.bottleneck5h;
-      }
-
-      // Secondary: candidate with highest 5h average
-      if (scoreA.average5h !== scoreB.average5h) {
-        return scoreB.average5h - scoreA.average5h;
-      }
-
-      return scoreB.fallbackScore - scoreA.fallbackScore;
-    });
-
-    return candidates[0];
+    return this.sortCandidates(candidates, config)[0];
   }
 
   private static getModelConfig(
@@ -266,6 +344,21 @@ export class AutoSwitchService {
       rateLimitReason,
     );
 
+    // Circuit breaker check
+    if (this.isCircuitBreakerTripped(accounts.length)) {
+      logger.warn(
+        `AutoSwitch (${source}): Switch loop circuit breaker tripped (${this.switchTimestamps.length} switches in 30s). Halting automated switching.`,
+      );
+      this.notifyExhaustion(
+        "Auto-switch loop detected: rapid switching halted. Please check account quotas manually.",
+      );
+      return {
+        switched: false,
+        noAccountLeft: true,
+        reason: "circuit_breaker_tripped",
+      };
+    }
+
     // 5. Find candidate with highest 5h limit
     const nextAccount = await this.findBestAccount(currentAccount.id);
 
@@ -278,6 +371,7 @@ export class AutoSwitchService {
 
       try {
         await switchCloudAccount(nextAccount.id, appTarget);
+        this.recordSwitch();
 
         try {
           new Notification({
@@ -303,17 +397,7 @@ export class AutoSwitchService {
       `AutoSwitch (${source}): All accounts rate-limited or depleted. No candidate available.`,
     );
 
-    try {
-      new Notification({
-        title: "Antigravity Relay: All Accounts Rate-Limited",
-        body: "All Google Antigravity accounts are rate-limited or depleted. Please wait for quota reset or add another account.",
-      }).show();
-    } catch (err) {
-      logger.error(
-        "Failed to show rate-limit exhaustion desktop notification",
-        err,
-      );
-    }
+    this.notifyExhaustion();
 
     return { switched: false, noAccountLeft: true };
   }
@@ -366,6 +450,16 @@ export class AutoSwitchService {
     const isDepleted = this.isAccountDepleted(currentAccount);
 
     if (isDepleted) {
+      if (this.isCircuitBreakerTripped(accounts.length)) {
+        logger.warn(
+          `AutoSwitch: Switch loop circuit breaker tripped (${this.switchTimestamps.length} switches in 30s). Halting automated switching.`,
+        );
+        this.notifyExhaustion(
+          "Auto-switch loop detected: rapid switching halted. Please check account quotas manually.",
+        );
+        return false;
+      }
+
       logger.info(
         `AutoSwitch: Current account ${currentAccount.email} is depleted. Finding highest 5h candidate...`,
       );
@@ -379,6 +473,7 @@ export class AutoSwitchService {
         );
 
         await switchCloudAccount(nextAccount.id, appTarget);
+        this.recordSwitch();
 
         try {
           new Notification({
@@ -392,6 +487,7 @@ export class AutoSwitchService {
         return true;
       } else {
         logger.warn("AutoSwitch: No healthy accounts available to switch to.");
+        this.notifyExhaustion();
       }
     }
 

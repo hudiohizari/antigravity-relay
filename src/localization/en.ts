@@ -267,6 +267,11 @@ const en = {
     fallbackNotice:
       "Session Revoked: Access was revoked by the desktop host. Please enter a valid pairing key to re-establish your connection.",
   },
+  traySync: {
+    switchedTitle: "Account Switched",
+    switchedDescription:
+      "Active account switched to {{email}} via system tray.",
+  },
   editionSelection: {
     title: "Choose Your Antigravity Edition",
     description:

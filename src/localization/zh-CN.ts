@@ -249,6 +249,10 @@ const zhCn = {
     fallbackNotice:
       "会话已撤回: 访问权限已被桌面主机撤回。请输入有效的配对密钥以重新建立连接。",
   },
+  traySync: {
+    switchedTitle: "账号已切换",
+    switchedDescription: "活动账号已通过系统托盘切换到 {{email}}。",
+  },
   editionSelection: {
     title: "选择您的 Antigravity 版本",
     description:

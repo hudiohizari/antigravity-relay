@@ -276,6 +276,11 @@ const fr = {
     fallbackNotice:
       "Session révoquée : L'accès a été révoqué par l'hôte desktop. Veuillez saisir une clé d'appairage valide pour rétablir votre connexion.",
   },
+  traySync: {
+    switchedTitle: "Compte bascule",
+    switchedDescription:
+      "Compte actif bascule vers {{email}} via la barre d etat.",
+  },
   editionSelection: {
     title: "Choisissez votre edition Antigravity",
     description:

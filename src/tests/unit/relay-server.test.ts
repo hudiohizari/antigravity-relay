@@ -99,6 +99,34 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(bodyText).toContain("<h1>Antigravity App</h1>");
     });
 
+    it("serves /favicon.ico with image/x-icon and 24h cache-control header", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/favicon.ico`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("image/x-icon");
+      expect(res.headers.get("cache-control")).toBe("public, max-age=86400");
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    it("serves /icon.png with image/png and 24h cache-control header", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/icon.png`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("image/png");
+      expect(res.headers.get("cache-control")).toBe("public, max-age=86400");
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    it("injects icon link tags into proxied HTML responses", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain(
+        '<link rel="icon" type="image/x-icon" href="/favicon.ico">',
+      );
+      expect(html).toContain('<link rel="apple-touch-icon" href="/icon.png">');
+    });
+
     it("proxies static asset requests with correct Content-Type headers", async () => {
       const assets = [
         { path: "/main.js", expectedType: "application/javascript" },
@@ -1662,6 +1690,13 @@ describe("RelayServer Reverse Proxy Mirror", () => {
         .getSessionByDeviceId(revokedDeviceId);
       expect(session).toBeDefined();
 
+      let receivedWsMessage: any = null;
+      ws.on("message", (data) => {
+        try {
+          receivedWsMessage = JSON.parse(data.toString());
+        } catch (_) {}
+      });
+
       const closePromise = new Promise<{ code: number; reason: string }>(
         (resolve) => {
           ws.on("close", (code, reason) => {
@@ -1679,6 +1714,12 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(revokeDuration).toBeLessThan(500);
       expect(closeResult.code).toBe(4401);
       expect(closeResult.reason).toBe("Session revoked");
+
+      expect(receivedWsMessage).toEqual({
+        type: "SESSION_REVOKED",
+        reason: "Session revoked by host",
+        revokedAt: expect.any(Number),
+      });
 
       expect(
         prdServer.getSessionManager().isDeviceRevoked(revokedDeviceId),

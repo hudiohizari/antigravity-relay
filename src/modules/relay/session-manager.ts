@@ -210,7 +210,13 @@ export class SessionManager {
       for (const socket of socketSet) {
         try {
           if (code === 4401 && socket.readyState === 1) {
-            socket.send(JSON.stringify({ type: "SESSION_REVOKED", reason }));
+            socket.send(
+              JSON.stringify({
+                type: "SESSION_REVOKED",
+                reason: "Session revoked by host",
+                revokedAt: Date.now(),
+              }),
+            );
           }
         } catch {
           // Suppress send error

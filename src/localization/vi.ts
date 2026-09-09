@@ -268,6 +268,11 @@ const vi = {
     fallbackNotice:
       "Phiên đã bị thu hồi: Quyền truy cập đã bị máy chủ desktop thu hồi. Vui lòng nhập khóa ghép nối hợp lệ để thiết lập lại kết nối.",
   },
+  traySync: {
+    switchedTitle: "Đã chuyển tài khoản",
+    switchedDescription:
+      "Tài khoản hoạt động đã được chuyển sang {{email}} qua khay hệ thống.",
+  },
   editionSelection: {
     title: "Chọn phiên bản Antigravity",
     description:

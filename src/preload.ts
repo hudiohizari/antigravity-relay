@@ -26,6 +26,27 @@ const electronBridge = {
     ipcRenderer.send(IPC_CHANNELS.MANUAL_UPDATE_RENDERER_READY);
     return () => ipcRenderer.off(IPC_CHANNELS.MANUAL_UPDATE_AVAILABLE, handler);
   },
+  onAccountSwitched: (callback: (accountId: string) => void) => {
+    const handler = (_event: IpcRendererEvent, accountId: string) =>
+      callback(accountId);
+    ipcRenderer.on("tray://account-switched", handler);
+    ipcRenderer.on("account-switched", handler);
+    return () => {
+      ipcRenderer.off("tray://account-switched", handler);
+      ipcRenderer.off("account-switched", handler);
+    };
+  },
+  onAccountsUpdated: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("tray://accounts-updated", handler);
+    ipcRenderer.on("tray://refresh-current", handler);
+    ipcRenderer.on("accounts-updated", handler);
+    return () => {
+      ipcRenderer.off("tray://accounts-updated", handler);
+      ipcRenderer.off("tray://refresh-current", handler);
+      ipcRenderer.off("accounts-updated", handler);
+    };
+  },
   checkForUpdates: () => {
     return ipcRenderer.invoke(IPC_CHANNELS.CHECK_FOR_UPDATES);
   },

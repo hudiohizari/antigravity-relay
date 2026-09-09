@@ -271,6 +271,11 @@ const id = {
     fallbackNotice:
       "Sesi Dicabut: Akses telah dicabut oleh host desktop. Silakan masukkan kunci pairing yang valid untuk menyambung kembali.",
   },
+  traySync: {
+    switchedTitle: "Akun Dialihkan",
+    switchedDescription:
+      "Akun aktif dialihkan ke {{email}} melalui baki sistem.",
+  },
   editionSelection: {
     title: "Pilih Edisi Antigravity Anda",
     description:

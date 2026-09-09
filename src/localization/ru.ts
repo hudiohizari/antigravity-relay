@@ -269,6 +269,11 @@ const ru = {
     fallbackNotice:
       "Сессия отозвана: доступ был отозван desktop-хостом. Введите действительный ключ сопряжения для восстановления соединения.",
   },
+  traySync: {
+    switchedTitle: "Аккаунт переключен",
+    switchedDescription:
+      "Активный аккаунт переключен на {{email}} через системный трей.",
+  },
   editionSelection: {
     title: "Выберите версию Antigravity",
     description:
