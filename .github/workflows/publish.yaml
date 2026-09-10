@@ -1,0 +1,341 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build artifacts only, skip uploading to GitHub Release"
+        required: false
+        type: boolean
+        default: true
+      allow_update_published_release:
+        description: "Allow uploading assets to an already published release"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }}-${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+          - os: windows-11-arm
+            platform: win32
+            arch: arm64
+          - os: macos-13
+            platform: darwin
+            arch: x64
+          - os: macos-14
+            platform: darwin
+            arch: arm64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+
+    runs-on: ${{ matrix.os }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout git repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot rpm libsecret-1-dev pkg-config
+
+      - name: Ensure WiX Toolset
+        if: matrix.platform == 'win32' && matrix.arch == 'x64'
+        shell: powershell
+        run: |
+          $installed = choco list --local-only wixtoolset --exact --limit-output
+          if (-not $installed) {
+            choco install wixtoolset --version=3.14.0 -y
+          } elseif ($installed -match '^wixtoolset\|3\.14(\.|$)') {
+            Write-Host "WiX Toolset already compatible: $installed"
+          } else {
+            Write-Host "Incompatible WiX Toolset detected: $installed"
+            choco upgrade wixtoolset --version=3.14.0 --allow-downgrade -y
+          }
+
+      - name: Install dependencies
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 3
+          timeout_minutes: 20
+          retry_wait_seconds: 30
+          command: pnpm install --frozen-lockfile
+
+      - name: Make Artifacts (non-darwin)
+        if: matrix.platform != 'darwin'
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          ANTIGRAVITY_OAUTH_CLIENT_ID: ${{ secrets.ANTIGRAVITY_OAUTH_CLIENT_ID }}
+          ANTIGRAVITY_OAUTH_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_OAUTH_CLIENT_SECRET }}
+        run: pnpm run make -- --platform=${{ matrix.platform }} --arch=${{ matrix.arch }}
+
+      - name: Make Artifacts (darwin with retry)
+        if: matrix.platform == 'darwin'
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 3
+          timeout_minutes: 20
+          retry_wait_seconds: 20
+          command: pnpm run make -- --platform=${{ matrix.platform }} --arch=${{ matrix.arch }}
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          ANTIGRAVITY_OAUTH_CLIENT_ID: ${{ secrets.ANTIGRAVITY_OAUTH_CLIENT_ID }}
+          ANTIGRAVITY_OAUTH_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_OAUTH_CLIENT_SECRET }}
+
+      - name: Audit build artifacts
+        run: node scripts/audit-build-artifacts.mjs --platform=${{ matrix.platform }} --arch=${{ matrix.arch }}
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: make-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            out/make/**/*.exe
+            out/make/**/*.dmg
+            out/make/**/*.zip
+            out/make/**/*.deb
+            out/make/**/*.rpm
+            out/make/**/*.nupkg
+            out/make/**/*.yml
+            out/make/**/*.txt
+            out/make/**/RELEASES
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Dry-run summary
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
+        run: |
+          echo "Dry run enabled: build artifacts generated and audited; release publish step will be skipped."
+
+  publish:
+    name: Publish Release Assets & Feeds
+    needs: build
+    runs-on: ubuntu-latest
+    if: needs.build.result == 'success' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout git repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: make-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Resolve release tag
+        id: release_tag
+        env:
+          RELEASE_EVENT_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '' }}
+        run: |
+          if [ -n "$RELEASE_EVENT_TAG" ]; then
+            tag="$RELEASE_EVENT_TAG"
+          else
+            version="$(node -e "const v=require('./package.json').version; if (!v) { throw new Error('package.json version is empty'); } process.stdout.write(v);")"
+            tag="v$version"
+          fi
+
+          if [ -z "$tag" ]; then
+            echo "::error::Resolved release tag is empty"
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Using release tag: $tag"
+
+      - name: Ensure release is safe to update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+          ALLOW_UPDATE_PUBLISHED_RELEASE: ${{ github.event_name == 'release' && 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.allow_update_published_release) || 'false' }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')"
+            if [ "$is_draft" != "true" ] && [ "$ALLOW_UPDATE_PUBLISHED_RELEASE" != "true" ]; then
+              echo "::error::Release $RELEASE_TAG is already published. Refusing to upload assets."
+              echo "::error::Re-run with workflow_dispatch input allow_update_published_release=true if you explicitly want to update it."
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --draft --notes "Automated release draft."
+          fi
+
+      - name: Validate release assets
+        run: |
+          mapfile -t installable_assets < <(find release-assets -type f \( \
+            -name '*.exe' -o \
+            -name '*.dmg' -o \
+            -name '*.zip' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' -o \
+            -name '*.nupkg' \
+          \) | sort)
+
+          if [ "${#installable_assets[@]}" -eq 0 ]; then
+            echo "::error::No installable release assets found; refusing to publish."
+            exit 1
+          fi
+
+          printf 'Found %s installable release assets.\n' "${#installable_assets[@]}"
+
+      - name: Validate Windows update assets
+        run: |
+          mapfile -t windows_setup_exes < <(find release-assets -type f -name '*-win32-*-setup.exe' | sort)
+          mapfile -t squirrel_packages < <(find release-assets -type f -name '*.nupkg' | sort)
+
+          if [ "${#windows_setup_exes[@]}" -eq 0 ]; then
+            echo "::error::Missing Windows setup executable with update.electronjs.org-compatible name."
+            exit 1
+          fi
+
+          if ! printf '%s\n' "${windows_setup_exes[@]}" | grep -q -- '-win32-x64-setup\.exe$'; then
+            echo "::error::Missing Windows x64 setup executable named *-win32-x64-setup.exe."
+            exit 1
+          fi
+
+          if ! printf '%s\n' "${windows_setup_exes[@]}" | grep -q -- '-win32-arm64-setup\.exe$'; then
+            echo "::error::Missing Windows arm64 setup executable named *-win32-arm64-setup.exe."
+            exit 1
+          fi
+
+          if [ "${#squirrel_packages[@]}" -eq 0 ]; then
+            echo "::error::Missing Squirrel .nupkg package; Windows auto-update will fail."
+            exit 1
+          fi
+
+          printf 'Found %s Windows setup executable(s) and %s .nupkg package(s).\n' \
+            "${#windows_setup_exes[@]}" \
+            "${#squirrel_packages[@]}"
+
+      - name: Generate root updater.json
+        env:
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          cat > release-assets/updater.json <<EOF
+          {
+            "version": "$version",
+            "notes": "See release page for details.",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "url": "https://github.com/hudiohizari/antigravity-relay/releases/tag/${RELEASE_TAG}"
+          }
+          EOF
+
+      - name: Prepare Windows static update feed
+        env:
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          node scripts/prepare-windows-update-feed.mjs \
+            --source release-assets \
+            --output windows-update-feed \
+            --release-tag "$RELEASE_TAG" \
+            --repository "$GITHUB_REPOSITORY"
+
+      - name: Prepare legacy Windows x64 release feed
+        run: |
+          mkdir -p github-release-assets
+          cp windows-update-feed/win32/x64/RELEASES github-release-assets/RELEASES
+
+      - name: Upload assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          mapfile -t files < <(find release-assets -type f \( \
+            -name '*.exe' -o \
+            -name '*.dmg' -o \
+            -name '*.zip' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' -o \
+            -name '*.nupkg' -o \
+            -name '*.yml' -o \
+            -name '*.json' -o \
+            -name '*.txt' \
+          \) | sort)
+          files+=("github-release-assets/RELEASES")
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No release assets found under release-assets/"
+            exit 1
+          fi
+
+          printf 'Uploading %s assets to %s\n' "${#files[@]}" "$RELEASE_TAG"
+          gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+
+      - name: Publish Windows static update feed to release-updates branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          branch_dir="$(mktemp -d)"
+          git init "$branch_dir"
+          git -C "$branch_dir" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          if git -C "$branch_dir" fetch --depth=1 origin release-updates; then
+            git -C "$branch_dir" checkout -B release-updates FETCH_HEAD
+          else
+            git -C "$branch_dir" checkout --orphan release-updates
+          fi
+
+          find "$branch_dir" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R windows-update-feed/. "$branch_dir"/
+
+          git -C "$branch_dir" config user.name "github-actions[bot]"
+          git -C "$branch_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$branch_dir" add -A
+
+          if git -C "$branch_dir" diff --cached --quiet; then
+            echo "Windows static update feed unchanged."
+            exit 0
+          fi
+
+          git -C "$branch_dir" commit -m "chore: update Windows update feed for ${RELEASE_TAG}"
+          git -C "$branch_dir" push origin HEAD:release-updates
