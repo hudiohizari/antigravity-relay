@@ -1,7 +1,7 @@
 {
   "name": "antigravity-relay",
   "productName": "Antigravity Relay",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Antigravity Relay - Remote Control & Session Buffer for Antigravity",
   "main": ".vite/build/main.js",
   "private": true,
@@ -18,7 +18,7 @@
     "test:watch": "vitest watch",
     "build": "tsc --noEmit",
     "type-check": "tsc --noEmit",
-    "postinstall": "node node_modules/electron/install.js"
+    "postinstall": "node node_modules/electron/install.js && node scripts/ensure-winstaller-7z.mjs"
   },
   "keywords": [
     "antigravity",
@@ -153,6 +153,7 @@
     "@bitdisaster/exe-icon-extractor",
     "@nestjs/core",
     "@swc/core",
+    "electron-winstaller",
     "protobufjs"
   ],
   "overrides": {
@@ -160,6 +161,13 @@
     "tar": "^7.5.22"
   },
   "pnpm": {
+    "onlyBuiltDependencies": [
+      "@bitdisaster/exe-icon-extractor",
+      "@nestjs/core",
+      "@swc/core",
+      "electron-winstaller",
+      "protobufjs"
+    ],
     "overrides": {
       "handlebars": "^4.7.9",
       "tar": "^7.5.22"

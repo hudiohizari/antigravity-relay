@@ -135,6 +135,30 @@ const config: ForgeConfig = {
       }
     },
     preMake: async () => {
+      const winstallerVendor = path.resolve(
+        process.cwd(),
+        "node_modules/electron-winstaller/vendor",
+      );
+      if (fs.existsSync(winstallerVendor)) {
+        const hostArch = process.arch === "arm64" ? "arm64" : "x64";
+        let exeSrc = path.join(winstallerVendor, `7z-${hostArch}.exe`);
+        let dllSrc = path.join(winstallerVendor, `7z-${hostArch}.dll`);
+        if (!fs.existsSync(exeSrc)) {
+          exeSrc = path.join(winstallerVendor, "7z-x64.exe");
+        }
+        if (!fs.existsSync(dllSrc)) {
+          dllSrc = path.join(winstallerVendor, "7z-x64.dll");
+        }
+        const exeDst = path.join(winstallerVendor, "7z.exe");
+        const dllDst = path.join(winstallerVendor, "7z.dll");
+        if (fs.existsSync(exeSrc) && !fs.existsSync(exeDst)) {
+          fs.copyFileSync(exeSrc, exeDst);
+        }
+        if (fs.existsSync(dllSrc) && !fs.existsSync(dllDst)) {
+          fs.copyFileSync(dllSrc, dllDst);
+        }
+      }
+
       if (process.platform === "darwin") {
         const aliasNodePath = path.resolve(
           process.cwd(),

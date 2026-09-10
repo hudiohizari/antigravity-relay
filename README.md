@@ -12,7 +12,7 @@ Desktop account management, quota orchestration, and mobile remote control relay
 
 ### 1. Multi-Account Pool & Quota Orchestration
 
-Connect multiple Google accounts via OAuth 2.0 loopback authentication. Monitor real-time quota fraction, 5-hour rolling pool limits, and individual model quotas (`gemini-3.5-flash`, `gemini-3.1-pro`, `claude-sonnet-4-6`) with live reset countdown timers and intelligent automatic failover.
+Connect multiple Google accounts via OAuth 2.0 loopback authentication. Monitor real-time quota fraction, 5-hour rolling pool limits, and individual model quotas (`gemini-3.8-flash`, `gemini-3.1-pro`, `claude-opus-4-6`, `claude-sonnet-4-6`) with live reset countdown timers and intelligent automatic failover.
 
 ### 2. Remote Mobile Tethering & Web UI Mirror
 

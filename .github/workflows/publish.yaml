@@ -103,6 +103,10 @@ jobs:
             (cd node_modules/fs-xattr && npx --yes node-gyp rebuild)
           fi
 
+      - name: Ensure electron-winstaller 7-Zip binaries
+        if: matrix.platform == 'win32'
+        run: node scripts/ensure-winstaller-7z.mjs
+
       - name: Make Artifacts (non-darwin)
         if: matrix.platform != 'darwin'
         env:
