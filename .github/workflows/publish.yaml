@@ -219,7 +219,7 @@ jobs:
               exit 1
             fi
           else
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --draft --notes "Automated release draft."
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --draft --generate-notes
           fi
 
       - name: Validate release assets
@@ -349,3 +349,20 @@ jobs:
 
           git -C "$branch_dir" commit -m "chore: update Windows update feed for ${RELEASE_TAG}"
           git -C "$branch_dir" push origin HEAD:release-updates
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          current_notes="$(gh release view "$RELEASE_TAG" --json body --jq '.body // ""')"
+          if [ -z "$current_notes" ] || [ "$current_notes" = "Automated release draft." ]; then
+            notes_file="$(mktemp)"
+            if gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$RELEASE_TAG" --jq .body > "$notes_file" 2>/dev/null && [ -s "$notes_file" ]; then
+              gh release edit "$RELEASE_TAG" --draft=false --latest --notes-file "$notes_file"
+              rm -f "$notes_file"
+              exit 0
+            fi
+            rm -f "$notes_file"
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false --latest
