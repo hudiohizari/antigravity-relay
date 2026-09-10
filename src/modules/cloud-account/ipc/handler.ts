@@ -23,6 +23,7 @@ import { shell } from "electron";
 import fs from "fs";
 import { isEmpty, isString } from "lodash-es";
 import { updateTrayMenu } from "@/modules/app-shell/ipc/tray/handler";
+import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
 import { proxyModelAvailabilityStore } from "@/modules/proxy-gateway/server/shared/services/model-availability.service";
 import {
   ensureGlobalOriginalFromCurrentStorage,
@@ -553,6 +554,7 @@ export async function listCloudAccounts(): Promise<CloudAccount[]> {
 
 export async function deleteCloudAccount(accountId: string): Promise<void> {
   await CloudAccountRepo.removeAccount(accountId);
+  cloudAccountEvents.emit("account:deleted", { accountId });
 }
 
 export async function openAccountValidationLink(

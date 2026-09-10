@@ -27,6 +27,7 @@ import { ConfigManager } from "@/modules/config/ipc/manager";
 import { proxyModelAvailabilityStore } from "@/modules/proxy-gateway/server/shared/services/model-availability.service";
 import { WeeklyWarmupService } from "./WeeklyWarmupService";
 import type { WeeklyWarmupExecutor } from "./weekly-warmup-contract";
+import { cloudAccountEvents } from "./cloud-account-events";
 
 type CloudMonitorLanguage = "en" | "zh-CN" | "ru" | "vi" | "fr" | "tr";
 
@@ -616,6 +617,11 @@ export class CloudMonitorService {
         account.status_reason = undefined;
         refreshedAccounts.push(account);
         proxyModelAvailabilityStore.clearCapabilityFailures(account.id);
+        cloudAccountEvents.emit("account:quota_updated", {
+          accountId: account.id,
+          quota,
+          account,
+        });
       } catch (error) {
         logger.error(`Monitor: Failed to update ${account.email}`, error);
         await persistMonitorAccountStatusFromError(account.id, error);
@@ -788,6 +794,11 @@ export class CloudMonitorService {
           ai_credits: refreshedQuota.ai_credits ?? account.quota?.ai_credits,
         };
         await CloudAccountRepo.updateQuota(account.id, account.quota);
+        cloudAccountEvents.emit("account:quota_updated", {
+          accountId: account.id,
+          quota: account.quota,
+          account,
+        });
       } catch {
         logger.warn(
           `Failed to refresh quota after weekly warmup for account=${account.id}`,

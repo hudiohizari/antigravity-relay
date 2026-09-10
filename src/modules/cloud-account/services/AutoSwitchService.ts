@@ -8,6 +8,7 @@ import {
   type CloudAccount,
 } from "@/modules/cloud-account/types";
 import { switchCloudAccount } from "@/modules/cloud-account/ipc/handler";
+import { cloudAccountEvents } from "./cloud-account-events";
 import { logger } from "@/shared/logging/logger";
 import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 import { isWeeklyQuotaBucket } from "@/modules/cloud-account/utils/quota-groups";
@@ -372,6 +373,11 @@ export class AutoSwitchService {
       try {
         await switchCloudAccount(nextAccount.id, appTarget);
         this.recordSwitch();
+        cloudAccountEvents.emit("account:switched", {
+          accountId: nextAccount.id,
+          target: appTarget,
+          account: nextAccount,
+        });
 
         try {
           new Notification({
@@ -474,6 +480,11 @@ export class AutoSwitchService {
 
         await switchCloudAccount(nextAccount.id, appTarget);
         this.recordSwitch();
+        cloudAccountEvents.emit("account:switched", {
+          accountId: nextAccount.id,
+          target: appTarget,
+          account: nextAccount,
+        });
 
         try {
           new Notification({

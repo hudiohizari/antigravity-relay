@@ -206,6 +206,16 @@ export class MockUpstreamServer {
         return;
       }
 
+      if (url === "/upstream-icons.html") {
+        const html = `<!doctype html><html><head><title>Upstream App</title><link rel="shortcut icon" href="https://upstream.org/logo.ico"><link rel="apple-touch-icon" href="/legacy-touch.png"><link rel="stylesheet" href="/compiled_tailwind.css"></head><body><h1>Upstream with Icons</h1></body></html>`;
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-cache",
+        });
+        res.end(html);
+        return;
+      }
+
       if (url === "/main.js") {
         res.writeHead(200, {
           "Content-Type": "application/javascript; charset=UTF-8",

@@ -8,6 +8,9 @@ import {
   generateAutoReloadScript,
   extractDeviceId,
   generateRevokedHtml,
+  resetFaviconCache,
+  getFaviconBuffer,
+  getFavicon32Buffer,
 } from "@/modules/relay/relay-server";
 import { SessionManager } from "@/modules/relay/session-manager";
 import { UpstreamBridge } from "@/modules/relay/upstream-bridge";
@@ -99,13 +102,42 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(bodyText).toContain("<h1>Antigravity App</h1>");
     });
 
-    it("serves /favicon.ico with image/x-icon and 24h cache-control header", async () => {
+    it("serves /favicon.ico with image/x-icon, 24h cache-control header, and valid multi-res ICO structure", async () => {
       const res = await fetch(`http://127.0.0.1:${relayPort}/favicon.ico`);
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("image/x-icon");
       expect(res.headers.get("cache-control")).toBe("public, max-age=86400");
-      const buffer = await res.arrayBuffer();
+      const arrayBuf = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuf);
       expect(buffer.byteLength).toBeGreaterThan(0);
+
+      // Verify ICO header: 2 bytes reserved (0), 2 bytes type (1 = icon), 2 bytes count (>=1)
+      expect(buffer.readUInt16LE(0)).toBe(0);
+      expect(buffer.readUInt16LE(2)).toBe(1);
+      const iconCount = buffer.readUInt16LE(4);
+      expect(iconCount).toBeGreaterThanOrEqual(1);
+
+      // Verify first entry has valid dimensions
+      const firstWidth = buffer.readUInt8(6);
+      const firstHeight = buffer.readUInt8(7);
+      expect(firstWidth).toBeGreaterThan(0);
+      expect(firstHeight).toBeGreaterThan(0);
+    });
+
+    it("serves /favicon-32.png with image/png and 24h cache-control header", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/favicon-32.png`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("image/png");
+      expect(res.headers.get("cache-control")).toBe("public, max-age=86400");
+      const arrayBuf = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuf);
+      expect(buffer.byteLength).toBeGreaterThan(0);
+
+      // Verify PNG magic bytes: 0x89, 0x50, 0x4E, 0x47
+      expect(buffer[0]).toBe(0x89);
+      expect(buffer[1]).toBe(0x50);
+      expect(buffer[2]).toBe(0x4e);
+      expect(buffer[3]).toBe(0x47);
     });
 
     it("serves /icon.png with image/png and 24h cache-control header", async () => {
@@ -124,7 +156,52 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(html).toContain(
         '<link rel="icon" type="image/x-icon" href="/favicon.ico">',
       );
+      expect(html).toContain(
+        '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">',
+      );
       expect(html).toContain('<link rel="apple-touch-icon" href="/icon.png">');
+    });
+
+    it("regex-strips pre-existing upstream icons and replaces with AR branded favicon tags", async () => {
+      const res = await fetch(
+        `http://127.0.0.1:${relayPort}/upstream-icons.html`,
+      );
+      expect(res.status).toBe(200);
+      const html = await res.text();
+
+      // Ensure upstream icons are completely stripped
+      expect(html).not.toContain("https://upstream.org/logo.ico");
+      expect(html).not.toContain("/legacy-touch.png");
+
+      // Ensure non-icon link tags (e.g. stylesheets) are preserved
+      expect(html).toContain(
+        '<link rel="stylesheet" href="/compiled_tailwind.css">',
+      );
+
+      // Ensure branded AR icon tags are injected
+      expect(html).toContain(
+        '<link rel="icon" type="image/x-icon" href="/favicon.ico">',
+      );
+      expect(html).toContain(
+        '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">',
+      );
+      expect(html).toContain('<link rel="apple-touch-icon" href="/icon.png">');
+    });
+
+    it("resets and reloads cached favicon buffers via resetFaviconCache and forceReload", () => {
+      const initialFavicon = getFaviconBuffer();
+      const initial32 = getFavicon32Buffer();
+      expect(initialFavicon).not.toBeNull();
+      expect(initial32).not.toBeNull();
+
+      // Reset cache
+      resetFaviconCache();
+      const reloadedFavicon = getFaviconBuffer();
+      const reloaded32 = getFavicon32Buffer(true);
+      expect(reloadedFavicon).not.toBeNull();
+      expect(reloaded32).not.toBeNull();
+      expect(reloadedFavicon?.byteLength).toBe(initialFavicon?.byteLength);
+      expect(reloaded32?.byteLength).toBe(initial32?.byteLength);
     });
 
     it("proxies static asset requests with correct Content-Type headers", async () => {
@@ -1241,6 +1318,40 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       const script = generateAutoReloadScript(null, 0);
       expect(script).toContain("initialPort = null");
       expect(script).toContain("initialEpoch = 0");
+    });
+
+    it("generates client script with closed Shadow DOM banner encapsulation on #antigravity-reload-host", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain('id = "antigravity-reload-host"');
+      expect(script).toContain('attachShadow({ mode: "closed" })');
+      expect(script).toContain("mountReloadBanner");
+      expect(script).toContain("unmountReloadBanner");
+      expect(script).toContain("showBanner = mountReloadBanner");
+    });
+
+    it("includes safe-area insets, pill geometry, pulsing dot, and reduced-motion fallback in banner stylesheet", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain(
+        "top: max(12px, calc(env(safe-area-inset-top, 0px) + 8px))",
+      );
+      expect(script).toContain("border-radius: 9999px");
+      expect(script).toContain("max-width: min(calc(100vw - 32px), 400px)");
+      expect(script).toContain("flex-shrink: 0");
+      expect(script).toContain("@keyframes ag-ping");
+      expect(script).toContain("@media (prefers-reduced-motion: reduce)");
+      expect(script).toContain(
+        ".ag-dot-ping { display: none !important; animation: none !important; }",
+      );
+    });
+
+    it("contains localized reconnectingBanner copy for English and Indonesian", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain(
+        'reconnectingBanner: "Antigravity restarting, reconnecting..."',
+      );
+      expect(script).toContain(
+        'reconnectingBanner: "Antigravity memulai ulang, menghubungkan kembali..."',
+      );
     });
 
     it("exposes upstreamEpoch and isRestarting in /health endpoint", async () => {

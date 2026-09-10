@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CloudAccount } from "@/modules/cloud-account/types";
 import { getTrayTexts } from "@/modules/app-shell/ipc/tray/i18n";
+import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
 
 const mocks = vi.hoisted(() => {
   const accounts: CloudAccount[] = [];
@@ -809,6 +810,250 @@ describe("Tray Handler Functionality", () => {
 
       expect(() => handlerModule.destroyTray()).not.toThrow();
       expect(() => handlerModule.destroyTray()).not.toThrow();
+    });
+  });
+
+  describe("syncTrayWithActiveAccount and Concurrency Guards", () => {
+    it("synchronizes active account and quota metrics without placeholder dashes", async () => {
+      const activeAccount = createMockAccount({
+        id: "acc-active",
+        email: "active.developer@example.com",
+        is_active: true,
+        quota: {
+          models: {
+            "gemini-2.5-pro-high": {
+              percentage: 92,
+              resetTime: "2026-09-09T20:00:00Z",
+            },
+            "claude-3-7-sonnet": {
+              percentage: 76,
+              resetTime: "2026-09-09T20:00:00Z",
+            },
+          },
+        },
+      });
+      mocks.accounts = [activeAccount];
+
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      await handlerModule.syncTrayWithActiveAccount();
+
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+
+      expect(tpl[0].label).toBe("Current: active.developer@example.com");
+      expect(tpl.some((item) => item.label?.includes("Gemini High: 92%"))).toBe(
+        true,
+      );
+      expect(tpl.some((item) => item.label?.includes("Claude 4.6: 76%"))).toBe(
+        true,
+      );
+      expect(tpl.some((item) => item.label === "Quota: --")).toBe(false);
+      expect(mocks.traySetToolTip).toHaveBeenCalledWith(
+        "Antigravity Relay (active.developer@example.com)",
+      );
+    });
+
+    it("handles cold start with zero accounts by displaying Quota: -- and Current: No Account", async () => {
+      mocks.accounts = [];
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      await handlerModule.syncTrayWithActiveAccount();
+
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+
+      expect(tpl[0].label).toBe("Current: No Account");
+      expect(tpl.some((item) => item.label === "Quota: --")).toBe(true);
+      expect(mocks.traySetToolTip).toHaveBeenCalledWith("Antigravity Relay");
+    });
+
+    it("falls back cleanly on database error or lock without throwing", async () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      mocks.getAccounts.mockRejectedValueOnce(
+        new Error("SQLITE_BUSY: database is locked"),
+      );
+
+      await expect(
+        handlerModule.syncTrayWithActiveAccount(),
+      ).resolves.not.toThrow();
+
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+
+      expect(tpl[0].label).toBe("Current: No Account");
+      expect(tpl.some((item) => item.label === "Quota: --")).toBe(true);
+    });
+
+    it("deduplicates in-flight calls to syncTrayWithActiveAccount", async () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      const acc = createMockAccount({
+        id: "acc-1",
+        email: "dedup@example.com",
+        is_active: true,
+      });
+      mocks.accounts = [acc];
+
+      const p1 = handlerModule.syncTrayWithActiveAccount();
+      const p2 = handlerModule.syncTrayWithActiveAccount();
+
+      expect(p1).toBe(p2);
+      await Promise.all([p1, p2]);
+
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      expect(tpl[0].label).toBe("Current: dedup@example.com");
+    });
+
+    it("drops concurrent rapid clicks on refresh_current via isRefreshingQuota async mutex", async () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      const acc1 = createMockAccount({ id: "acc-1", is_active: true });
+      mocks.accounts = [acc1];
+
+      let resolveFirstRefresh!: () => void;
+      let refreshStartedResolve!: () => void;
+      const refreshStarted = new Promise<void>((res) => {
+        refreshStartedResolve = res;
+      });
+
+      const refreshSpy = vi.fn(
+        () =>
+          new Promise<CloudAccount | null>((resolve) => {
+            resolveFirstRefresh = () => resolve(acc1);
+            refreshStartedResolve();
+          }),
+      );
+      handlerModule.registerTrayAccountHandlers({ refreshQuota: refreshSpy });
+
+      handlerModule.updateTrayMenu(acc1, "en");
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      const refreshItem = tpl.find(
+        (item) => item.label === "Refresh Current Quota",
+      );
+      expect(refreshItem).toBeDefined();
+
+      // Trigger first click (in-flight)
+      const firstClick = refreshItem!.click!(
+        undefined as any,
+        undefined as any,
+        undefined as any,
+      );
+
+      await refreshStarted;
+
+      // Trigger second click while first is still pending
+      await refreshItem!.click!(
+        undefined as any,
+        undefined as any,
+        undefined as any,
+      );
+
+      resolveFirstRefresh();
+      await firstClick;
+
+      // Only the first click should have invoked refreshQuota; second was dropped by mutex
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("synchronizes tray when cloudAccountEvents lifecycle events are emitted", async () => {
+      const acc1 = createMockAccount({
+        id: "acc-1",
+        email: "first@example.com",
+        is_active: true,
+      });
+      const acc2 = createMockAccount({
+        id: "acc-2",
+        email: "second@example.com",
+        is_active: false,
+      });
+      mocks.accounts = [acc1, acc2];
+
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      await handlerModule.syncTrayWithActiveAccount();
+
+      let tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      expect(tpl[0].label).toBe("Current: first@example.com");
+
+      // Switch active account and emit account:switched
+      acc1.is_active = false;
+      acc2.is_active = true;
+      cloudAccountEvents.emit("account:switched", {
+        accountId: "acc-2",
+        account: acc2,
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+      await handlerModule.syncTrayWithActiveAccount();
+
+      tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      expect(tpl[0].label).toBe("Current: second@example.com");
+
+      // Update quota and emit account:quota_updated
+      acc2.quota = {
+        models: {
+          "gemini-2.5-pro-high": { percentage: 99, resetTime: "" },
+        },
+      };
+      cloudAccountEvents.emit("account:quota_updated", {
+        accountId: "acc-2",
+        account: acc2,
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+      await handlerModule.syncTrayWithActiveAccount();
+
+      tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      expect(tpl.some((item) => item.label?.includes("Gemini High: 99%"))).toBe(
+        true,
+      );
+
+      // Delete account and emit account:deleted
+      mocks.accounts = [acc1];
+      acc1.is_active = true;
+      cloudAccountEvents.emit("account:deleted", { accountId: "acc-2" });
+
+      await new Promise((r) => setTimeout(r, 10));
+      await handlerModule.syncTrayWithActiveAccount();
+
+      tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      expect(tpl[0].label).toBe("Current: first@example.com");
+    });
+
+    it("unsubscribes from cloudAccountEvents when destroyTray is called", async () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      handlerModule.destroyTray();
+      mocks.traySetContextMenu.mockClear();
+
+      cloudAccountEvents.emit("account:sync_requested", { reason: "test" });
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(mocks.traySetContextMenu).not.toHaveBeenCalled();
     });
   });
 });

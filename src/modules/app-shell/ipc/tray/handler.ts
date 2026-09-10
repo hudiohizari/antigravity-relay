@@ -1,9 +1,12 @@
 import { app, Tray, Menu, nativeImage, BrowserWindow } from "electron";
+import { z } from "zod";
 import { CloudAccount } from "@/modules/cloud-account/types";
 import { logger } from "@/shared/logging/logger";
 import { getTrayTexts, type TrayTexts } from "./i18n";
 import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandler";
 import { GoogleAPIService } from "@/modules/cloud-account/services/GoogleAPIService";
+import { CloudAccountSettingsStore } from "@/modules/cloud-account/persistence/cloud-account-settings-store";
+import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
 import { configureTrayIcon, resolveTrayIconPath } from "./icon";
 import { isWeeklyQuotaBucket } from "@/modules/cloud-account/utils/quota-groups";
 import { AutoSwitchService } from "@/modules/cloud-account/services/AutoSwitchService";
@@ -25,6 +28,86 @@ let lastAccount: CloudAccount | null = null;
 let lastLanguage: string = "en";
 let onQuitRequested: (() => void | Promise<void>) | null = null;
 let isSwitchingAccount = false;
+let isRefreshingQuota = false;
+let inFlightSync: Promise<void> | null = null;
+let syncSequenceToken = 0;
+let hasPendingSync = false;
+let isSubscribedToCloudEvents = false;
+
+const onCloudAccountEvent = () => {
+  void syncTrayWithActiveAccount();
+};
+
+function subscribeCloudAccountEvents(): void {
+  if (isSubscribedToCloudEvents) return;
+  cloudAccountEvents.on("account:switched", onCloudAccountEvent);
+  cloudAccountEvents.on("account:quota_updated", onCloudAccountEvent);
+  cloudAccountEvents.on("account:deleted", onCloudAccountEvent);
+  cloudAccountEvents.on("account:sync_requested", onCloudAccountEvent);
+  isSubscribedToCloudEvents = true;
+}
+
+function unsubscribeCloudAccountEvents(): void {
+  if (!isSubscribedToCloudEvents) return;
+  cloudAccountEvents.off("account:switched", onCloudAccountEvent);
+  cloudAccountEvents.off("account:quota_updated", onCloudAccountEvent);
+  cloudAccountEvents.off("account:deleted", onCloudAccountEvent);
+  cloudAccountEvents.off("account:sync_requested", onCloudAccountEvent);
+  isSubscribedToCloudEvents = false;
+}
+
+export function syncTrayWithActiveAccount(): Promise<void> {
+  if (inFlightSync) {
+    hasPendingSync = true;
+    return inFlightSync;
+  }
+
+  const currentToken = ++syncSequenceToken;
+
+  inFlightSync = (async () => {
+    try {
+      let lang = "en";
+      try {
+        const stored = CloudAccountSettingsStore.getSetting(
+          "language",
+          "en",
+          z.string(),
+        );
+        if (typeof stored === "string" && stored.trim()) {
+          lang = stored.trim();
+        }
+      } catch (langErr) {
+        logger.warn(
+          "Tray: Failed to resolve language from store, using fallback",
+          langErr,
+        );
+      }
+
+      try {
+        const accounts = await CloudAccountRepo.getAccounts();
+        if (currentToken !== syncSequenceToken) {
+          return;
+        }
+        const activeAccount =
+          accounts.find((a) => a.is_active) ?? accounts[0] ?? null;
+        updateTrayMenu(activeAccount, lang);
+      } catch (e) {
+        logger.warn("Tray: Failed to sync active account", e);
+        if (currentToken === syncSequenceToken) {
+          updateTrayMenu(null, lang);
+        }
+      }
+    } finally {
+      inFlightSync = null;
+      if (hasPendingSync) {
+        hasPendingSync = false;
+        void syncTrayWithActiveAccount();
+      }
+    }
+  })();
+
+  return inFlightSync;
+}
 
 export function getQuotaText(
   account: CloudAccount | null,
@@ -92,7 +175,7 @@ export function initTray(
   globalMainWindow = mainWindow;
   onQuitRequested = quitHandler ?? null;
 
-  // PATCH 3: Destroy existing tray before creating new one (prevents zombie tray icons)
+  // Destroy existing tray before creating new one (prevents zombie tray icons)
   if (tray) {
     try {
       tray.destroy();
@@ -100,6 +183,7 @@ export function initTray(
       logger.error("Failed to destroy existing tray", e);
     }
     tray = null;
+    unsubscribeCloudAccountEvents();
     logger.info("Destroyed existing tray before creating new one");
   }
 
@@ -140,6 +224,8 @@ export function initTray(
   });
 
   updateTrayMenu(null);
+  subscribeCloudAccountEvents();
+  void syncTrayWithActiveAccount();
 }
 
 async function resolveAccountSwitcher(): Promise<
@@ -274,6 +360,13 @@ export function updateTrayMenu(
     {
       label: texts.refresh_current,
       click: async () => {
+        if (isRefreshingQuota) {
+          logger.info(
+            "Tray: Refresh quota dropped (concurrent refresh in progress)",
+          );
+          return;
+        }
+        isRefreshingQuota = true;
         try {
           const accounts = await CloudAccountRepo.getAccounts();
           const current = accounts.find((a) => a.is_active);
@@ -302,6 +395,8 @@ export function updateTrayMenu(
           }
         } catch (e) {
           logger.error("Tray: Refresh quota failed", e);
+        } finally {
+          isRefreshingQuota = false;
         }
       },
     },
@@ -337,6 +432,14 @@ export function setTrayLanguage(lang: string) {
 }
 
 export function destroyTray() {
+  unsubscribeCloudAccountEvents();
+  syncSequenceToken++;
+  inFlightSync = null;
+  hasPendingSync = false;
+  isRefreshingQuota = false;
+  isSwitchingAccount = false;
+  registeredActions = {};
+  onQuitRequested = null;
   if (tray) {
     try {
       tray.destroy();
@@ -344,9 +447,6 @@ export function destroyTray() {
       logger.error("Failed to destroy tray", e);
     }
     tray = null;
-    onQuitRequested = null;
-    registeredActions = {};
-    isSwitchingAccount = false;
     logger.info("Tray destroyed");
   }
 }

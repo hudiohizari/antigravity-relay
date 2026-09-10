@@ -114,9 +114,19 @@ export function extractDeviceId(
 }
 
 let cachedFaviconBuffer: Buffer | null = null;
+let cachedFavicon32Buffer: Buffer | null = null;
 let cachedIconPngBuffer: Buffer | null = null;
 
-export function getFaviconBuffer(): Buffer | null {
+export function resetFaviconCache(): void {
+  cachedFaviconBuffer = null;
+  cachedFavicon32Buffer = null;
+  cachedIconPngBuffer = null;
+}
+
+export function getFaviconBuffer(forceReload = false): Buffer | null {
+  if (forceReload) {
+    cachedFaviconBuffer = null;
+  }
   if (cachedFaviconBuffer) return cachedFaviconBuffer;
   const candidates = [
     path.join(process.cwd(), "images", "favicon.ico"),
@@ -134,7 +144,34 @@ export function getFaviconBuffer(): Buffer | null {
   return null;
 }
 
-export function getIconPngBuffer(): Buffer | null {
+export function getFavicon32Buffer(forceReload = false): Buffer | null {
+  if (forceReload) {
+    cachedFavicon32Buffer = null;
+  }
+  if (cachedFavicon32Buffer) return cachedFavicon32Buffer;
+  const candidates = [
+    path.join(process.cwd(), "images", "favicon-32.png"),
+    path.join(process.cwd(), "images", "32x32.png"),
+    path.join(__dirname, "../../../images/favicon-32.png"),
+    path.join(__dirname, "../../../images/32x32.png"),
+    path.join(__dirname, "../../assets/favicon-32.png"),
+    path.join(__dirname, "../../assets/32x32.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        cachedFavicon32Buffer = fs.readFileSync(p);
+        return cachedFavicon32Buffer;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+export function getIconPngBuffer(forceReload = false): Buffer | null {
+  if (forceReload) {
+    cachedIconPngBuffer = null;
+  }
   if (cachedIconPngBuffer) return cachedIconPngBuffer;
   const candidates = [
     path.join(process.cwd(), "images", "icon.png"),
@@ -236,7 +273,8 @@ export function generateAutoReloadScript(
       networkError: "Unable to reach the relay server. Please check your network connection.",
       syncingSiblingTabs: "Device re-paired successfully. Synchronizing open tabs...",
       keyConsumedError: "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
-      staleKeyError: "The previous pairing key is no longer valid. Enter the newly generated key shown on the desktop dashboard."
+      staleKeyError: "The previous pairing key is no longer valid. Enter the newly generated key shown on the desktop dashboard.",
+      reconnectingBanner: "Antigravity restarting, reconnecting..."
     },
     id: {
       overlayTitle: "Akses Dicabut",
@@ -253,7 +291,8 @@ export function generateAutoReloadScript(
       networkError: "Tidak dapat menjangkau server relay. Silakan periksa koneksi jaringan Anda.",
       syncingSiblingTabs: "Perangkat berhasil dihubungkan ulang. Menyelaraskan tab yang terbuka...",
       keyConsumedError: "Kunci pairing ini sudah digunakan oleh perangkat lain. Silakan minta kunci baru dari host desktop.",
-      staleKeyError: "Kunci pairing sebelumnya sudah tidak valid. Masukkan kunci yang baru ditampilkan di dashboard desktop."
+      staleKeyError: "Kunci pairing sebelumnya sudah tidak valid. Masukkan kunci yang baru ditampilkan di dashboard desktop.",
+      reconnectingBanner: "Antigravity memulai ulang, menghubungkan kembali..."
     }
   };
 
@@ -707,12 +746,7 @@ export function generateAutoReloadScript(
   function handleRevocation(shouldBroadcast) {
     window.__antigravitySessionRevoked = true;
     reloading = false;
-    try {
-      var banner = document.getElementById("relay-reload-banner");
-      if (banner && banner.parentNode) {
-        banner.parentNode.removeChild(banner);
-      }
-    } catch (_) {}
+    unmountReloadBanner();
     if (shouldBroadcast) {
       broadcastSessionRevoked();
     }
@@ -766,31 +800,72 @@ export function generateAutoReloadScript(
 
   initCrossTabSyncListener();
 
-  function showBanner(msg) {
+  function unmountReloadBanner() {
     try {
-      var banner = document.getElementById("relay-reload-banner");
-      if (!banner) {
-        banner = document.createElement("div");
-        banner.id = "relay-reload-banner";
-        banner.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#0f172a;color:#38bdf8;border:1px solid #0284c7;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 8px 20px rgba(0,0,0,0.4);display:flex;align-items:center;gap:8px;";
-        document.body.appendChild(banner);
+      var host = document.getElementById("antigravity-reload-host");
+      if (host && host.parentNode) {
+        host.parentNode.removeChild(host);
       }
-      banner.innerHTML = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#38bdf8;"></span>' + msg;
+      var legacyBanner = document.getElementById("relay-reload-banner");
+      if (legacyBanner && legacyBanner.parentNode) {
+        legacyBanner.parentNode.removeChild(legacyBanner);
+      }
     } catch (_) {}
   }
+
+  function mountReloadBanner(msg) {
+    try {
+      var message = msg || getCatalog().reconnectingBanner || "Antigravity restarting, reconnecting...";
+      var host = document.getElementById("antigravity-reload-host");
+      if (!host) {
+        if (!document.body) return;
+        host = document.createElement("div");
+        host.id = "antigravity-reload-host";
+        document.body.appendChild(host);
+
+        var shadow = host.attachShadow({ mode: "closed" });
+        var style = document.createElement("style");
+        style.textContent = [
+          ":host { position: fixed; top: max(12px, calc(env(safe-area-inset-top, 0px) + 8px)); left: 50%; transform: translateX(-50%); z-index: 2147483647; pointer-events: none; width: auto; display: flex; justify-content: center; align-items: center; margin: 0; padding: 0; border: none; }",
+          ".ag-banner { pointer-events: auto; box-sizing: border-box; display: inline-flex; align-items: center; gap: 8px; max-width: min(calc(100vw - 32px), 400px); width: max-content; padding: 8px 16px; border-radius: 9999px; background: rgba(15, 23, 42, 0.90); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3); font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 500; line-height: 1.4; color: #e0f2fe; letter-spacing: -0.01em; text-align: left; word-break: break-word; user-select: none; -webkit-user-select: none; transition: border-color 0.2s ease, transform 0.2s ease; }",
+          ".ag-banner:hover { border-color: rgba(56, 189, 248, 0.55); }",
+          ".ag-banner:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }",
+          ".ag-dot-wrapper { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 8px; height: 8px; flex-shrink: 0; margin: 0; padding: 0; }",
+          ".ag-dot { position: relative; display: block; width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; flex-shrink: 0; }",
+          ".ag-dot-ping { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 50%; background: #38bdf8; opacity: 0.75; animation: ag-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite; pointer-events: none; }",
+          ".ag-text { display: inline-block; flex: 1 1 auto; }",
+          "@keyframes ag-ping { 0% { transform: scale(1); opacity: 0.8; } 75%, 100% { transform: scale(2.4); opacity: 0; } }",
+          "@media (prefers-reduced-motion: reduce) { .ag-dot-ping { display: none !important; animation: none !important; } }",
+        ].join("");
+        shadow.appendChild(style);
+
+        var banner = document.createElement("div");
+        banner.className = "ag-banner";
+        banner.setAttribute("role", "status");
+        banner.setAttribute("aria-live", "polite");
+        banner.setAttribute("aria-atomic", "true");
+        banner.innerHTML =
+          '<span class="ag-dot-wrapper" aria-hidden="true"><span class="ag-dot-ping"></span><span class="ag-dot"></span></span><span class="ag-text">' +
+          message +
+          "</span>";
+        shadow.appendChild(banner);
+        host.__agBannerText = banner.querySelector(".ag-text");
+      } else if (host.__agBannerText) {
+        host.__agBannerText.textContent = message;
+      }
+    } catch (_) {}
+  }
+  var showBanner = mountReloadBanner;
 
   function triggerReload() {
     if (reloading || window.__antigravitySessionRevoked) return;
     reloading = true;
-    showBanner("Antigravity restarting, reconnecting...");
+    mountReloadBanner(getCatalog().reconnectingBanner);
 
     var check = function() {
       if (window.__antigravitySessionRevoked) {
         reloading = false;
-        try {
-          var banner = document.getElementById("relay-reload-banner");
-          if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
-        } catch (_) {}
+        unmountReloadBanner();
         return;
       }
       fetch("/health", { cache: "no-store" })
@@ -798,10 +873,7 @@ export function generateAutoReloadScript(
         .then(function(data) {
           if (window.__antigravitySessionRevoked) {
             reloading = false;
-            try {
-              var banner = document.getElementById("relay-reload-banner");
-              if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
-            } catch (_) {}
+            unmountReloadBanner();
             return;
           }
           var portChanged = data && data.upstreamPort && initialPort && data.upstreamPort !== initialPort;
@@ -819,10 +891,7 @@ export function generateAutoReloadScript(
             setTimeout(check, 1000);
           } else {
             reloading = false;
-            try {
-              var banner = document.getElementById("relay-reload-banner");
-              if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
-            } catch (_) {}
+            unmountReloadBanner();
           }
         });
     };
@@ -997,6 +1066,7 @@ export function generatePairingHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>${title}</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="apple-touch-icon" href="/icon.png">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1128,6 +1198,7 @@ export function generateRevokedHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>${title}</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="apple-touch-icon" href="/icon.png">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1695,6 +1766,7 @@ export class RelayServer {
     port?: number;
     host?: string;
   }): Promise<RelayServerStatus> {
+    resetFaviconCache();
     if (this.isRunning) {
       return this.getStatus();
     }
@@ -1748,6 +1820,18 @@ export class RelayServer {
       }
       return reply
         .header("Content-Type", "image/x-icon")
+        .header("Cache-Control", "public, max-age=86400")
+        .send(buffer);
+    });
+
+    // Branded 32x32 PNG favicon route
+    app.get("/favicon-32.png", async (_request, reply) => {
+      const buffer = getFavicon32Buffer();
+      if (!buffer) {
+        return reply.status(404).send("Not Found");
+      }
+      return reply
+        .header("Content-Type", "image/png")
         .header("Cache-Control", "public, max-age=86400")
         .send(buffer);
     });
@@ -2187,23 +2271,22 @@ export class RelayServer {
             const rawHtml = await upstreamRes.body.text();
             let finalHtml = rawHtml;
 
+            // Regex-strip any existing <link rel="icon"...> or <link rel="shortcut icon"...> and <link rel="apple-touch-icon"...>
+            finalHtml = finalHtml.replace(
+              /<link\b[^>]*?\brel=["'](?:(?:shortcut\s+)?icon|apple-touch-icon(?:-precomposed)?)["'][^>]*\/?>/gi,
+              "",
+            );
+
             const iconTags =
-              '<link rel="icon" type="image/x-icon" href="/favicon.ico">\n  <link rel="apple-touch-icon" href="/icon.png">';
-            if (
-              !finalHtml.includes('rel="icon"') &&
-              !finalHtml.includes("rel='icon'")
-            ) {
-              if (finalHtml.includes("<head>")) {
-                finalHtml = finalHtml.replace(
-                  "<head>",
-                  `<head>\n  ${iconTags}`,
-                );
-              } else if (/<head[^>]*>/i.test(finalHtml)) {
-                finalHtml = finalHtml.replace(
-                  /<head[^>]*>/i,
-                  (match) => `${match}\n  ${iconTags}`,
-                );
-              }
+              '<link rel="icon" type="image/x-icon" href="/favicon.ico">\n  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">\n  <link rel="apple-touch-icon" href="/icon.png">';
+
+            if (finalHtml.includes("<head>")) {
+              finalHtml = finalHtml.replace("<head>", `<head>\n  ${iconTags}`);
+            } else if (/<head[^>]*>/i.test(finalHtml)) {
+              finalHtml = finalHtml.replace(
+                /<head[^>]*>/i,
+                (match) => `${match}\n  ${iconTags}`,
+              );
             }
 
             if (!rawHtml.includes('id="antigravity-relay-autoreload"')) {
