@@ -1863,5 +1863,87 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(closeEv.code).toBe(4401);
       expect(closeEv.reason).toBe("Session revoked");
     });
+
+    it("consumePairingKey supports IP grace period for mobile scanner handoff", () => {
+      const key = prdServer.getPairingKey();
+      const clientIp = "192.168.1.55";
+
+      const res1 = prdServer.consumePairingKey(key, { clientIp });
+      expect(res1.success).toBe(true);
+
+      // Same IP within grace period succeeds (e.g. Safari handoff)
+      const resGrace = prdServer.consumePairingKey(key, { clientIp });
+      expect(resGrace.success).toBe(true);
+
+      // Different IP within grace period fails
+      const resOtherIp = prdServer.consumePairingKey(key, {
+        clientIp: "192.168.1.99",
+      });
+      expect(resOtherIp.success).toBe(false);
+      expect(resOtherIp.reason).toBe("consumed");
+    });
+
+    it("rejects same-IP connection after grace period expires", () => {
+      const key = prdServer.getPairingKey();
+      const clientIp = "192.168.1.77";
+
+      const now = Date.now();
+      const dateSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+
+      const res1 = prdServer.consumePairingKey(key, { clientIp });
+      expect(res1.success).toBe(true);
+
+      // Advance time beyond grace period (61 seconds)
+      dateSpy.mockReturnValue(now + RelayServer.PAIRING_GRACE_PERIOD_MS + 1000);
+
+      const resExpired = prdServer.consumePairingKey(key, { clientIp });
+      expect(resExpired.success).toBe(false);
+      expect(resExpired.reason).toBe("consumed");
+
+      dateSpy.mockRestore();
+    });
+
+    it("browser handoff allows same-IP connection within grace period without device cookie", async () => {
+      const key = prdServer.getPairingKey();
+      const mobileIp = "10.0.0.42";
+
+      // 1. QR scanner browser requests page (no device cookie)
+      const resScanner = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=${key}`,
+        {
+          headers: {
+            "x-forwarded-for": mobileIp,
+            accept: "text/html",
+          },
+        },
+      );
+      expect(resScanner.statusCode).toBe(200);
+
+      // 2. Safari opens same URL from same mobile IP (no device cookie)
+      const resSafari = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=${key}`,
+        {
+          headers: {
+            "x-forwarded-for": mobileIp,
+            accept: "text/html",
+          },
+        },
+      );
+      expect(resSafari.statusCode).toBe(200);
+
+      // 3. Third device from different IP attempts to reuse key -> rejected
+      const resOther = await undiciRequest(
+        `http://127.0.0.1:${prdPort}/?pair=${key}`,
+        {
+          headers: {
+            "x-forwarded-for": "10.0.0.99",
+            accept: "application/json",
+          },
+        },
+      );
+      expect(resOther.statusCode).toBe(401);
+      const json = (await resOther.body.json()) as any;
+      expect(json.error).toBe("key_consumed");
+    });
   });
 });

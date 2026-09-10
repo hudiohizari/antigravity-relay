@@ -1413,8 +1413,17 @@ export class RelayServer {
   private unhookSessionRevoked?: () => void;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private readonly retiredPairingKeys: Map<string, number> = new Map();
+  private readonly retiredKeyRecords: Map<
+    string,
+    {
+      retiredAt: number;
+      consumedByIp?: string;
+      consumedByDeviceId?: string;
+    }
+  > = new Map();
   public static readonly RETIRED_KEY_TTL_MS = 60 * 60 * 1000; // 1 hour
   public static readonly MAX_RETIRED_KEYS = 200;
+  public static readonly PAIRING_GRACE_PERIOD_MS = 60 * 1000; // 60 seconds
   private currentPairingKey: string = generatePairingKey();
 
   constructor(options?: RelayServerOptions) {
@@ -1477,12 +1486,14 @@ export class RelayServer {
     for (const [key, retiredAt] of this.retiredPairingKeys.entries()) {
       if (now - retiredAt > RelayServer.RETIRED_KEY_TTL_MS) {
         this.retiredPairingKeys.delete(key);
+        this.retiredKeyRecords.delete(key);
       }
     }
     while (this.retiredPairingKeys.size > RelayServer.MAX_RETIRED_KEYS) {
       const oldestKey = this.retiredPairingKeys.keys().next().value;
       if (oldestKey !== undefined) {
         this.retiredPairingKeys.delete(oldestKey);
+        this.retiredKeyRecords.delete(oldestKey);
       } else {
         break;
       }
@@ -1491,7 +1502,9 @@ export class RelayServer {
 
   public regeneratePairingKey(): string {
     if (this.currentPairingKey) {
-      this.retiredPairingKeys.set(this.currentPairingKey, Date.now());
+      const now = Date.now();
+      this.retiredPairingKeys.set(this.currentPairingKey, now);
+      this.retiredKeyRecords.set(this.currentPairingKey, { retiredAt: now });
       this.pruneRetiredPairingKeys();
     }
     this.currentPairingKey = generatePairingKey();
@@ -1506,7 +1519,15 @@ export class RelayServer {
     return validateToken(candidate.trim(), this.currentPairingKey);
   }
 
-  public consumePairingKey(candidate?: string | null): {
+  public consumePairingKey(
+    candidate?: string | null,
+    contextOrIp?:
+      | string
+      | {
+          clientIp?: string;
+          originalDeviceId?: string;
+        },
+  ): {
     success: boolean;
     reason?: "invalid" | "consumed";
   } {
@@ -1515,6 +1536,30 @@ export class RelayServer {
       return { success: false, reason: "invalid" };
     }
     const trimmed = candidate.trim();
+    const context =
+      typeof contextOrIp === "string" ? { clientIp: contextOrIp } : contextOrIp;
+
+    const record = this.retiredKeyRecords.get(trimmed);
+    if (record) {
+      const isWithinGrace =
+        Date.now() - record.retiredAt <= RelayServer.PAIRING_GRACE_PERIOD_MS;
+      const isSameIp = Boolean(
+        context?.clientIp &&
+        record.consumedByIp &&
+        context.clientIp === record.consumedByIp,
+      );
+      const isExplicitDifferentDevice = Boolean(
+        context?.originalDeviceId &&
+        record.consumedByDeviceId &&
+        context.originalDeviceId !== record.consumedByDeviceId,
+      );
+
+      if (isWithinGrace && isSameIp && !isExplicitDifferentDevice) {
+        return { success: true };
+      }
+      return { success: false, reason: "consumed" };
+    }
+
     if (this.retiredPairingKeys.has(trimmed)) {
       return { success: false, reason: "consumed" };
     }
@@ -1529,7 +1574,13 @@ export class RelayServer {
     }
 
     const consumedKey = this.currentPairingKey;
-    this.retiredPairingKeys.set(consumedKey, Date.now());
+    const now = Date.now();
+    this.retiredPairingKeys.set(consumedKey, now);
+    this.retiredKeyRecords.set(consumedKey, {
+      retiredAt: now,
+      consumedByIp: context?.clientIp,
+      consumedByDeviceId: context?.originalDeviceId,
+    });
     this.currentPairingKey = generatePairingKey();
     this.pruneRetiredPairingKeys();
     this.notifyStatusUpdated();
@@ -1931,7 +1982,10 @@ export class RelayServer {
             });
           }
 
-          const consumeResult = this.consumePairingKey(pairingToken);
+          const consumeResult = this.consumePairingKey(pairingToken, {
+            clientIp,
+            originalDeviceId,
+          });
           if (consumeResult.success || !requirePairing) {
             this.rateLimiter.recordSuccess(rateLimitKey);
             session = this.sessionManager.createSession({
@@ -2633,7 +2687,10 @@ export class RelayServer {
           safeClose(clientWs, 4401, "Rate limited");
           return;
         }
-        const consumeResult = this.consumePairingKey(pairParam);
+        const consumeResult = this.consumePairingKey(pairParam, {
+          clientIp,
+          originalDeviceId,
+        });
         if (consumeResult.success || !requirePairing) {
           this.rateLimiter.recordSuccess(rateLimitKey);
           if (!deviceId) {
