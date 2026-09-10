@@ -782,7 +782,17 @@ export const RelayDashboard: React.FC = () => {
                       title="Open Tunnel in Browser"
                       className="shrink-0"
                     >
-                      <a href={publicUrl} target="_blank" rel="noreferrer">
+                      <a
+                        href={publicUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => {
+                          if (window.electron?.openExternalUrl) {
+                            e.preventDefault();
+                            void window.electron.openExternalUrl(publicUrl);
+                          }
+                        }}
+                      >
                         <ExternalLink className="h-4 w-4" />
                       </a>
                     </Button>

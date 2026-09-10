@@ -1,20 +1,20 @@
-import crypto from 'node:crypto';
-import { AppError } from '@/shared/errors/appError';
-import { canDecryptPayloadWithKey } from '@/shared/security/crypto';
+import crypto from "node:crypto";
+import { AppError } from "@/shared/errors/appError";
+import { canDecryptPayloadWithKey } from "@/shared/security/crypto";
 
 export type KeySource =
-  | 'safeStorage'
-  | 'keytar'
-  | 'file'
-  | 'legacy-safeStorage'
-  | 'legacy-keytar'
-  | 'legacy-file';
+  | "safeStorage"
+  | "keytar"
+  | "file"
+  | "legacy-safeStorage"
+  | "legacy-keytar"
+  | "legacy-file";
 
 export type KeyReadResult =
-  | { status: 'available'; key: Buffer; source: KeySource }
-  | { status: 'missing'; source: KeySource }
-  | { status: 'unavailable'; source: KeySource; error: unknown }
-  | { status: 'corrupt'; source: KeySource; error: unknown };
+  | { status: "available"; key: Buffer; source: KeySource }
+  | { status: "missing"; source: KeySource }
+  | { status: "unavailable"; source: KeySource; error: unknown }
+  | { status: "corrupt"; source: KeySource; error: unknown };
 
 export interface MasterKeyProvider {
   source: KeySource;
@@ -23,16 +23,16 @@ export interface MasterKeyProvider {
 }
 
 export interface SecurityStatus {
-  state: 'secure' | 'degraded' | 'locked';
+  state: "secure" | "degraded" | "locked";
   masterKeySource?: KeySource;
   recoveryHint?:
-    | 'HINT_APP_TRANSLOCATION'
-    | 'HINT_KEYCHAIN_DENIED'
-    | 'HINT_MANUAL_SIGN'
-    | 'HINT_RECOVERY';
+    | "HINT_APP_TRANSLOCATION"
+    | "HINT_KEYCHAIN_DENIED"
+    | "HINT_MANUAL_SIGN"
+    | "HINT_RECOVERY";
 }
 
-type RecoveryHint = NonNullable<SecurityStatus['recoveryHint']>;
+type RecoveryHint = NonNullable<SecurityStatus["recoveryHint"]>;
 
 interface MasterKeyManagerOptions {
   providers: MasterKeyProvider[];
@@ -66,12 +66,15 @@ export class MasterKeyManager {
   private resolved: ResolvedMasterKey | null = null;
   private decryptionKeys: ResolvedMasterKey[] = [];
   private initializationInProgress: Promise<ResolvedMasterKey> | null = null;
-  private status: SecurityStatus = { state: 'locked', recoveryHint: 'HINT_RECOVERY' };
+  private status: SecurityStatus = {
+    state: "locked",
+    recoveryHint: "HINT_RECOVERY",
+  };
 
   constructor({
     providers,
     generateKey = () => crypto.randomBytes(32),
-    recoveryHint = 'HINT_RECOVERY',
+    recoveryHint = "HINT_RECOVERY",
   }: MasterKeyManagerOptions) {
     this.providers = providers;
     this.generateKey = generateKey;
@@ -88,13 +91,13 @@ export class MasterKeyManager {
       }
 
       const result = results[index];
-      if (result.status === 'available') {
+      if (result.status === "available") {
         if (result.key.equals(key)) {
           return provider.source;
         }
         continue;
       }
-      if (result.status !== 'missing') {
+      if (result.status !== "missing") {
         continue;
       }
 
@@ -109,7 +112,9 @@ export class MasterKeyManager {
     return undefined;
   }
 
-  async initialize(options: InitializeMasterKeyOptions): Promise<ResolvedMasterKey> {
+  async initialize(
+    options: InitializeMasterKeyOptions,
+  ): Promise<ResolvedMasterKey> {
     if (this.resolved) {
       return this.resolved;
     }
@@ -129,14 +134,19 @@ export class MasterKeyManager {
     encryptedSamples,
     storedAccountCount = encryptedSamples.length,
   }: InitializeMasterKeyOptions): Promise<ResolvedMasterKey> {
-    const results = await Promise.all(this.providers.map((provider) => provider.read()));
-    const availableResults = results.filter(
-      (result): result is Extract<KeyReadResult, { status: 'available' }> =>
-        result.status === 'available',
+    const results = await Promise.all(
+      this.providers.map((provider) => provider.read()),
     );
-    const uniqueCandidates = new Map<string, (typeof availableResults)[number]>();
+    const availableResults = results.filter(
+      (result): result is Extract<KeyReadResult, { status: "available" }> =>
+        result.status === "available",
+    );
+    const uniqueCandidates = new Map<
+      string,
+      (typeof availableResults)[number]
+    >();
     for (const candidate of availableResults) {
-      const fingerprint = candidate.key.toString('hex');
+      const fingerprint = candidate.key.toString("hex");
       if (!uniqueCandidates.has(fingerprint)) {
         uniqueCandidates.set(fingerprint, candidate);
       }
@@ -150,62 +160,83 @@ export class MasterKeyManager {
     });
     const matchingCandidates = candidateCoverage
       .filter(({ coverage }) => coverage > 0)
-      .sort((left, right) => right.coverage - left.coverage || left.index - right.index);
+      .sort(
+        (left, right) =>
+          right.coverage - left.coverage || left.index - right.index,
+      );
     const matchingCandidate = matchingCandidates[0]?.candidate;
 
     if (encryptedSamples.length > 0 && !matchingCandidate) {
-      this.status = { state: 'locked', recoveryHint: this.recoveryHint };
-      throw new AppError('MASTER_KEY_UNAVAILABLE', 'Unable to resolve stored master key', {
-        messageKey: 'error.masterKeyUnavailable',
-        metadata: {
-          hint: this.recoveryHint,
-          reason: 'NO_MATCHING_KEY',
-          storedAccountCount,
+      this.status = { state: "locked", recoveryHint: this.recoveryHint };
+      throw new AppError(
+        "MASTER_KEY_UNAVAILABLE",
+        "Unable to resolve stored master key",
+        {
+          messageKey: "error.masterKeyUnavailable",
+          metadata: {
+            hint: this.recoveryHint,
+            reason: "NO_MATCHING_KEY",
+            storedAccountCount,
+          },
         },
-      });
+      );
     }
 
     const selected = matchingCandidate ?? candidates[0];
     if (selected) {
-      const persistedSource = await this.persistResolvedKey(selected.key, results);
-      this.resolved = { key: selected.key, source: persistedSource ?? selected.source };
+      const persistedSource = await this.persistResolvedKey(
+        selected.key,
+        results,
+      );
+      this.resolved = {
+        key: selected.key,
+        source: persistedSource ?? selected.source,
+      };
       this.decryptionKeys = [
         this.resolved,
         ...matchingCandidates
-          .map(({ candidate }) => ({ key: candidate.key, source: candidate.source }))
+          .map(({ candidate }) => ({
+            key: candidate.key,
+            source: candidate.source,
+          }))
           .filter(({ key }) => !key.equals(selected.key)),
       ];
       this.status = {
         state:
           this.decryptionKeys.length === 1 &&
-          (this.resolved.source === 'safeStorage' || this.resolved.source === 'keytar')
-            ? 'secure'
-            : 'degraded',
+          (this.resolved.source === "safeStorage" ||
+            this.resolved.source === "keytar")
+            ? "secure"
+            : "degraded",
         masterKeySource: this.resolved.source,
       };
       return this.resolved;
     }
 
     const hasBlockingExistingMaterial = results.some((result) => {
-      if (result.status === 'corrupt') {
+      if (result.status === "corrupt") {
         return true;
       }
-      if (result.status !== 'unavailable') {
+      if (result.status !== "unavailable") {
         return false;
       }
 
-      return result.source !== 'keytar' && result.source !== 'legacy-keytar';
+      return result.source !== "keytar" && result.source !== "legacy-keytar";
     });
     if (hasBlockingExistingMaterial) {
-      this.status = { state: 'locked', recoveryHint: this.recoveryHint };
-      throw new AppError('MASTER_KEY_UNAVAILABLE', 'Existing master-key material is unavailable', {
-        messageKey: 'error.masterKeyUnavailable',
-        metadata: {
-          hint: this.recoveryHint,
-          reason: 'PROVIDER_UNAVAILABLE',
-          storedAccountCount,
+      this.status = { state: "locked", recoveryHint: this.recoveryHint };
+      throw new AppError(
+        "MASTER_KEY_UNAVAILABLE",
+        "Existing master-key material is unavailable",
+        {
+          messageKey: "error.masterKeyUnavailable",
+          metadata: {
+            hint: this.recoveryHint,
+            reason: "PROVIDER_UNAVAILABLE",
+            storedAccountCount,
+          },
         },
-      });
+      );
     }
 
     const key = this.generateKey();
@@ -220,9 +251,9 @@ export class MasterKeyManager {
         this.decryptionKeys = [this.resolved];
         this.status = {
           state:
-            provider.source === 'safeStorage' || provider.source === 'keytar'
-              ? 'secure'
-              : 'degraded',
+            provider.source === "safeStorage" || provider.source === "keytar"
+              ? "secure"
+              : "degraded",
           masterKeySource: provider.source,
         };
         return this.resolved;
@@ -231,19 +262,34 @@ export class MasterKeyManager {
       }
     }
 
-    this.status = { state: 'locked', recoveryHint: this.recoveryHint };
-    throw new AppError('MASTER_KEY_UNAVAILABLE', 'No writable master-key provider', {
-      messageKey: 'error.masterKeyUnavailable',
-      metadata: {
-        hint: this.recoveryHint,
-        reason: 'PROVIDER_UNAVAILABLE',
-        storedAccountCount,
+    this.status = { state: "locked", recoveryHint: this.recoveryHint };
+    throw new AppError(
+      "MASTER_KEY_UNAVAILABLE",
+      "No writable master-key provider",
+      {
+        messageKey: "error.masterKeyUnavailable",
+        metadata: {
+          hint: this.recoveryHint,
+          reason: "PROVIDER_UNAVAILABLE",
+          storedAccountCount,
+        },
       },
-    });
+    );
   }
 
   getSecurityStatus(): SecurityStatus {
     return this.status;
+  }
+
+  isInitialized(): boolean {
+    return this.resolved !== null;
+  }
+
+  reset(): void {
+    this.resolved = null;
+    this.decryptionKeys = [];
+    this.initializationInProgress = null;
+    this.status = { state: "locked", recoveryHint: this.recoveryHint };
   }
 
   getDecryptionKeys(): ResolvedMasterKey[] {
@@ -255,13 +301,17 @@ export class MasterKeyManager {
       return this.resolved;
     }
 
-    throw new AppError('MASTER_KEY_UNAVAILABLE', 'Master key has not been initialized', {
-      messageKey: 'error.masterKeyUnavailable',
-      metadata: {
-        hint: this.recoveryHint,
-        reason: 'NOT_INITIALIZED',
-        storedAccountCount: 0,
+    throw new AppError(
+      "MASTER_KEY_UNAVAILABLE",
+      "Master key has not been initialized",
+      {
+        messageKey: "error.masterKeyUnavailable",
+        metadata: {
+          hint: this.recoveryHint,
+          reason: "NOT_INITIALIZED",
+          storedAccountCount: 0,
+        },
       },
-    });
+    );
   }
 }

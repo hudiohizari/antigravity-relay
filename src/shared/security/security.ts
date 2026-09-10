@@ -113,6 +113,17 @@ export async function initializeMasterKey(
   return manager.getSecurityStatus();
 }
 
+export function isMasterKeyInitialized(): boolean {
+  return getMasterKeyManager().isInitialized();
+}
+
+export function resetMasterKeyManager(): void {
+  if (masterKeyManager) {
+    masterKeyManager.reset();
+  }
+  masterKeyManager = null;
+}
+
 export function getSecurityStatus(): SecurityStatus {
   return getMasterKeyManager().getSecurityStatus();
 }

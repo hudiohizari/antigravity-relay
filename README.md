@@ -16,7 +16,7 @@ Connect multiple Google accounts via OAuth 2.0 loopback authentication. Monitor 
 
 ### 2. Remote Mobile Tethering & Web UI Mirror
 
-Supervise and control Antigravity sessions directly from your mobile device (iOS Safari / Android Chrome) over Local Wi-Fi or Cloudflare Quick Tunnels.
+Supervise and control Antigravity sessions directly from your mobile device or desktop using any modern browser (Safari, Chrome, Firefox, Edge across iOS and Android) over Local Wi-Fi or Cloudflare Quick Tunnels.
 
 ![Remote Control & Mobile Tethering](images/remote-control-preview.png)
 
@@ -62,6 +62,13 @@ Resident in your macOS Menu Bar / Windows System Tray for instant background man
 - **macOS**: Apple Silicon (`arm64`) and Intel (`x64`) &mdash; DMG and ZIP
 - **Windows**: x64 and ARM64 &mdash; Installer Setup (`.exe`) and Squirrel package (`.nupkg`)
 - **Linux**: x64 (`amd64`) and ARM64 (`aarch64`) &mdash; Debian (`.deb`) and Red Hat (`.rpm`)
+
+> **macOS Installation Note ("App is damaged")**:  
+> Because this open-source build is not signed with a paid Apple Developer certificate, macOS Gatekeeper may flag the downloaded app as damaged. To allow it to run:
+>
+> ```bash
+> xattr -cr "/Applications/Antigravity Relay.app"
+> ```
 
 ---
 

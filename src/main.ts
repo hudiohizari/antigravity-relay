@@ -7,6 +7,7 @@ import squirrelStartup from "electron-squirrel-startup";
 import { ipcMain } from "electron/main";
 import { ipcContext } from "@/ipc/context";
 import { IPC_CHANNELS } from "./shared/constants";
+import { isTrustedExternalUrl } from "./shared/utils/url";
 import { logger } from "./shared/logging/logger";
 import {
   getExpectedInstallRoot,
@@ -249,40 +250,6 @@ function flushPendingManualUpdateNotification() {
   const update = pendingManualUpdate;
   pendingManualUpdate = null;
   emitManualUpdateNotification(update);
-}
-
-function isTrustedReleaseUrl(url: string): boolean {
-  try {
-    const parsedUrl = new URL(url);
-    return (
-      parsedUrl.protocol === "https:" &&
-      parsedUrl.hostname === "github.com" &&
-      parsedUrl.pathname.startsWith("/hudiohizari/antigravity-relay/releases/")
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isTrustedExternalUrl(url: string): boolean {
-  if (isTrustedReleaseUrl(url)) return true;
-  try {
-    const parsedUrl = new URL(url);
-    if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
-      const hostname = parsedUrl.hostname.toLowerCase();
-      return (
-        hostname === "localhost" ||
-        hostname === "127.0.0.1" ||
-        hostname.endsWith(".trycloudflare.com") ||
-        hostname.startsWith("192.168.") ||
-        hostname.startsWith("10.") ||
-        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
-      );
-    }
-    return false;
-  } catch {
-    return false;
-  }
 }
 
 async function checkWindowsUpdate(): Promise<

@@ -1,5 +1,5 @@
-import { desc, eq } from 'drizzle-orm';
-import { logger } from '@/shared/logging/logger';
+import { desc, eq } from "drizzle-orm";
+import { logger } from "@/shared/logging/logger";
 import {
   CloudAccount,
   CloudAccountSchema,
@@ -8,23 +8,24 @@ import {
   CloudTokenDataSchema,
   type CloudQuotaData,
   type CloudTokenData,
-} from '@/modules/cloud-account/types';
+} from "@/modules/cloud-account/types";
 import {
   decryptWithMigration,
   encrypt,
   initializeMasterKey,
+  isMasterKeyInitialized,
   type KeySource,
-} from '@/shared/security/security';
-import { isEncryptedPayloadCandidate } from '@/shared/security/crypto';
-import { AppError, getAppErrorData } from '@/shared/errors/appError';
-import { accounts } from '@/shared/persistence/database/schema';
-import { type DrizzleExecutor, getCloudDb } from './cloud-account-db';
+} from "@/shared/security/security";
+import { isEncryptedPayloadCandidate } from "@/shared/security/crypto";
+import { AppError, getAppErrorData } from "@/shared/errors/appError";
+import { accounts } from "@/shared/persistence/database/schema";
+import { type DrizzleExecutor, getCloudDb } from "./cloud-account-db";
 import {
   parseDeviceHistoryColumn,
   parseDeviceProfileColumn,
   serializeDeviceHistory,
   serializeDeviceProfile,
-} from './cloud-account-device-profile-codec';
+} from "./cloud-account-device-profile-codec";
 
 interface MigrationStats {
   totalFields: number;
@@ -43,9 +44,9 @@ function createMigrationStats(): MigrationStats {
       safeStorage: 0,
       keytar: 0,
       file: 0,
-      'legacy-safeStorage': 0,
-      'legacy-keytar': 0,
-      'legacy-file': 0,
+      "legacy-safeStorage": 0,
+      "legacy-keytar": 0,
+      "legacy-file": 0,
     },
     failedFields: 0,
   };
@@ -54,22 +55,26 @@ function createMigrationStats(): MigrationStats {
 async function decryptAndMigrateField(
   orm: DrizzleExecutor,
   accountId: string,
-  field: 'tokenJson' | 'quotaJson' | 'healthJson',
+  field: "tokenJson" | "quotaJson" | "healthJson",
   value: string | null,
-): Promise<{ value: string | null; migrated: boolean; usedFallback?: KeySource }> {
+): Promise<{
+  value: string | null;
+  migrated: boolean;
+  usedFallback?: KeySource;
+}> {
   if (!value) {
     return { value: null, migrated: false };
   }
 
   const result = await decryptWithMigration(value);
   if (result.reencrypted) {
-    if (field === 'tokenJson') {
+    if (field === "tokenJson") {
       orm
         .update(accounts)
         .set({ tokenJson: result.reencrypted })
         .where(eq(accounts.id, accountId))
         .run();
-    } else if (field === 'quotaJson') {
+    } else if (field === "quotaJson") {
       orm
         .update(accounts)
         .set({ quotaJson: result.reencrypted })
@@ -83,7 +88,7 @@ async function decryptAndMigrateField(
         .run();
     }
     logger.info(
-      `Migrated ${field} for account ${accountId} from ${result.usedFallback ?? 'unknown'} key`,
+      `Migrated ${field} for account ${accountId} from ${result.usedFallback ?? "unknown"} key`,
     );
   }
 
@@ -96,7 +101,10 @@ async function decryptAndMigrateField(
 
 type DecryptFieldResult = Awaited<ReturnType<typeof decryptAndMigrateField>>;
 
-function parseCloudToken(accountId: string, value: string): CloudAccount['token'] {
+function parseCloudToken(
+  accountId: string,
+  value: string,
+): CloudAccount["token"] {
   try {
     return CloudTokenDataSchema.parse(JSON.parse(value));
   } catch (error) {
@@ -108,7 +116,7 @@ function parseCloudToken(accountId: string, value: string): CloudAccount['token'
 function parseCloudQuota(
   accountId: string,
   value: string | null,
-): CloudAccount['quota'] | undefined {
+): CloudAccount["quota"] | undefined {
   if (!value) {
     return undefined;
   }
@@ -116,7 +124,10 @@ function parseCloudQuota(
   try {
     return CloudQuotaDataSchema.parse(JSON.parse(value));
   } catch (error) {
-    logger.warn(`Invalid quota for account ${accountId}, continuing without quota`, error);
+    logger.warn(
+      `Invalid quota for account ${accountId}, continuing without quota`,
+      error,
+    );
     return undefined;
   }
 }
@@ -124,7 +135,7 @@ function parseCloudQuota(
 function parseCloudHealth(
   accountId: string,
   value: string | null,
-): CloudAccount['health'] | undefined {
+): CloudAccount["health"] | undefined {
   if (!value) {
     return undefined;
   }
@@ -139,41 +150,82 @@ function parseCloudHealth(
 
 export class CloudAccountRepo {
   private static versionFailureLogged = false;
+  private static isInitialized = false;
+  private static initPromise: Promise<void> | null = null;
 
   static async init(): Promise<void> {
     const { raw, orm } = getCloudDb();
-    const rows = orm
-      .select({
-        tokenJson: accounts.tokenJson,
-        quotaJson: accounts.quotaJson,
-        healthJson: accounts.healthJson,
-      })
-      .from(accounts)
-      .all();
-    raw.close();
+    try {
+      const selectQuery = orm
+        .select({
+          tokenJson: accounts.tokenJson,
+          quotaJson: accounts.quotaJson,
+          healthJson: accounts.healthJson,
+        })
+        .from(accounts);
+      const rows =
+        typeof (selectQuery as any).all === "function"
+          ? (selectQuery as any).all()
+          : typeof (selectQuery as any).orderBy === "function"
+            ? (selectQuery as any).orderBy().all()
+            : [];
 
-    const encryptedSamples = rows.flatMap((row) => {
-      return [row.tokenJson, row.quotaJson, row.healthJson].filter(isEncryptedPayloadCandidate);
-    });
-    await initializeMasterKey({
-      encryptedSamples,
-      storedAccountCount: rows.filter((row) => Boolean(row.tokenJson)).length,
-    });
-    await this.migrateToEncrypted();
+      const encryptedSamples = rows.flatMap((row: any) => {
+        return [row.tokenJson, row.quotaJson, row.healthJson].filter(
+          isEncryptedPayloadCandidate,
+        );
+      });
+      await initializeMasterKey({
+        encryptedSamples,
+        storedAccountCount: rows.filter((row: any) => Boolean(row.tokenJson))
+          .length,
+      });
+      await this.migrateToEncrypted();
+      this.isInitialized = true;
+    } finally {
+      raw.close();
+    }
+  }
+
+  static async ensureInitialized(): Promise<void> {
+    if (this.isInitialized && isMasterKeyInitialized()) {
+      return;
+    }
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    this.initPromise = (async () => {
+      try {
+        await this.init();
+      } finally {
+        this.initPromise = null;
+      }
+    })();
+    return this.initPromise;
+  }
+
+  static resetInitializationForTesting(): void {
+    this.isInitialized = false;
+    this.initPromise = null;
   }
 
   static async migrateToEncrypted(): Promise<void> {
     const { raw, orm } = getCloudDb();
     try {
-      const rows = orm
+      const selectQuery = orm
         .select({
           id: accounts.id,
           tokenJson: accounts.tokenJson,
           quotaJson: accounts.quotaJson,
           healthJson: accounts.healthJson,
         })
-        .from(accounts)
-        .all();
+        .from(accounts);
+      const rows =
+        typeof (selectQuery as any).all === "function"
+          ? (selectQuery as any).all()
+          : typeof (selectQuery as any).orderBy === "function"
+            ? (selectQuery as any).orderBy().all()
+            : [];
 
       for (const row of rows) {
         let changed = false;
@@ -182,15 +234,15 @@ export class CloudAccountRepo {
         let newHealth = row.healthJson;
 
         // Check if plain text (starts with {)
-        if (newToken && newToken.startsWith('{')) {
+        if (newToken && newToken.startsWith("{")) {
           newToken = await encrypt(newToken);
           changed = true;
         }
-        if (newQuota && newQuota.startsWith('{')) {
+        if (newQuota && newQuota.startsWith("{")) {
           newQuota = await encrypt(newQuota);
           changed = true;
         }
-        if (newHealth && newHealth.startsWith('{')) {
+        if (newHealth && newHealth.startsWith("{")) {
           newHealth = await encrypt(newHealth);
           changed = true;
         }
@@ -198,14 +250,18 @@ export class CloudAccountRepo {
         if (changed) {
           orm
             .update(accounts)
-            .set({ tokenJson: newToken, quotaJson: newQuota, healthJson: newHealth })
+            .set({
+              tokenJson: newToken,
+              quotaJson: newQuota,
+              healthJson: newHealth,
+            })
             .where(eq(accounts.id, row.id))
             .run();
           logger.info(`Migrated account ${row.id} to encrypted storage`);
         }
       }
     } catch (error) {
-      logger.error('Failed to migrate data', error);
+      logger.error("Failed to migrate data", error);
       throw error;
     } finally {
       raw.close();
@@ -213,14 +269,19 @@ export class CloudAccountRepo {
   }
 
   static async addAccount(account: CloudAccount): Promise<void> {
+    await this.ensureInitialized();
     // Validate account data before processing
     CloudAccountSchema.parse(account);
 
     const { raw, orm } = getCloudDb();
     try {
       const tokenEncrypted = await encrypt(JSON.stringify(account.token));
-      const quotaEncrypted = account.quota ? await encrypt(JSON.stringify(account.quota)) : null;
-      const healthEncrypted = account.health ? await encrypt(JSON.stringify(account.health)) : null;
+      const quotaEncrypted = account.quota
+        ? await encrypt(JSON.stringify(account.quota))
+        : null;
+      const healthEncrypted = account.health
+        ? await encrypt(JSON.stringify(account.health))
+        : null;
       const values = {
         id: account.id,
         provider: account.provider,
@@ -234,7 +295,7 @@ export class CloudAccountRepo {
         deviceHistoryJson: serializeDeviceHistory(account.device_history),
         createdAt: account.created_at,
         lastUsed: account.last_used,
-        status: account.status || 'active',
+        status: account.status || "active",
         statusReason: account.status_reason ?? null,
         isActive: account.is_active ? 1 : 0,
         proxyUrl: account.proxy_url ?? null,
@@ -246,8 +307,13 @@ export class CloudAccountRepo {
           logger.debug(
             `Deactivating other cloud accounts because ${account.email} is being marked active`,
           );
-          const deactivationResult = transaction.update(accounts).set({ isActive: 0 }).run();
-          logger.debug(`Deactivated ${deactivationResult.changes} cloud account rows`);
+          const deactivationResult = transaction
+            .update(accounts)
+            .set({ isActive: 0 })
+            .run();
+          logger.debug(
+            `Deactivated ${deactivationResult.changes} cloud account rows`,
+          );
         }
         transaction
           .insert(accounts)
@@ -265,6 +331,7 @@ export class CloudAccountRepo {
   }
 
   static async getAccounts(): Promise<CloudAccount[]> {
+    await this.ensureInitialized();
     const { raw, orm } = getCloudDb();
     const migrationStats = createMigrationStats();
     let tokenCandidates = 0;
@@ -273,11 +340,19 @@ export class CloudAccountRepo {
     let firstMigrationError: unknown;
 
     try {
-      const rows = orm.select().from(accounts).orderBy(desc(accounts.lastUsed)).all();
+      const rows = orm
+        .select()
+        .from(accounts)
+        .orderBy(desc(accounts.lastUsed))
+        .all();
 
       const activeRows = rows.filter((row) => row.isActive);
-      logger.debug(`Loaded ${rows.length} cloud accounts; ${activeRows.length} are active.`);
-      activeRows.forEach((row) => logger.debug(`Active cloud account: ${row.email} (${row.id})`));
+      logger.debug(
+        `Loaded ${rows.length} cloud accounts; ${activeRows.length} are active.`,
+      );
+      activeRows.forEach((row) =>
+        logger.debug(`Active cloud account: ${row.email} (${row.id})`),
+      );
 
       const cloudAccounts: CloudAccount[] = [];
       for (const normalizedRow of rows) {
@@ -291,15 +366,15 @@ export class CloudAccountRepo {
             tokenResult = await decryptAndMigrateField(
               orm,
               normalizedRow.id,
-              'tokenJson',
+              "tokenJson",
               normalizedRow.tokenJson,
             );
           } catch (error) {
             const appErrorCode = getAppErrorData(error)?.appErrorCode;
-            if (appErrorCode === 'MASTER_KEY_UNAVAILABLE') {
+            if (appErrorCode === "MASTER_KEY_UNAVAILABLE") {
               throw error;
             }
-            if (appErrorCode === 'DATA_MIGRATION_FAILED') {
+            if (appErrorCode === "DATA_MIGRATION_FAILED") {
               migrationFailures += 1;
               firstMigrationError ??= error;
             }
@@ -319,11 +394,13 @@ export class CloudAccountRepo {
             quotaResult = await decryptAndMigrateField(
               orm,
               normalizedRow.id,
-              'quotaJson',
+              "quotaJson",
               normalizedRow.quotaJson,
             );
           } catch (error) {
-            if (getAppErrorData(error)?.appErrorCode === 'MASTER_KEY_UNAVAILABLE') {
+            if (
+              getAppErrorData(error)?.appErrorCode === "MASTER_KEY_UNAVAILABLE"
+            ) {
               throw error;
             }
             migrationStats.failedFields += 1;
@@ -339,11 +416,13 @@ export class CloudAccountRepo {
             healthResult = await decryptAndMigrateField(
               orm,
               normalizedRow.id,
-              'healthJson',
+              "healthJson",
               normalizedRow.healthJson,
             );
           } catch (error) {
-            if (getAppErrorData(error)?.appErrorCode === 'MASTER_KEY_UNAVAILABLE') {
+            if (
+              getAppErrorData(error)?.appErrorCode === "MASTER_KEY_UNAVAILABLE"
+            ) {
               throw error;
             }
             migrationStats.failedFields += 1;
@@ -399,41 +478,59 @@ export class CloudAccountRepo {
 
           cloudAccounts.push({
             id: normalizedRow.id,
-            provider: normalizedRow.provider as CloudAccount['provider'],
+            provider: normalizedRow.provider as CloudAccount["provider"],
             email: normalizedRow.email,
             name: normalizedRow.name ?? undefined,
             avatar_url: normalizedRow.avatarUrl ?? undefined,
             token: parseCloudToken(normalizedRow.id, tokenResult.value),
             quota: parseCloudQuota(normalizedRow.id, quotaResult.value),
             health: parseCloudHealth(normalizedRow.id, healthResult.value),
-            device_profile: parseDeviceProfileColumn(normalizedRow.deviceProfileJson),
-            device_history: parseDeviceHistoryColumn(normalizedRow.deviceHistoryJson),
+            device_profile: parseDeviceProfileColumn(
+              normalizedRow.deviceProfileJson,
+            ),
+            device_history: parseDeviceHistoryColumn(
+              normalizedRow.deviceHistoryJson,
+            ),
             created_at: normalizedRow.createdAt,
             last_used: normalizedRow.lastUsed,
-            status: (normalizedRow.status as CloudAccount['status']) ?? undefined,
+            status:
+              (normalizedRow.status as CloudAccount["status"]) ?? undefined,
             status_reason: normalizedRow.statusReason ?? undefined,
             is_active: Boolean(normalizedRow.isActive),
             proxy_url: normalizedRow.proxyUrl ?? undefined,
           });
         } catch (rowError) {
-          if (getAppErrorData(rowError)?.appErrorCode === 'MASTER_KEY_UNAVAILABLE') {
+          if (
+            getAppErrorData(rowError)?.appErrorCode === "MASTER_KEY_UNAVAILABLE"
+          ) {
             throw rowError;
           }
-          logger.error(`Unexpected error processing row for account ${normalizedRow.id}`, rowError);
+          logger.error(
+            `Unexpected error processing row for account ${normalizedRow.id}`,
+            rowError,
+          );
           continue;
         }
       }
 
-      if (tokenCandidates > 0 && successfulTokens === 0 && migrationFailures === tokenCandidates) {
-        throw new AppError('MASTER_KEY_UNAVAILABLE', 'Unable to decrypt stored accounts', {
-          messageKey: 'error.masterKeyUnavailable',
-          metadata: {
-            hint: 'HINT_RECOVERY',
-            reason: 'NO_MATCHING_KEY',
-            storedAccountCount: rows.length,
+      if (
+        tokenCandidates > 0 &&
+        successfulTokens === 0 &&
+        migrationFailures === tokenCandidates
+      ) {
+        throw new AppError(
+          "MASTER_KEY_UNAVAILABLE",
+          "Unable to decrypt stored accounts",
+          {
+            messageKey: "error.masterKeyUnavailable",
+            metadata: {
+              hint: "HINT_RECOVERY",
+              reason: "NO_MATCHING_KEY",
+              storedAccountCount: rows.length,
+            },
+            cause: firstMigrationError,
           },
-          cause: firstMigrationError,
-        });
+        );
       }
 
       return cloudAccounts;
@@ -451,9 +548,12 @@ export class CloudAccountRepo {
           failedFields: migrationStats.failedFields,
         };
         if (migrationStats.failedFields > 0) {
-          logger.warn('CloudAccountRepo migration summary (with failures)', summary);
+          logger.warn(
+            "CloudAccountRepo migration summary (with failures)",
+            summary,
+          );
         } else {
-          logger.info('CloudAccountRepo migration summary', summary);
+          logger.info("CloudAccountRepo migration summary", summary);
         }
       }
       raw.close();
@@ -461,6 +561,7 @@ export class CloudAccountRepo {
   }
 
   static async getAccount(id: string): Promise<CloudAccount | undefined> {
+    await this.ensureInitialized();
     const { raw, orm } = getCloudDb();
 
     try {
@@ -475,7 +576,7 @@ export class CloudAccountRepo {
         tokenResult = await decryptAndMigrateField(
           orm,
           normalizedRow.id,
-          'tokenJson',
+          "tokenJson",
           normalizedRow.tokenJson,
         );
       } catch (error) {
@@ -491,7 +592,7 @@ export class CloudAccountRepo {
         quotaResult = await decryptAndMigrateField(
           orm,
           normalizedRow.id,
-          'quotaJson',
+          "quotaJson",
           normalizedRow.quotaJson,
         );
       } catch (error) {
@@ -505,7 +606,7 @@ export class CloudAccountRepo {
       const healthResult = await decryptAndMigrateField(
         orm,
         normalizedRow.id,
-        'healthJson',
+        "healthJson",
         normalizedRow.healthJson,
       );
 
@@ -519,18 +620,22 @@ export class CloudAccountRepo {
 
       return {
         id: normalizedRow.id,
-        provider: normalizedRow.provider as CloudAccount['provider'],
+        provider: normalizedRow.provider as CloudAccount["provider"],
         email: normalizedRow.email,
         name: normalizedRow.name ?? undefined,
         avatar_url: normalizedRow.avatarUrl ?? undefined,
         token: parsedToken,
         quota: parsedQuota,
         health: parseCloudHealth(normalizedRow.id, healthResult.value),
-        device_profile: parseDeviceProfileColumn(normalizedRow.deviceProfileJson),
-        device_history: parseDeviceHistoryColumn(normalizedRow.deviceHistoryJson),
+        device_profile: parseDeviceProfileColumn(
+          normalizedRow.deviceProfileJson,
+        ),
+        device_history: parseDeviceHistoryColumn(
+          normalizedRow.deviceHistoryJson,
+        ),
         created_at: normalizedRow.createdAt,
         last_used: normalizedRow.lastUsed,
-        status: (normalizedRow.status as CloudAccount['status']) ?? undefined,
+        status: (normalizedRow.status as CloudAccount["status"]) ?? undefined,
         status_reason: normalizedRow.statusReason ?? undefined,
         is_active: Boolean(normalizedRow.isActive),
         proxy_url: normalizedRow.proxyUrl ?? undefined,
@@ -551,6 +656,7 @@ export class CloudAccountRepo {
   }
 
   static async updateToken(id: string, token: CloudTokenData): Promise<void> {
+    await this.ensureInitialized();
     // Validate token data before encryption
     CloudTokenDataSchema.parse(token);
 
@@ -572,6 +678,7 @@ export class CloudAccountRepo {
   }
 
   static async updateQuota(id: string, quota: CloudQuotaData): Promise<void> {
+    await this.ensureInitialized();
     // Validate quota data before encryption
     CloudQuotaDataSchema.parse(quota);
 
@@ -592,12 +699,23 @@ export class CloudAccountRepo {
     }
   }
 
-  static async updateHealth(id: string, health: CloudAccount['health']): Promise<void> {
-    const parsedHealth = health === undefined ? undefined : CloudAccountHealthSchema.parse(health);
+  static async updateHealth(
+    id: string,
+    health: CloudAccount["health"],
+  ): Promise<void> {
+    await this.ensureInitialized();
+    const parsedHealth =
+      health === undefined ? undefined : CloudAccountHealthSchema.parse(health);
     const { raw, orm } = getCloudDb();
     try {
-      const healthJson = parsedHealth ? await encrypt(JSON.stringify(parsedHealth)) : null;
-      const result = orm.update(accounts).set({ healthJson }).where(eq(accounts.id, id)).run();
+      const healthJson = parsedHealth
+        ? await encrypt(JSON.stringify(parsedHealth))
+        : null;
+      const result = orm
+        .update(accounts)
+        .set({ healthJson })
+        .where(eq(accounts.id, id))
+        .run();
       if (result.changes === 0) {
         throw new Error(`updateHealth: No account found with ID ${id}`);
       }
@@ -625,7 +743,11 @@ export class CloudAccountRepo {
     try {
       orm.transaction((transaction) => {
         transaction.update(accounts).set({ isActive: 0 }).run();
-        transaction.update(accounts).set({ isActive: 1 }).where(eq(accounts.id, id)).run();
+        transaction
+          .update(accounts)
+          .set({ isActive: 1 })
+          .where(eq(accounts.id, id))
+          .run();
       });
       logger.info(`Set account ${id} as active`);
     } finally {
@@ -637,7 +759,7 @@ export class CloudAccountRepo {
     const { raw, orm } = getCloudDb();
     try {
       orm.update(accounts).set({ proxyUrl }).where(eq(accounts.id, id)).run();
-      logger.info(`Updated proxy for account ${id}: ${proxyUrl ?? 'none'}`);
+      logger.info(`Updated proxy for account ${id}: ${proxyUrl ?? "none"}`);
     } catch (error) {
       logger.error(`Failed to update proxy for account ${id}`, error);
       throw error;
@@ -648,7 +770,7 @@ export class CloudAccountRepo {
 
   static async setAccountStatus(
     id: string,
-    status: CloudAccount['status'],
+    status: CloudAccount["status"],
     reason?: string | null,
   ): Promise<void> {
     const { raw, orm } = getCloudDb();
@@ -669,7 +791,9 @@ export class CloudAccountRepo {
   static async getAccountByEmail(email: string): Promise<CloudAccount | null> {
     const allAccounts = await this.getAccounts();
     return (
-      allAccounts.find((account) => account.email.toLowerCase() === email.toLowerCase()) || null
+      allAccounts.find(
+        (account) => account.email.toLowerCase() === email.toLowerCase(),
+      ) || null
     );
   }
 }

@@ -52,6 +52,15 @@ export function CloudAccountLoadError({
   const shouldShowDataRepairGuidance =
     isDataMigrationError(error) || isMasterKeyUnavailableError(error);
 
+  const handleOpenExternal = (url: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (window.electron?.openExternalUrl) {
+      void window.electron.openExternalUrl(url);
+    } else {
+      window.open(url, "_blank", "noreferrer");
+    }
+  };
+
   return (
     <div className="border-destructive/40 bg-destructive/5 col-span-full rounded-lg border p-6">
       <div className="flex items-start gap-3">
@@ -60,39 +69,37 @@ export function CloudAccountLoadError({
           <div className="text-destructive text-sm font-medium">
             {t("cloud.error.loadFailed")}
           </div>
-          <div className="text-foreground mt-2 text-sm whitespace-pre-wrap">
-            {message}
-          </div>
+          <p className="text-muted-foreground mt-1 text-sm">{message}</p>
           {shouldShowDataRepairGuidance ? (
-            <div className="border-border bg-background/70 mt-4 rounded-md border p-4">
-              <div className="text-sm font-medium">
+            <div className="bg-background/80 border-border/60 text-foreground mt-3 rounded-md border p-4 text-xs">
+              <div className="font-semibold">
                 {t("cloud.error.dataRepair.title")}
               </div>
-              <p className="text-muted-foreground mt-2 text-sm">
+              <p className="text-muted-foreground mt-1">
                 {t("cloud.error.dataRepair.description")}
               </p>
-              <ol className="text-muted-foreground mt-3 list-decimal space-y-1 pl-5 text-sm">
+              <ol className="text-muted-foreground mt-2 list-decimal space-y-1 pl-4">
                 <li>{t("cloud.error.dataRepair.stepMacPrivacy")}</li>
                 <li>{t("cloud.error.dataRepair.stepCheckGithub")}</li>
                 <li>{t("cloud.error.dataRepair.stepReLogin")}</li>
                 <li>{t("cloud.error.dataRepair.stepOpenIssue")}</li>
               </ol>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <a
-                    href={GITHUB_REPOSITORY_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    {t("cloud.error.dataRepair.openRepository")}
-                  </a>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenExternal(GITHUB_REPOSITORY_URL)}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {t("cloud.error.dataRepair.openRepository")}
                 </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <a href={GITHUB_ISSUES_URL} target="_blank" rel="noreferrer">
-                    <ExternalLink className="h-4 w-4" />
-                    {t("cloud.error.dataRepair.openIssues")}
-                  </a>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenExternal(GITHUB_ISSUES_URL)}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {t("cloud.error.dataRepair.openIssues")}
                 </Button>
               </div>
             </div>

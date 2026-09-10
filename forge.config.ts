@@ -6,6 +6,7 @@ import { MakerRpm } from "@electron-forge/maker-rpm";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
+import { execSync } from "child_process";
 import crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
@@ -132,6 +133,22 @@ const config: ForgeConfig = {
           fs.mkdirSync(assetsDest, { recursive: true });
         }
         fs.cpSync(assetsSrc, assetsDest, { recursive: true });
+      }
+    },
+    postPackage: async (_forgeConfig, packageResult) => {
+      if (packageResult.platform === "darwin") {
+        for (const outputPath of packageResult.outputPaths) {
+          const appPath = outputPath.endsWith(".app")
+            ? outputPath
+            : path.join(outputPath, "Antigravity Relay.app");
+          if (fs.existsSync(appPath)) {
+            try {
+              execSync(`codesign --force --deep --sign - "${appPath}"`);
+            } catch (err) {
+              console.warn("Ad-hoc codesigning warning:", err);
+            }
+          }
+        }
       }
     },
     preMake: async () => {
