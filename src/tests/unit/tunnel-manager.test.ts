@@ -43,6 +43,43 @@ class MockChildProcess extends EventEmitter implements ChildProcessLike {
 }
 
 describe("Cloudflare Tunnel Subprocess Supervisor", () => {
+  beforeEach(() => {
+    vi.spyOn(BinaryResolver.prototype, "resolveSync").mockImplementation(
+      function (
+        this: BinaryResolver,
+        opts?: { binaryPath?: string; forceRefresh?: boolean },
+      ) {
+        if ((this as any).statSyncFn !== fs.statSync) {
+          return (this as any).executeResolveSync(opts?.binaryPath);
+        }
+        return {
+          isInstalled: true,
+          binaryPath: opts?.binaryPath || "/mock/bin/cloudflared",
+          platform: this.platform,
+        };
+      },
+    );
+    vi.spyOn(BinaryResolver.prototype, "resolve").mockImplementation(
+      async function (
+        this: BinaryResolver,
+        opts?: { binaryPath?: string; forceRefresh?: boolean },
+      ) {
+        if ((this as any).statAsyncFn !== fs.promises.stat) {
+          return (this as any).executeResolveAsync(opts?.binaryPath);
+        }
+        return {
+          isInstalled: true,
+          binaryPath: opts?.binaryPath || "/mock/bin/cloudflared",
+          platform: this.platform,
+        };
+      },
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe("TunnelConfigStore", () => {
     let tempDir: string;
     let configPath: string;

@@ -1,10 +1,10 @@
-import path from 'path';
+import path from "path";
 
 interface TrayIconPathOptions {
   inDevelopment: boolean;
   platform: NodeJS.Platform;
   cwd: string;
-  resourcesPath: string;
+  resourcesPath?: string;
 }
 
 interface TemplateImage {
@@ -17,12 +17,15 @@ export function resolveTrayIconPath({
   cwd,
   resourcesPath,
 }: TrayIconPathOptions): string {
-  const assetName = platform === 'darwin' ? 'tray.png' : 'icon.png';
-  return inDevelopment
-    ? path.join(cwd, 'src/assets', assetName)
-    : path.join(resourcesPath, 'assets', assetName);
+  const assetName = platform === "darwin" ? "tray.png" : "icon.png";
+  return inDevelopment || !resourcesPath
+    ? path.join(cwd, "src/assets", assetName)
+    : path.join(resourcesPath, "assets", assetName);
 }
 
-export function configureTrayIcon(icon: TemplateImage, platform: NodeJS.Platform): void {
-  icon.setTemplateImage(platform === 'darwin');
+export function configureTrayIcon(
+  icon: TemplateImage,
+  platform: NodeJS.Platform,
+): void {
+  icon.setTemplateImage(platform === "darwin");
 }
