@@ -49,11 +49,11 @@ export const relayRouter = os.router({
     .input(RelayStartInputSchema)
     .output(z.custom<RelayServerStatus>())
     .handler(async ({ input }) => {
-      return RelayController.getInstance().relayServer.start(input);
+      return RelayController.getInstance().startRelay(input);
     }),
 
   stop: os.output(z.void()).handler(async () => {
-    await RelayController.getInstance().relayServer.stop();
+    await RelayController.getInstance().stopRelay();
   }),
 
   getSessions: os.output(z.custom<Session[]>()).handler(async () => {

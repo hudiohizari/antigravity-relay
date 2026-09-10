@@ -776,17 +776,26 @@ app
         createWeeklyWarmupExecutor(),
       );
 
-      // Auto-start Relay Server
+      // Restore Relay Server if previously ON (does not auto-start on first run)
       try {
         const relayController = RelayController.getInstance();
-        const relayStatus = await relayController.relayServer.start({
-          port: 4040,
-        });
-        logger.info(
-          `Relay Server: Started on ${relayStatus.host}:${relayStatus.port}`,
-        );
+        if (relayController.getLastStatus()) {
+          const relayStatus = await relayController.relayServer.start({
+            port: 4040,
+          });
+          logger.info(
+            `Relay Server: Restored previous session on ${relayStatus.host}:${relayStatus.port}`,
+          );
+        } else {
+          logger.info(
+            "Relay Server: Auto-start skipped (previously off or first run)",
+          );
+        }
       } catch (err) {
-        logger.warn("Relay Server: Failed to auto-start on port 4040", err);
+        logger.warn(
+          "Relay Server: Failed to restore previous session on port 4040",
+          err,
+        );
       }
 
       if (CloudMonitorService.isContinuousPollingEnabled()) {

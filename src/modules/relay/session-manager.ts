@@ -274,9 +274,6 @@ export class SessionManager {
       revokedAt: Date.now(),
       sessionId,
     });
-    if (session) {
-      this.revokeSession(session.sessionId);
-    }
     for (const s of Array.from(this.sessions.values())) {
       if (s.deviceId === deviceId) {
         this.revokeSession(s.sessionId);

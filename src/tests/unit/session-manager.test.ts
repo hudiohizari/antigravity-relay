@@ -494,5 +494,51 @@ describe("SessionManager & Command Buffering", () => {
       expect(manager.getActiveSessions()).toHaveLength(0);
       expect(manager.getBufferedCount()).toBe(0);
     });
+
+    it("should cover session manager edge cases", () => {
+      const defaultManager = new SessionManager();
+      expect(defaultManager.getSockets("unknown")).toEqual([]);
+
+      const s1 = manager.createSession({ token: "duplicate-token" });
+      const s2 = manager.createSession({ token: "duplicate-token" });
+      expect(s2.token).not.toBe("duplicate-token");
+
+      expect(manager.getConnectedSessions()).toHaveLength(0);
+      manager.setSessionSocketState(s1.sessionId, "connected");
+      expect(manager.getConnectedSessions()).toHaveLength(1);
+
+      expect(() => manager.unbindSocket("unknown-session")).not.toThrow();
+
+      const mockSock = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+      } as any;
+      manager.bindSocket(s1.sessionId, mockSock);
+      expect(manager.getSocketCount(s1.sessionId)).toBe(1);
+      manager.unbindSocket(s1.sessionId);
+      expect(manager.getSocketCount(s1.sessionId)).toBe(0);
+
+      const throwingSock = {
+        readyState: 1,
+        send: vi.fn().mockImplementation(() => {
+          throw new Error("socket error");
+        }),
+        close: vi.fn().mockImplementation(() => {
+          throw new Error("close error");
+        }),
+      } as any;
+      manager.bindSocket(s2.sessionId, throwingSock);
+      expect(() =>
+        manager.closeSessionSocket(s2.sessionId, 4401, "revoked"),
+      ).not.toThrow();
+
+      expect(manager.isDeviceRevoked("")).toBe(false);
+      expect(manager.revokeDevice("")).toBe(false);
+
+      expect(manager.getRevokedDevices()).toBeInstanceOf(Map);
+
+      expect(() => manager.updateSessionActivity("non-existent")).not.toThrow();
+    });
   });
 });
