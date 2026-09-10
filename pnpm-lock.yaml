@@ -301,6 +301,9 @@ importers:
       '@types/electron-squirrel-startup':
         specifier: ^1.0.2
         version: 1.0.2
+      '@types/lodash':
+        specifier: ^4.17.25
+        version: 4.17.25
       '@types/lodash-es':
         specifier: ^4.17.12
         version: 4.17.12
@@ -334,6 +337,9 @@ importers:
       jsdom:
         specifier: ^27.1.0
         version: 27.4.0
+      lodash:
+        specifier: ^4.18.1
+        version: 4.18.1
       node-addon-api:
         specifier: ^8.3.1
         version: 8.9.2
@@ -10763,8 +10769,7 @@ snapshots:
 
   lodash.isequal@4.5.0: {}
 
-  lodash@4.18.1:
-    optional: true
+  lodash@4.18.1: {}
 
   log-symbols@4.1.0:
     dependencies:

@@ -32,7 +32,7 @@ jobs:
           - os: windows-11-arm
             platform: win32
             arch: arm64
-          - os: macos-13
+          - os: macos-15-intel
             platform: darwin
             arch: x64
           - os: macos-14
@@ -92,6 +92,16 @@ jobs:
           timeout_minutes: 20
           retry_wait_seconds: 30
           command: pnpm install --frozen-lockfile
+
+      - name: Build macOS DMG native dependencies
+        if: matrix.platform == 'darwin'
+        run: |
+          if [ -d "node_modules/macos-alias" ]; then
+            (cd node_modules/macos-alias && npx --yes node-gyp rebuild)
+          fi
+          if [ -d "node_modules/fs-xattr" ]; then
+            (cd node_modules/fs-xattr && npx --yes node-gyp rebuild)
+          fi
 
       - name: Make Artifacts (non-darwin)
         if: matrix.platform != 'darwin'

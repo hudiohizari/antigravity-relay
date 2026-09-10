@@ -134,6 +134,25 @@ const config: ForgeConfig = {
         fs.cpSync(assetsSrc, assetsDest, { recursive: true });
       }
     },
+    preMake: async () => {
+      if (process.platform === "darwin") {
+        const aliasNodePath = path.resolve(
+          process.cwd(),
+          "node_modules/macos-alias/build/Release/volume.node",
+        );
+        if (!fs.existsSync(aliasNodePath)) {
+          try {
+            const { execSync } = await import("child_process");
+            execSync("npx --yes node-gyp rebuild", {
+              cwd: path.resolve(process.cwd(), "node_modules/macos-alias"),
+              stdio: "inherit",
+            });
+          } catch (err) {
+            console.warn("Failed to rebuild macos-alias:", err);
+          }
+        }
+      }
+    },
     postMake: async (_config, makeResults) => {
       if (!makeResults?.length) {
         return makeResults;
