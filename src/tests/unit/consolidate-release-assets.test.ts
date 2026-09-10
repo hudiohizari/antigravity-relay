@@ -6,9 +6,55 @@ import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import {
   consolidateReleaseAssets,
   mergeYamlManifests,
+  parseYamlManifest,
+  stringifyYamlManifest,
 } from "../../../scripts/consolidate-release-assets.mjs";
 
 describe("consolidate-release-assets", () => {
+  describe("parseYamlManifest & stringifyYamlManifest", () => {
+    it("correctly round-trips an electron-updater manifest with zero dependencies", () => {
+      const raw = [
+        "version: 0.0.4",
+        "files:",
+        "  - url: Antigravity.Relay-0.0.4-setup.exe",
+        "    sha512: abc123==",
+        "    size: 5000",
+        "path: Antigravity.Relay-0.0.4-setup.exe",
+        "sha512: abc123==",
+        "releaseDate: 2026-09-10T12:00:00.000Z",
+      ].join("\n");
+
+      const parsed = parseYamlManifest(raw);
+      expect(parsed.version).toBe("0.0.4");
+      expect(parsed.files).toHaveLength(1);
+      expect(parsed.files[0].url).toBe("Antigravity.Relay-0.0.4-setup.exe");
+      expect(parsed.files[0].size).toBe(5000);
+      expect(parsed.path).toBe("Antigravity.Relay-0.0.4-setup.exe");
+      expect(parsed.sha512).toBe("abc123==");
+
+      const formatted = stringifyYamlManifest(parsed);
+      const reparsed = parseYamlManifest(formatted);
+      expect(reparsed).toEqual(parsed);
+    });
+
+    it("preserves version strings like '1.0' without float coercion", () => {
+      const raw = [
+        "version: 1.0",
+        "files:",
+        "  - url: test.exe",
+        "    size: 100",
+        "    isAdminRightsRequired: true",
+      ].join("\n");
+
+      const parsed = parseYamlManifest(raw);
+      expect(parsed.version).toBe("1.0");
+      expect(typeof parsed.version).toBe("string");
+      expect(parsed.files[0].size).toBe(100);
+      expect(typeof parsed.files[0].size).toBe("number");
+      expect(parsed.files[0].isAdminRightsRequired).toBe(true);
+      expect(typeof parsed.files[0].isAdminRightsRequired).toBe("boolean");
+    });
+  });
   describe("mergeYamlManifests", () => {
     it("merges multiple YAML manifests combining files by unique url", () => {
       const yaml1 = yamlStringify({

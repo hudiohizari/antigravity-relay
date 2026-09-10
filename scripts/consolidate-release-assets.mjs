@@ -1,8 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
-
 export function listFilesRecursive(rootDir) {
   if (!fs.existsSync(rootDir)) {
     return [];
@@ -50,10 +48,108 @@ export function parseArgs(argv) {
   return result;
 }
 
+function parseValue(key, val) {
+  const clean = val.replace(/^['"]|['"]$/g, '');
+  if (key === 'size' || key === 'blockMapSize' || key === 'stagingPercentage') {
+    const num = Number(clean);
+    return isNaN(num) ? clean : num;
+  }
+  if (key === 'isAdminRightsRequired') {
+    return clean === 'true';
+  }
+  return clean;
+}
+
+export function parseYamlManifest(yamlText) {
+  if (!yamlText || !yamlText.trim()) return { files: [] };
+  const lines = yamlText.split(/\r?\n/);
+  const result = { files: [] };
+  let inFiles = false;
+  let currentFile = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    if (/^[A-Za-z0-9_-]+:/.test(line)) {
+      const colonIdx = line.indexOf(':');
+      const key = line.slice(0, colonIdx).trim();
+      const val = line.slice(colonIdx + 1).trim();
+
+      if (key === 'files') {
+        inFiles = true;
+        if (currentFile) {
+          result.files.push(currentFile);
+          currentFile = null;
+        }
+        continue;
+      }
+
+      inFiles = false;
+      if (currentFile) {
+        result.files.push(currentFile);
+        currentFile = null;
+      }
+      result[key] = parseValue(key, val);
+      continue;
+    }
+
+    if (inFiles) {
+      if (trimmed.startsWith('- ')) {
+        if (currentFile) {
+          result.files.push(currentFile);
+        }
+        currentFile = {};
+        const rest = trimmed.slice(2).trim();
+        const colonIdx = rest.indexOf(':');
+        if (colonIdx > -1) {
+          const key = rest.slice(0, colonIdx).trim();
+          const rawVal = rest.slice(colonIdx + 1).trim();
+          currentFile[key] = parseValue(key, rawVal);
+        }
+      } else if (currentFile) {
+        const colonIdx = trimmed.indexOf(':');
+        if (colonIdx > -1) {
+          const key = trimmed.slice(0, colonIdx).trim();
+          const rawVal = trimmed.slice(colonIdx + 1).trim();
+          currentFile[key] = parseValue(key, rawVal);
+        }
+      }
+    }
+  }
+
+  if (currentFile) {
+    result.files.push(currentFile);
+  }
+
+  return result;
+}
+
+export function stringifyYamlManifest(doc) {
+  const lines = [];
+  if (doc.version) lines.push(`version: ${doc.version}`);
+  if (Array.isArray(doc.files) && doc.files.length > 0) {
+    lines.push('files:');
+    for (const f of doc.files) {
+      const keys = Object.keys(f);
+      if (keys.length === 0) continue;
+      lines.push(`  - ${keys[0]}: ${f[keys[0]]}`);
+      for (let i = 1; i < keys.length; i += 1) {
+        lines.push(`    ${keys[i]}: ${f[keys[i]]}`);
+      }
+    }
+  }
+  for (const [key, val] of Object.entries(doc)) {
+    if (key === 'version' || key === 'files') continue;
+    if (val != null) lines.push(`${key}: ${val}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
 export function mergeYamlManifests(existingYamlText, newYamlText) {
   if (!existingYamlText) return newYamlText;
-  const existingDoc = yamlParse(existingYamlText);
-  const newDoc = yamlParse(newYamlText);
+  const existingDoc = parseYamlManifest(existingYamlText);
+  const newDoc = parseYamlManifest(newYamlText);
 
   const mergedFiles = [...(existingDoc.files || [])];
   const knownUrls = new Set(mergedFiles.map((f) => f.url));
@@ -73,7 +169,7 @@ export function mergeYamlManifests(existingYamlText, newYamlText) {
     releaseDate: newDoc.releaseDate || existingDoc.releaseDate,
   };
 
-  return yamlStringify(mergedDoc);
+  return stringifyYamlManifest(mergedDoc);
 }
 
 export function consolidateReleaseAssets({
