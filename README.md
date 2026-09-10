@@ -48,21 +48,6 @@ cd antigravity-relay
 pnpm install
 ```
 
-### Environment Configuration
-
-Copy the example environment file:
-
-```bash
-cp .env.example .env
-```
-
-Configure your Google OAuth credentials in `.env` (or set them as GitHub Secrets for CI/CD release builds):
-
-```env
-ANTIGRAVITY_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
-ANTIGRAVITY_OAUTH_CLIENT_SECRET=your-client-secret
-```
-
 ### Development
 
 ```bash

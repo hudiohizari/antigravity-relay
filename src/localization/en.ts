@@ -92,6 +92,22 @@ const en = {
       "Antigravity database storage is not writable. Check the configured Antigravity user-data directory or restart Antigravity Relay after opening Antigravity once.",
     cloudAccountLoginExpired:
       "The login information for this cloud account has expired. Please log in again.",
+    rootBoundary: {
+      title: "Application Encountered an Error",
+      description:
+        "A critical unexpected error occurred. You can reload the application window to restore normal operation.",
+      reload: "Reload Application",
+      copyDetails: "Copy Error Details",
+      detailsCopied: "Error details copied to clipboard.",
+      viewDetails: "View Technical Diagnostics",
+      hideDetails: "Hide Technical Diagnostics",
+    },
+    routeFallback: {
+      title: "Unable to Load Section",
+      description: "An unexpected rendering error occurred in this view.",
+      retry: "Retry Section",
+      goHome: "Return to Accounts",
+    },
   },
   nav: {
     accounts: "Accounts",

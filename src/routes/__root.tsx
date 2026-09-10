@@ -1,5 +1,6 @@
-import { MainLayout } from '@/components/layout/MainLayout';
-import { createRootRoute } from '@tanstack/react-router';
+import { MainLayout } from "@/components/layout/MainLayout";
+import { RouteErrorFallback } from "@/components/layout/RouteErrorFallback";
+import { createRootRoute } from "@tanstack/react-router";
 /* import { TanStackRouterDevtools } from '@tanstack/react-router-devtools' */
 
 /*
@@ -17,4 +18,5 @@ function Root() {
 
 export const Route = createRootRoute({
   component: Root,
+  errorComponent: RouteErrorFallback,
 });

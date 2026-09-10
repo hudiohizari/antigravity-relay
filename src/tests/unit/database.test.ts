@@ -1,28 +1,84 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   getDatabaseConnection,
   getCurrentAccountInfo,
   backupAccount,
   restoreAccount,
-} from '@/modules/account/persistence/antigravity-state-database';
-import Database from 'better-sqlite3';
-import fs from 'fs';
-import path from 'path';
+} from "@/modules/account/persistence/antigravity-state-database";
+import fs from "fs";
+import path from "path";
 
-// Mock paths to use a temp DB
-const tempDbPath = path.join(process.cwd(), 'temp_test.vscdb');
+let inMemoryDb = new Map<string, string>();
 
-vi.mock('../../shared/platform/paths', async () => {
-  const path = await import('path');
-  const tempDbPath = path.join(process.cwd(), 'temp_test.vscdb');
-  return {
-    getAntigravityDbPath: () => tempDbPath,
-    getAntigravityDbPaths: () => [tempDbPath],
-    getAgentDir: () => path.join(process.cwd(), 'temp_test_agent'),
+vi.mock("drizzle-orm", () => ({
+  eq: (_column: unknown, value: string) => ({ __key: value }),
+  desc: (value: unknown) => value,
+}));
+
+interface MockOrm {
+  select: () => {
+    from: () => {
+      where: (condition: { __key?: string }) => {
+        all: () => Array<{ value: string }>;
+      };
+    };
   };
-});
+  insert: () => {
+    values: (row: { key: string; value: string }) => {
+      onConflictDoUpdate: () => {
+        run: () => { changes: number };
+      };
+    };
+  };
+  transaction: (fn: (tx: MockOrm) => void) => void;
+}
 
-vi.mock('../../shared/logging/logger', () => ({
+const mockOrm: MockOrm = {
+  select: () => ({
+    from: () => ({
+      where: (condition: { __key?: string }) => ({
+        all: () => {
+          const key = condition?.__key ?? "";
+          const value = inMemoryDb.get(key);
+          if (value === undefined) {
+            return [];
+          }
+          return [{ value }];
+        },
+      }),
+    }),
+  }),
+  insert: () => ({
+    values: (row: { key: string; value: string }) => ({
+      onConflictDoUpdate: () => ({
+        run: () => {
+          inMemoryDb.set(row.key, row.value);
+          return { changes: 1 };
+        },
+      }),
+    }),
+  }),
+  transaction: (fn: (tx: MockOrm) => void) => {
+    fn(mockOrm);
+  },
+};
+
+vi.mock("@/shared/persistence/database/dbConnection", () => ({
+  openDrizzleConnection: () => ({
+    raw: { close: vi.fn() },
+    orm: mockOrm,
+  }),
+}));
+
+const mockDbPath = path.join(process.cwd(), "mock_test.vscdb");
+
+vi.mock("../../shared/platform/paths", () => ({
+  getAntigravityDbPath: () => mockDbPath,
+  getAntigravityDbPaths: () => [mockDbPath],
+  getAgentDir: () => path.join(process.cwd(), "mock_test_agent"),
+}));
+
+vi.mock("../../shared/logging/logger", () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),
@@ -31,85 +87,75 @@ vi.mock('../../shared/logging/logger', () => ({
   },
 }));
 
-// NOTE: These tests are skipped because better-sqlite3 is compiled for Electron, not Node.js.
-// Run these tests manually in an Electron environment.
-describe.skip('Database Handler', () => {
+describe("Database Handler", () => {
   beforeEach(() => {
-    // Create a fresh DB for each test
-    const db = new Database(tempDbPath);
-    db.exec('CREATE TABLE IF NOT EXISTS ItemTable (key TEXT PRIMARY KEY, value TEXT)');
-    db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)').run(
-      'antigravityAuthStatus',
+    inMemoryDb.clear();
+    inMemoryDb.set(
+      "antigravityAuthStatus",
       JSON.stringify({
-        user: { email: 'test@example.com', name: 'Test User' },
+        user: { email: "test@example.com", name: "Test User" },
       }),
     );
-    db.close();
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
   });
 
   afterEach(() => {
-    if (fs.existsSync(tempDbPath)) {
-      fs.unlinkSync(tempDbPath);
-    }
+    vi.restoreAllMocks();
   });
 
-  it('should connect to database', () => {
+  it("should connect to database", () => {
     const { raw } = getDatabaseConnection();
     expect(raw).toBeDefined();
     raw.close();
   });
 
-  it('should get current account info', () => {
+  it("should get current account info", () => {
     const info = getCurrentAccountInfo();
-    expect(info.email).toBe('test@example.com');
-    expect(info.name).toBe('Test User');
+    expect(info.email).toBe("test@example.com");
+    expect(info.name).toBe("Test User");
     expect(info.isAuthenticated).toBe(true);
   });
 
-  it('should backup account', () => {
+  it("should backup account", () => {
     const account = {
-      id: '123',
-      name: 'Test User',
-      email: 'test@example.com',
+      id: "123",
+      name: "Test User",
+      email: "test@example.com",
       created_at: new Date().toISOString(),
       last_used: new Date().toISOString(),
     };
     const backup = backupAccount(account);
     expect(backup.account).toEqual(account);
-    expect(backup.data['antigravityAuthStatus']).toBeDefined();
+    expect(backup.data["antigravityAuthStatus"]).toBeDefined();
   });
 
-  it('should restore account', () => {
+  it("should restore account", () => {
     const backup = {
-      version: '1.0',
+      version: "1.0",
       account: {
-        id: '123',
-        name: 'Restored User',
-        email: 'restored@example.com',
+        id: "123",
+        name: "Restored User",
+        email: "restored@example.com",
         created_at: new Date().toISOString(),
         last_used: new Date().toISOString(),
       },
       data: {
         antigravityAuthStatus: JSON.stringify({
-          user: { email: 'restored@example.com' },
+          user: { email: "restored@example.com" },
         }),
-        newKey: 'newValue',
+        "jetskiStateSync.agentManagerInitState": "initialized",
       },
     };
 
     restoreAccount(backup);
 
-    const db = new Database(tempDbPath);
-    const row = db
-      .prepare("SELECT value FROM ItemTable WHERE key = 'antigravityAuthStatus'")
-      .get() as { value: string };
-    const value = JSON.parse(row.value);
-    expect(value.user.email).toBe('restored@example.com');
+    const restoredAuth = inMemoryDb.get("antigravityAuthStatus");
+    expect(restoredAuth).toBeDefined();
+    const value = JSON.parse(restoredAuth!);
+    expect(value.user.email).toBe("restored@example.com");
 
-    const newRow = db.prepare("SELECT value FROM ItemTable WHERE key = 'newKey'").get() as {
-      value: string;
-    };
-    expect(newRow.value).toBe('newValue'); // JSON stringified
-    db.close();
+    expect(inMemoryDb.get("jetskiStateSync.agentManagerInitState")).toBe(
+      "initialized",
+    );
   });
 });

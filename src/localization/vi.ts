@@ -93,6 +93,23 @@ const vi = {
       "Không thể ghi vào nơi lưu trữ cơ sở dữ liệu Antigravity. Hãy kiểm tra thư mục Antigravity user-data đã cấu hình hoặc khởi động lại Antigravity Relay sau khi mở Antigravity một lần.",
     cloudAccountLoginExpired:
       "Thông tin đăng nhập cho tài khoản cloud này đã hết hạn. Hãy đăng nhập lại.",
+    rootBoundary: {
+      title: "Ứng dụng gặp lỗi",
+      description:
+        "Đã xảy ra lỗi nghiêm trọng không mong muốn. Bạn có thể tải lại cửa sổ ứng dụng để khôi phục hoạt động bình thường.",
+      reload: "Tải lại ứng dụng",
+      copyDetails: "Sao chép chi tiết lỗi",
+      detailsCopied: "Chi tiết lỗi đã được sao chép vào bộ nhớ tạm.",
+      viewDetails: "Xem chẩn đoán kỹ thuật",
+      hideDetails: "Ẩn chẩn đoán kỹ thuật",
+    },
+    routeFallback: {
+      title: "Không thể tải phần này",
+      description:
+        "Đã xảy ra lỗi kết xuất không mong muốn trong chế độ xem này.",
+      retry: "Thử lại phần này",
+      goHome: "Quay lại danh sách tài khoản",
+    },
   },
   nav: {
     accounts: "Tài khoản",

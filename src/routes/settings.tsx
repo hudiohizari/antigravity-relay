@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { RouteErrorFallback } from "@/components/layout/RouteErrorFallback";
 import { useTheme } from "@/components/shared/theme-provider";
 import {
   Card,
@@ -669,4 +670,5 @@ function SettingsPage() {
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
+  errorComponent: RouteErrorFallback,
 });

@@ -12,6 +12,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { LOCAL_STORAGE_KEYS } from "@/shared/constants";
 import { ManualUpdateNotification } from "@/modules/app-shell/components/ManualUpdateNotification";
 import { useTrayAccountSync } from "@/modules/cloud-account/hooks/useTrayAccountSync";
+import { RootErrorBoundary } from "@/components/layout/RootErrorBoundary";
 
 function AppContent() {
   const { i18n } = useTranslation();
@@ -29,7 +30,11 @@ function AppContent() {
 }
 
 function App() {
-  return <AppContent />;
+  return (
+    <RootErrorBoundary>
+      <AppContent />
+    </RootErrorBoundary>
+  );
 }
 
 const queryClient = new QueryClient();
@@ -42,9 +47,11 @@ root.render(
         storageKey={LOCAL_STORAGE_KEYS.THEME}
         defaultTheme="system"
       >
-        <App />
-        <ManualUpdateNotification />
-        <Toaster />
+        <RootErrorBoundary>
+          <App />
+          <ManualUpdateNotification />
+          <Toaster />
+        </RootErrorBoundary>
       </ThemeProvider>
     </QueryClientProvider>
   </React.StrictMode>,

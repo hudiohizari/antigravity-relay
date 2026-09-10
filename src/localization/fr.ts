@@ -97,6 +97,23 @@ const fr = {
       "Le stockage de base de donnees Antigravity n est pas accessible en ecriture. Verifiez le dossier de donnees utilisateur Antigravity configure ou redemarrez Antigravity Relay apres avoir ouvert Antigravity une fois.",
     cloudAccountLoginExpired:
       "Les informations de connexion de ce compte cloud ont expire. Veuillez vous reconnecter.",
+    rootBoundary: {
+      title: "L'application a rencontre une erreur",
+      description:
+        "Une erreur critique inattendue s'est produite. Vous pouvez recharger la fenetre de l'application pour retablir le fonctionnement normal.",
+      reload: "Recharger l'application",
+      copyDetails: "Copier les details de l'erreur",
+      detailsCopied: "Details de l'erreur copies dans le presse-papiers.",
+      viewDetails: "Afficher les diagnostics techniques",
+      hideDetails: "Masquer les diagnostics techniques",
+    },
+    routeFallback: {
+      title: "Impossible de charger la section",
+      description:
+        "Une erreur inattendue s'est produite lors du rendu de cette vue.",
+      retry: "Reessayer la section",
+      goHome: "Retourner aux comptes",
+    },
   },
   nav: {
     accounts: "Comptes",

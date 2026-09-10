@@ -326,51 +326,36 @@ export function CloudAccountCard({
             : "ERR";
           const reasonLabel =
             availability?.reason === "model_not_supported"
-              ? t(
-                  "cloud.card.liveLimitModelNotSupported",
-                  "Model not supported",
-                )
+              ? t("cloud.card.liveLimitModelNotSupported")
               : availability?.reason === "model_forbidden"
-                ? t("cloud.card.liveLimitModelForbidden", "Model forbidden")
+                ? t("cloud.card.liveLimitModelForbidden")
                 : availability?.reason === "quota_exhausted"
-                  ? t("cloud.card.liveLimitQuotaExhausted", "Quota exhausted")
-                  : t("cloud.card.liveLimitRateLimited", "Rate limited");
+                  ? t("cloud.card.liveLimitQuotaExhausted")
+                  : t("cloud.card.liveLimitRateLimited");
           const liveLimitTimingLabel = availability
             ? isLiveLimitActive
-              ? t("cloud.card.liveLimitRemaining", "{{duration}} remaining", {
+              ? t("cloud.card.liveLimitRemaining", {
                   duration: formatCompactDuration(
                     availability.unavailableUntil - now,
                   ),
                 })
-              : t(
-                  "cloud.card.liveLimitDetectedAgo",
-                  "detected {{duration}} ago",
-                  {
-                    duration: formatCompactDuration(
-                      now - availability.detectedAt,
-                    ),
-                  },
-                )
+              : t("cloud.card.liveLimitDetectedAgo", {
+                  duration: formatCompactDuration(
+                    now - availability.detectedAt,
+                  ),
+                })
             : null;
           const availabilityTitle = availability
             ? [
                 isLiveLimitActive
-                  ? t(
-                      "cloud.card.liveLimitActiveTitle",
-                      "The live upstream endpoint is temporarily unavailable.",
-                    )
-                  : t(
-                      "cloud.card.liveLimitRecentTitle",
-                      "The live upstream endpoint recently returned an error.",
-                    ),
+                  ? t("cloud.card.liveLimitActiveTitle")
+                  : t("cloud.card.liveLimitRecentTitle"),
                 `${statusLabel}: ${reasonLabel}.`,
-                t(
-                  "cloud.card.liveLimitQuotaSnapshot",
-                  "The quota snapshot can still show {{percentage}}%.",
-                  { percentage: info.percentage },
-                ),
+                t("cloud.card.liveLimitQuotaSnapshot", {
+                  percentage: info.percentage,
+                }),
                 availability.message
-                  ? t("cloud.card.liveLimitMessage", "Message: {{message}}", {
+                  ? t("cloud.card.liveLimitMessage", {
                       message: availability.message,
                     })
                   : null,
@@ -581,7 +566,7 @@ export function CloudAccountCard({
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
                   <span className="relative inline-flex h-1 w-1 rounded-full bg-green-500"></span>
                 </span>
-                {t("cloud.card.active", "Active")}
+                {t("cloud.card.active")}
               </span>
             </div>
           )}

@@ -92,6 +92,22 @@ const tr = {
       "Antigravity veritabanı depolama alanı yazılabilir değil. Yapılandırılmış Antigravity user-data dizinini kontrol edin veya Antigravity uygulamasını bir kez açtıktan sonra Antigravity Relayı yeniden başlatın.",
     cloudAccountLoginExpired:
       "Bu bulut hesabının giriş bilgileri süresi dolmuş. Lütfen tekrar giriş yapın.",
+    rootBoundary: {
+      title: "Uygulamada Bir Hata Olustu",
+      description:
+        "Kritik ve beklenmeyen bir hata olustu. Normal calismayi geri yuklemek icin uygulama penceresini yeniden yukleyebilirsiniz.",
+      reload: "Uygulamayi Yeniden Yukle",
+      copyDetails: "Hata Ayrintilarini Kopyala",
+      detailsCopied: "Hata ayrintilari panoya kopyalandi.",
+      viewDetails: "Teknik Tanilamayi Goruntule",
+      hideDetails: "Teknik Tanilamayi Gizle",
+    },
+    routeFallback: {
+      title: "Bolum Yuklenemedi",
+      description: "Bu gorunum olusturulurken beklenmeyen bir hata olustu.",
+      retry: "Bolumu Yeniden Dene",
+      goHome: "Hesaplara Don",
+    },
   },
   nav: {
     accounts: "Hesaplar",

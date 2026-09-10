@@ -929,17 +929,73 @@ export function generateAutoReloadScript(
 </script>`;
 }
 
-export function generatePairingHtml(errorMessage?: string): string {
+export function resolveRelayViewLanguage(
+  acceptLanguage?: string | null,
+  langQuery?: string | null,
+): "en" | "id" {
+  if (langQuery) {
+    const normalized = langQuery.trim().toLowerCase();
+    if (normalized.startsWith("id")) return "id";
+    if (normalized.startsWith("en")) return "en";
+  }
+
+  if (acceptLanguage) {
+    const parts = acceptLanguage.split(",").map((p) => p.trim().toLowerCase());
+    for (const part of parts) {
+      const tag = part.split(";")[0].trim();
+      if (tag.startsWith("id")) return "id";
+      if (tag.startsWith("en")) return "en";
+    }
+  }
+
+  return "en";
+}
+
+export function translateRelayErrorMessage(
+  errorMessage: string | undefined,
+  lang: "en" | "id",
+): string | undefined {
+  if (!errorMessage || lang !== "id") return errorMessage;
+  if (errorMessage.includes("already been consumed")) {
+    return "Kunci pemasangan ini telah digunakan oleh perangkat lain. Silakan minta kunci baru dari host desktop.";
+  }
+  if (errorMessage.includes("Invalid pairing key")) {
+    return "Kunci pemasangan tidak valid. Periksa dashboard desktop.";
+  }
+  return errorMessage;
+}
+
+export function generatePairingHtml(
+  errorMessage?: string,
+  lang: "en" | "id" = "en",
+): string {
   const errorBlock = errorMessage
     ? `<div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#ef4444;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:18px;">${errorMessage}</div>`
     : "";
 
+  const title =
+    lang === "id"
+      ? "Antigravity Relay - Pemasangan Diperlukan"
+      : "Antigravity Relay - Pairing Required";
+  const heading =
+    lang === "id"
+      ? "Pemasangan Perangkat Diperlukan"
+      : "Device Pairing Required";
+  const desc =
+    lang === "id"
+      ? "Untuk mengakses Antigravity Relay, masukkan kunci pemasangan dari dashboard desktop Anda."
+      : "To access Antigravity Relay, enter the pairing key from your desktop dashboard.";
+  const label = lang === "id" ? "Kunci Pemasangan" : "Pairing Key";
+  const placeholder =
+    lang === "id" ? "Masukkan kunci pemasangan..." : "Enter pairing key...";
+  const button = lang === "id" ? "Pasangkan Perangkat" : "Pair Device";
+
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Antigravity Relay - Pairing Required</title>
+  <title>${title}</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/icon.png">
   <style>
@@ -1019,31 +1075,58 @@ export function generatePairingHtml(errorMessage?: string): string {
     <div class="icon">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
     </div>
-    <h1>Device Pairing Required</h1>
-    <p>To access Antigravity Relay, enter the pairing key from your desktop dashboard.</p>
+    <h1>${heading}</h1>
+    <p>${desc}</p>
     ${errorBlock}
     <form method="GET" action="/">
       <input type="hidden" name="useWebSocket" value="true" />
-      <label for="pair">Pairing Key</label>
-      <input type="password" id="pair" name="pair" placeholder="Enter pairing key..." autofocus autocomplete="off" required />
-      <button type="submit">Pair Device</button>
+      <label for="pair">${label}</label>
+      <input type="password" id="pair" name="pair" placeholder="${placeholder}" autofocus autocomplete="off" required />
+      <button type="submit">${button}</button>
     </form>
   </div>
 </body>
 </html>`;
 }
 
-export function generateRevokedHtml(errorMessage?: string): string {
+export function generateRevokedHtml(
+  errorMessage?: string,
+  lang: "en" | "id" = "en",
+): string {
   const errorBlock = errorMessage
     ? `<div role="alert" aria-live="assertive" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#f87171;padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.4;margin-bottom:18px;">${errorMessage}</div>`
     : "";
 
+  const title =
+    lang === "id"
+      ? "Sesi Dicabut - Antigravity Relay"
+      : "Session Revoked - Antigravity Relay";
+  const badgeText =
+    lang === "id" ? "Terputus oleh Host" : "Disconnected by Host";
+  const heading =
+    lang === "id" ? "Akses Dicabut oleh Host" : "Access Revoked by Host";
+  const desc =
+    lang === "id"
+      ? "Sesi Dicabut: Akses telah dicabut oleh host desktop. Masukkan kunci pemasangan yang valid untuk menghubungkan kembali."
+      : "Session Revoked: Access was revoked by the desktop host. Please enter a valid pairing key to re-establish your connection.";
+  const label = lang === "id" ? "Kunci Pemasangan Baru" : "New Pairing Key";
+  const placeholder =
+    lang === "id"
+      ? "Masukkan kunci pemasangan baru"
+      : "Enter fresh pairing key";
+  const buttonText = lang === "id" ? "Hubungkan" : "Connect";
+  const buttonAria =
+    lang === "id"
+      ? "Kirim kunci pemasangan baru untuk menghubungkan kembali perangkat yang dicabut ini"
+      : "Submit new pairing key to reconnect this revoked device";
+  const connectingText = lang === "id" ? "Menghubungkan..." : "Connecting...";
+
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Session Revoked - Antigravity Relay</title>
+  <title>${title}</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/icon.png">
   <style>
@@ -1190,20 +1273,20 @@ export function generateRevokedHtml(errorMessage?: string): string {
   <div class="card" id="revocation-card" role="alertdialog" aria-modal="true" aria-labelledby="revoked-heading" aria-describedby="revoked-desc">
     <div class="badge" role="status">
       <span class="badge-dot" aria-hidden="true"></span>
-      Disconnected by Host
+      ${badgeText}
     </div>
     <div class="icon" aria-hidden="true">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
     </div>
-    <h1 id="revoked-heading">Access Revoked by Host</h1>
-    <p id="revoked-desc">Session Revoked: Access was revoked by the desktop host. Please enter a valid pairing key to re-establish your connection.</p>
+    <h1 id="revoked-heading">${heading}</h1>
+    <p id="revoked-desc">${desc}</p>
     ${errorBlock}
     <form id="reconnect-form" method="GET" action="/" novalidate>
       <input type="hidden" name="useWebSocket" value="true" />
-      <label for="pair">New Pairing Key</label>
-      <input type="password" id="pair" name="pair" placeholder="Enter fresh pairing key" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-label="New Pairing Key" aria-required="true" aria-invalid="false" />
-      <button type="submit" id="submit-btn" aria-label="Submit new pairing key to reconnect this revoked device">
-        <span>Connect</span>
+      <label for="pair">${label}</label>
+      <input type="password" id="pair" name="pair" placeholder="${placeholder}" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-label="${label}" aria-required="true" aria-invalid="false" />
+      <button type="submit" id="submit-btn" aria-label="${buttonAria}">
+        <span>${buttonText}</span>
       </button>
     </form>
   </div>
@@ -1297,7 +1380,7 @@ export function generateRevokedHtml(errorMessage?: string): string {
           input.setAttribute("aria-invalid", "false");
           btn.setAttribute("disabled", "true");
           btn.setAttribute("aria-busy", "true");
-          btn.innerHTML = '<svg class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor"></circle><path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg><span>Connecting...</span>';
+          btn.innerHTML = '<svg class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor"></circle><path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg><span>${connectingText}</span>';
         });
       }
     })();
@@ -1686,6 +1769,14 @@ export class RelayServer {
 
         const rawUrl = request.url || "/";
         const parsedUrl = new URL(rawUrl, "http://127.0.0.1");
+        const rawAcceptLanguage = request.headers["accept-language"];
+        const acceptLanguage = Array.isArray(rawAcceptLanguage)
+          ? rawAcceptLanguage.join(", ")
+          : rawAcceptLanguage;
+        const langParam =
+          parsedUrl.searchParams.get("lang") ||
+          parsedUrl.searchParams.get("language");
+        const viewLang = resolveRelayViewLanguage(acceptLanguage, langParam);
         const pairingToken = parsedUrl.searchParams.get("pair") || undefined;
         const sessionToken =
           (!requirePairing ? pairingToken : undefined) ||
@@ -1762,7 +1853,11 @@ export class RelayServer {
                     .type("text/html")
                     .send(
                       generateRevokedHtml(
-                        "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+                        translateRelayErrorMessage(
+                          "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+                          viewLang,
+                        ),
+                        viewLang,
                       ),
                     );
                 }
@@ -1779,7 +1874,11 @@ export class RelayServer {
                     .type("text/html")
                     .send(
                       generateRevokedHtml(
-                        "Invalid pairing key. Check desktop dashboard.",
+                        translateRelayErrorMessage(
+                          "Invalid pairing key. Check desktop dashboard.",
+                          viewLang,
+                        ),
+                        viewLang,
                       ),
                     );
                 }
@@ -1795,7 +1894,7 @@ export class RelayServer {
               return reply
                 .status(401)
                 .type("text/html")
-                .send(generateRevokedHtml());
+                .send(generateRevokedHtml(undefined, viewLang));
             }
             return reply.status(401).send({
               error: "session_revoked",
@@ -1850,7 +1949,11 @@ export class RelayServer {
                   .type("text/html")
                   .send(
                     generatePairingHtml(
-                      "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+                      translateRelayErrorMessage(
+                        "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
+                        viewLang,
+                      ),
+                      viewLang,
                     ),
                   );
               }
@@ -1866,7 +1969,11 @@ export class RelayServer {
                   .type("text/html")
                   .send(
                     generatePairingHtml(
-                      "Invalid pairing key. Check desktop dashboard.",
+                      translateRelayErrorMessage(
+                        "Invalid pairing key. Check desktop dashboard.",
+                        viewLang,
+                      ),
+                      viewLang,
                     ),
                   );
               }
@@ -1926,7 +2033,7 @@ export class RelayServer {
             return reply
               .status(401)
               .type("text/html")
-              .send(generatePairingHtml());
+              .send(generatePairingHtml(undefined, viewLang));
           }
 
           return reply.status(401).send({

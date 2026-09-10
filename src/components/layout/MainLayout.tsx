@@ -20,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "react-error-boundary";
+import { RouteErrorFallback } from "@/components/layout/RouteErrorFallback";
 import { useToast } from "@/components/ui/use-toast";
 import { getLocalizedErrorMessage } from "@/shared/utils/errorMessages";
 
@@ -185,24 +186,7 @@ export const MainLayout: React.FC = () => {
               hasShownRouteErrorToastRef.current = true;
             }}
             fallbackRender={({ resetErrorBoundary }) => (
-              <div className="mx-auto max-w-3xl p-6">
-                <div className="rounded-lg border border-dashed p-8 text-center">
-                  <div className="text-lg font-semibold">
-                    {t("error.generic")}
-                  </div>
-                  <div className="text-muted-foreground mt-2 text-sm">
-                    {t("action.retry")}
-                  </div>
-                  <Button
-                    className="mt-4"
-                    variant="outline"
-                    onClick={resetErrorBoundary}
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    {t("action.retry")}
-                  </Button>
-                </div>
-              </div>
+              <RouteErrorFallback reset={resetErrorBoundary} />
             )}
           >
             <Outlet />

@@ -89,6 +89,22 @@ const zhCn = {
     antigravityDatabasePermissionDenied:
       "Antigravity 数据库存储目录不可写。请检查配置的 Antigravity user-data 目录，或先打开一次 Antigravity 后重启 Antigravity 管理器。",
     cloudAccountLoginExpired: "该邮箱的登录信息已过期，请重新登录。",
+    rootBoundary: {
+      title: "应用程序遇到错误",
+      description:
+        "发生了严重的意外错误。您可以重新加载应用程序窗口以恢复正常运行。",
+      reload: "重新加载应用程序",
+      copyDetails: "复制错误详情",
+      detailsCopied: "错误详情已复制到剪贴板。",
+      viewDetails: "查看技术诊断",
+      hideDetails: "隐藏技术诊断",
+    },
+    routeFallback: {
+      title: "无法加载此部分",
+      description: "在此视图中发生意外渲染错误。",
+      retry: "重试此部分",
+      goHome: "返回账户列表",
+    },
   },
   nav: {
     accounts: "账号",

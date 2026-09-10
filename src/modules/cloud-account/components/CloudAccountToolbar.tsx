@@ -240,14 +240,14 @@ export function CloudAccountToolbar({
       <Button
         variant="outline"
         disabled={isSyncPending}
-        title={t("cloud.syncFromAntigravity", "Sync from Antigravity")}
+        title={t("cloud.syncFromAntigravity")}
         className="cursor-pointer"
         onClick={() => onSyncLocal("classic")}
       >
         <Download
           className={`mr-2 h-4 w-4 ${isSyncPending ? "animate-bounce" : ""}`}
         />
-        {t("cloud.syncFromAntigravity", "Sync from Antigravity")}
+        {t("cloud.syncFromAntigravity")}
       </Button>
 
       <LocalAccountImportDialog />

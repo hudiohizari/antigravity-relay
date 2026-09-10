@@ -94,6 +94,23 @@ const id = {
       "Penyimpanan database Antigravity tidak dapat ditulisi. Periksa direktori user-data Antigravity yang dikonfigurasi atau mulai ulang Antigravity Relay setelah membuka Antigravity sekali.",
     cloudAccountLoginExpired:
       "Informasi login untuk akun cloud ini telah kedaluwarsa. Silakan masuk kembali.",
+    rootBoundary: {
+      title: "Aplikasi Mengalami Kesalahan",
+      description:
+        "Terjadi kesalahan kritis yang tidak terduga. Anda dapat memuat ulang jendela aplikasi untuk memulihkan operasi normal.",
+      reload: "Muat Ulang Aplikasi",
+      copyDetails: "Salin Rincian Kesalahan",
+      detailsCopied: "Rincian kesalahan berhasil disalin ke papan klip.",
+      viewDetails: "Lihat Diagnostik Teknis",
+      hideDetails: "Sembunyikan Diagnostik Teknis",
+    },
+    routeFallback: {
+      title: "Gagal Memuat Bagian",
+      description:
+        "Terjadi kesalahan rendering yang tidak terduga pada tampilan ini.",
+      retry: "Coba Lagi Bagian Ini",
+      goHome: "Kembali ke Akun",
+    },
   },
   nav: {
     accounts: "Akun",
