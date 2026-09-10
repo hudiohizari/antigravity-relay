@@ -49,6 +49,9 @@ describe("MasterKeyManager", () => {
     expect(getAppErrorData(failure)?.appErrorCode).toBe(
       "MASTER_KEY_UNAVAILABLE",
     );
+    expect(
+      (getAppErrorData(failure)?.metadata as any)?.providerResults,
+    ).toEqual([{ source: "safeStorage", status: "available" }]);
     expect(generateKey).not.toHaveBeenCalled();
     expect(write).not.toHaveBeenCalled();
     expect(manager.getSecurityStatus().state).toBe("locked");
@@ -224,5 +227,131 @@ describe("MasterKeyManager", () => {
     expect(() => manager.getPrimaryKey()).toThrow();
     expect(manager.getDecryptionKeys()).toEqual([]);
     expect(manager.getSecurityStatus().state).toBe("locked");
+  });
+
+  it("mirrors resolved master key across all writable providers", async () => {
+    const key = Buffer.alloc(32, 10);
+    const writeSafeStorage = vi.fn(async () => undefined);
+    const writeKeytar = vi.fn(async () => undefined);
+    const writeFile = vi.fn(async () => undefined);
+
+    const providers: MasterKeyProvider[] = [
+      {
+        source: "safeStorage",
+        read: vi.fn().mockResolvedValue({
+          status: "available",
+          source: "safeStorage",
+          key,
+        }),
+        write: writeSafeStorage,
+      },
+      {
+        source: "keytar",
+        read: vi
+          .fn()
+          .mockResolvedValue({ status: "missing", source: "keytar" }),
+        write: writeKeytar,
+      },
+      {
+        source: "file",
+        read: vi.fn().mockResolvedValue({ status: "missing", source: "file" }),
+        write: writeFile,
+      },
+    ];
+
+    const manager = new MasterKeyManager({ providers });
+    await manager.initialize({ encryptedSamples: [] });
+
+    // Keytar and File both received the key mirror
+    expect(writeKeytar).toHaveBeenCalledWith(key);
+    expect(writeFile).toHaveBeenCalledWith(key);
+    expect(manager.getSecurityStatus()).toEqual({
+      state: "secure",
+      masterKeySource: "safeStorage",
+    });
+  });
+
+  it("heals safeStorage when key is recovered from file fallback", async () => {
+    const recoveredKey = Buffer.alloc(32, 11);
+    const writeSafeStorage = vi.fn(async () => undefined);
+    const writeKeytar = vi.fn(async () => undefined);
+
+    const providers: MasterKeyProvider[] = [
+      {
+        source: "safeStorage",
+        read: vi.fn().mockResolvedValue({
+          status: "unavailable",
+          source: "safeStorage",
+          error: new Error("keychain locked"),
+        }),
+        write: writeSafeStorage,
+      },
+      {
+        source: "keytar",
+        read: vi
+          .fn()
+          .mockResolvedValue({ status: "missing", source: "keytar" }),
+        write: writeKeytar,
+      },
+      {
+        source: "file",
+        read: vi.fn().mockResolvedValue({
+          status: "available",
+          source: "file",
+          key: recoveredKey,
+        }),
+      },
+    ];
+
+    const manager = new MasterKeyManager({ providers });
+    await manager.initialize({
+      encryptedSamples: [encryptSample(recoveredKey, '{"token":"test"}')],
+    });
+
+    expect(writeSafeStorage).toHaveBeenCalledWith(recoveredKey);
+    expect(writeKeytar).toHaveBeenCalledWith(recoveredKey);
+    expect(manager.getSecurityStatus().state).toBe("secure");
+    expect(manager.getSecurityStatus().masterKeySource).toBe("safeStorage");
+  });
+
+  it("mirrors new key to all writable providers upon generation", async () => {
+    const newKey = Buffer.alloc(32, 12);
+    const writeSafeStorage = vi.fn(async () => undefined);
+    const writeKeytar = vi.fn(async () => undefined);
+    const writeFile = vi.fn(async () => undefined);
+
+    const providers: MasterKeyProvider[] = [
+      {
+        source: "safeStorage",
+        read: vi
+          .fn()
+          .mockResolvedValue({ status: "missing", source: "safeStorage" }),
+        write: writeSafeStorage,
+      },
+      {
+        source: "keytar",
+        read: vi
+          .fn()
+          .mockResolvedValue({ status: "missing", source: "keytar" }),
+        write: writeKeytar,
+      },
+      {
+        source: "file",
+        read: vi.fn().mockResolvedValue({ status: "missing", source: "file" }),
+        write: writeFile,
+      },
+    ];
+
+    const manager = new MasterKeyManager({
+      providers,
+      generateKey: () => newKey,
+    });
+
+    await manager.initialize({ encryptedSamples: [] });
+
+    expect(writeSafeStorage).toHaveBeenCalledWith(newKey);
+    expect(writeKeytar).toHaveBeenCalledWith(newKey);
+    expect(writeFile).toHaveBeenCalledWith(newKey);
+    expect(manager.getSecurityStatus().state).toBe("secure");
   });
 });

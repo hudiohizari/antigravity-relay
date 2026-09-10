@@ -85,31 +85,27 @@ export class MasterKeyManager {
     key: Buffer,
     results: KeyReadResult[],
   ): Promise<KeySource | undefined> {
+    let primarySource: KeySource | undefined;
     for (const [index, provider] of this.providers.entries()) {
       if (!provider.write) {
         continue;
       }
 
       const result = results[index];
-      if (result.status === "available") {
-        if (result.key.equals(key)) {
-          return provider.source;
-        }
-        continue;
-      }
-      if (result.status !== "missing") {
+      if (result && result.status === "available" && result.key.equals(key)) {
+        primarySource ??= provider.source;
         continue;
       }
 
       try {
         await provider.write(key);
-        return provider.source;
+        primarySource ??= provider.source;
       } catch {
         continue;
       }
     }
 
-    return undefined;
+    return primarySource;
   }
 
   async initialize(
@@ -177,6 +173,14 @@ export class MasterKeyManager {
             hint: this.recoveryHint,
             reason: "NO_MATCHING_KEY",
             storedAccountCount,
+            providerResults: results.map((r) => ({
+              source: r.source,
+              status: r.status,
+              error:
+                r.status === "unavailable" || r.status === "corrupt"
+                  ? String((r as any).error)
+                  : undefined,
+            })),
           },
         },
       );
@@ -240,6 +244,7 @@ export class MasterKeyManager {
     }
 
     const key = this.generateKey();
+    let writtenSource: KeySource | undefined;
     for (const provider of this.providers) {
       if (!provider.write) {
         continue;
@@ -247,19 +252,23 @@ export class MasterKeyManager {
 
       try {
         await provider.write(key);
-        this.resolved = { key, source: provider.source };
-        this.decryptionKeys = [this.resolved];
-        this.status = {
-          state:
-            provider.source === "safeStorage" || provider.source === "keytar"
-              ? "secure"
-              : "degraded",
-          masterKeySource: provider.source,
-        };
-        return this.resolved;
+        writtenSource ??= provider.source;
       } catch {
         continue;
       }
+    }
+
+    if (writtenSource) {
+      this.resolved = { key, source: writtenSource };
+      this.decryptionKeys = [this.resolved];
+      this.status = {
+        state:
+          writtenSource === "safeStorage" || writtenSource === "keytar"
+            ? "secure"
+            : "degraded",
+        masterKeySource: writtenSource,
+      };
+      return this.resolved;
     }
 
     this.status = { state: "locked", recoveryHint: this.recoveryHint };

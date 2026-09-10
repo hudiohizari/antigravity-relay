@@ -325,18 +325,10 @@ ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL_URL, async (_event, url: unknown) => {
 
 registerPerformanceRecorderIpc();
 
-const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
-
-if (isDev) {
-  app.setName("Antigravity Relay Dev");
-} else {
-  app.setName("Antigravity Relay");
-}
+app.setName("Antigravity Relay");
 
 if (process.platform === "win32") {
-  app.setAppUserModelId(
-    isDev ? "com.antigravity.relay.dev" : "com.antigravity.relay",
-  );
+  app.setAppUserModelId("com.antigravity.relay");
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();

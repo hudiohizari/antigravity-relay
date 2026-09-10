@@ -1,4 +1,4 @@
-import { isBoolean, isPlainObject, isString } from 'lodash-es';
+import { isBoolean, isPlainObject, isString } from "lodash-es";
 
 export interface AppErrorMetadataByCode {
   CLOUD_ACCOUNT_LOGIN_EXPIRED: {
@@ -6,38 +6,43 @@ export interface AppErrorMetadataByCode {
     email: string;
   };
   KEYCHAIN_UNAVAILABLE: {
-    hint: 'HINT_APP_TRANSLOCATION' | 'HINT_KEYCHAIN_DENIED' | 'HINT_SIGN_NOTARIZE' | null;
+    hint:
+      | "HINT_APP_TRANSLOCATION"
+      | "HINT_KEYCHAIN_DENIED"
+      | "HINT_SIGN_NOTARIZE"
+      | null;
   };
   DATA_MIGRATION_FAILED: {
-    hint: 'HINT_RELOGIN' | 'HINT_CLEAR_DATA';
+    hint: "HINT_RELOGIN" | "HINT_CLEAR_DATA";
   };
   MASTER_KEY_UNAVAILABLE: {
     hint:
-      | 'HINT_APP_TRANSLOCATION'
-      | 'HINT_KEYCHAIN_DENIED'
-      | 'HINT_MANUAL_SIGN'
-      | 'HINT_RECOVERY'
+      | "HINT_APP_TRANSLOCATION"
+      | "HINT_KEYCHAIN_DENIED"
+      | "HINT_MANUAL_SIGN"
+      | "HINT_RECOVERY"
       | null;
-    reason: 'NO_MATCHING_KEY' | 'PROVIDER_UNAVAILABLE' | 'NOT_INITIALIZED';
+    reason: "NO_MATCHING_KEY" | "PROVIDER_UNAVAILABLE" | "NOT_INITIALIZED";
     storedAccountCount: number;
+    providerResults?: Array<{ source: string; status: string; error?: string }>;
   };
 }
 
 export type AppErrorCode = keyof AppErrorMetadataByCode;
 
 const APP_ERROR_CODES = new Set<string>([
-  'CLOUD_ACCOUNT_LOGIN_EXPIRED',
-  'KEYCHAIN_UNAVAILABLE',
-  'DATA_MIGRATION_FAILED',
-  'MASTER_KEY_UNAVAILABLE',
+  "CLOUD_ACCOUNT_LOGIN_EXPIRED",
+  "KEYCHAIN_UNAVAILABLE",
+  "DATA_MIGRATION_FAILED",
+  "MASTER_KEY_UNAVAILABLE",
 ]);
 
 export type AppErrorTransportCode =
-  | 'BAD_REQUEST'
-  | 'UNAUTHORIZED'
-  | 'FORBIDDEN'
-  | 'NOT_FOUND'
-  | 'INTERNAL_SERVER_ERROR';
+  | "BAD_REQUEST"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
+  | "INTERNAL_SERVER_ERROR";
 
 export interface AppErrorData<TCode extends AppErrorCode = AppErrorCode> {
   appErrorCode: TCode;
@@ -68,19 +73,25 @@ export class AppError<TCode extends AppErrorCode = AppErrorCode> extends Error {
   readonly metadata: AppErrorMetadataByCode[TCode];
 
   constructor(code: TCode, message: string, options: AppErrorOptions<TCode>) {
-    super(message, options.cause === undefined ? undefined : { cause: options.cause });
-    this.name = 'AppError';
+    super(
+      message,
+      options.cause === undefined ? undefined : { cause: options.cause },
+    );
+    this.name = "AppError";
     this.code = code;
     this.messageKey = options.messageKey;
     this.detailMessageKey = options.detailMessageKey;
     this.reportToSentry = options.reportToSentry ?? true;
-    this.transportCode = options.transportCode ?? 'INTERNAL_SERVER_ERROR';
+    this.transportCode = options.transportCode ?? "INTERNAL_SERVER_ERROR";
     this.metadata = options.metadata;
   }
 }
 
 function getObjectProperty(value: unknown, key: string): unknown {
-  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) {
+  if (
+    (typeof value !== "object" && typeof value !== "function") ||
+    value === null
+  ) {
     return undefined;
   }
 
@@ -88,7 +99,7 @@ function getObjectProperty(value: unknown, key: string): unknown {
 }
 
 function getErrorDataSource(value: unknown): unknown {
-  const data = getObjectProperty(value, 'data');
+  const data = getObjectProperty(value, "data");
   return isPlainObject(data) ? data : value;
 }
 
@@ -115,26 +126,28 @@ function isAppErrorCode(value: unknown): value is AppErrorCode {
 function normalizeAppErrorMetadata(
   appErrorCode: AppErrorCode,
   metadata: unknown,
-): AppErrorData['metadata'] {
+): AppErrorData["metadata"] {
   if (!isPlainObject(metadata)) {
     return undefined;
   }
 
-  const accountId = getObjectProperty(metadata, 'accountId');
-  const email = getObjectProperty(metadata, 'email');
-  const hint = getObjectProperty(metadata, 'hint');
-  const reason = getObjectProperty(metadata, 'reason');
-  const storedAccountCount = getObjectProperty(metadata, 'storedAccountCount');
+  const accountId = getObjectProperty(metadata, "accountId");
+  const email = getObjectProperty(metadata, "email");
+  const hint = getObjectProperty(metadata, "hint");
+  const reason = getObjectProperty(metadata, "reason");
+  const storedAccountCount = getObjectProperty(metadata, "storedAccountCount");
 
-  if (appErrorCode === 'CLOUD_ACCOUNT_LOGIN_EXPIRED') {
-    return isString(accountId) && isString(email) ? { accountId, email } : undefined;
+  if (appErrorCode === "CLOUD_ACCOUNT_LOGIN_EXPIRED") {
+    return isString(accountId) && isString(email)
+      ? { accountId, email }
+      : undefined;
   }
 
-  if (appErrorCode === 'KEYCHAIN_UNAVAILABLE') {
+  if (appErrorCode === "KEYCHAIN_UNAVAILABLE") {
     if (
-      hint === 'HINT_APP_TRANSLOCATION' ||
-      hint === 'HINT_KEYCHAIN_DENIED' ||
-      hint === 'HINT_SIGN_NOTARIZE' ||
+      hint === "HINT_APP_TRANSLOCATION" ||
+      hint === "HINT_KEYCHAIN_DENIED" ||
+      hint === "HINT_SIGN_NOTARIZE" ||
       hint === null
     ) {
       return { hint };
@@ -142,25 +155,52 @@ function normalizeAppErrorMetadata(
     return undefined;
   }
 
-  if (appErrorCode === 'MASTER_KEY_UNAVAILABLE') {
+  if (appErrorCode === "MASTER_KEY_UNAVAILABLE") {
     const isValidHint =
-      hint === 'HINT_APP_TRANSLOCATION' ||
-      hint === 'HINT_KEYCHAIN_DENIED' ||
-      hint === 'HINT_MANUAL_SIGN' ||
-      hint === 'HINT_RECOVERY' ||
+      hint === "HINT_APP_TRANSLOCATION" ||
+      hint === "HINT_KEYCHAIN_DENIED" ||
+      hint === "HINT_MANUAL_SIGN" ||
+      hint === "HINT_RECOVERY" ||
       hint === null;
     const isValidReason =
-      reason === 'NO_MATCHING_KEY' ||
-      reason === 'PROVIDER_UNAVAILABLE' ||
-      reason === 'NOT_INITIALIZED';
-    if (isValidHint && isValidReason && typeof storedAccountCount === 'number') {
-      return { hint, reason, storedAccountCount };
+      reason === "NO_MATCHING_KEY" ||
+      reason === "PROVIDER_UNAVAILABLE" ||
+      reason === "NOT_INITIALIZED";
+    if (
+      isValidHint &&
+      isValidReason &&
+      typeof storedAccountCount === "number"
+    ) {
+      const rawProviderResults = getObjectProperty(metadata, "providerResults");
+      let providerResults:
+        Array<{ source: string; status: string; error?: string }> | undefined;
+      if (Array.isArray(rawProviderResults)) {
+        providerResults = rawProviderResults
+          .filter(isPlainObject)
+          .map((item) => {
+            const source = getObjectProperty(item, "source");
+            const status = getObjectProperty(item, "status");
+            const error = getObjectProperty(item, "error");
+            return {
+              source: isString(source) ? source : "",
+              status: isString(status) ? status : "",
+              ...(isString(error) ? { error } : {}),
+            };
+          });
+      }
+
+      return {
+        hint,
+        reason,
+        storedAccountCount,
+        ...(providerResults !== undefined ? { providerResults } : {}),
+      };
     }
 
     return undefined;
   }
 
-  if (hint === 'HINT_RELOGIN' || hint === 'HINT_CLEAR_DATA') {
+  if (hint === "HINT_RELOGIN" || hint === "HINT_CLEAR_DATA") {
     return { hint };
   }
 
@@ -179,11 +219,11 @@ export function getAppErrorData(error: unknown): AppErrorData | undefined {
   }
 
   const dataSource = getErrorDataSource(error);
-  const appErrorCode = getObjectProperty(dataSource, 'appErrorCode');
-  const messageKey = getObjectProperty(dataSource, 'messageKey');
-  const detailMessageKey = getObjectProperty(dataSource, 'detailMessageKey');
-  const reportToSentry = getObjectProperty(dataSource, 'reportToSentry');
-  const metadata = getObjectProperty(dataSource, 'metadata');
+  const appErrorCode = getObjectProperty(dataSource, "appErrorCode");
+  const messageKey = getObjectProperty(dataSource, "messageKey");
+  const detailMessageKey = getObjectProperty(dataSource, "detailMessageKey");
+  const reportToSentry = getObjectProperty(dataSource, "reportToSentry");
+  const metadata = getObjectProperty(dataSource, "metadata");
 
   if (!isAppErrorCode(appErrorCode) || !isString(messageKey)) {
     return undefined;
