@@ -501,11 +501,6 @@ export const RelayDashboard: React.FC = () => {
     [t, toast],
   );
 
-  const activeSessionsCount = useMemo(
-    () => sessions.filter((sess) => sess.socketState === "connected").length,
-    [sessions],
-  );
-
   // Upstream status pill info
   const upstreamInfo = useMemo(() => {
     if (relayStatus?.isBuffering) {
@@ -1255,17 +1250,11 @@ export const RelayDashboard: React.FC = () => {
               variant="secondary"
               className="font-mono text-xs shrink-0"
               role="status"
-              aria-label={t("sessions.activeCountAria", {
-                count: activeSessionsCount,
-                total: sessions.length,
-              })}
+              aria-label={t("sessions.countAria", { count: sessions.length })}
             >
-              {sessions.length > activeSessionsCount
-                ? t("sessions.activeCountRatio", {
-                    active: activeSessionsCount,
-                    total: sessions.length,
-                  })
-                : t("sessions.activeCount", { count: activeSessionsCount })}
+              {sessions.length === 1
+                ? t("sessions.countSingular", { count: sessions.length })
+                : t("sessions.countPlural", { count: sessions.length })}
             </Badge>
           </div>
         </CardHeader>
@@ -1324,7 +1313,6 @@ export const RelayDashboard: React.FC = () => {
                   <tbody className="divide-y">
                     {sessions.map((sess) => {
                       const parsed = parseDeviceUserAgent(sess.userAgent, t);
-                      const isConnected = sess.socketState === "connected";
                       const durationStr = formatDuration(
                         now - sess.connectedAt,
                       );
@@ -1345,42 +1333,10 @@ export const RelayDashboard: React.FC = () => {
                             <div className="flex items-center gap-2.5">
                               <Smartphone className="h-4 w-4 text-muted-foreground shrink-0" />
                               <div className="flex flex-col min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
                                   <span className="font-semibold text-foreground truncate">
                                     {parsed.device}
                                   </span>
-                                  <Badge
-                                    variant="outline"
-                                    className={cn(
-                                      "gap-1 px-1.5 py-0 text-[10px] font-normal transition-colors duration-150",
-                                      isConnected
-                                        ? "border-emerald-300 bg-emerald-500/10 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400"
-                                        : "border-zinc-300 bg-zinc-500/10 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-500/15 dark:text-zinc-400",
-                                    )}
-                                    role="status"
-                                    aria-label={t("sessions.statusBadgeLabel", {
-                                      status: isConnected
-                                        ? t("sessions.statusConnected")
-                                        : t("sessions.statusDisconnected"),
-                                    })}
-                                  >
-                                    <span className="relative flex h-1.5 w-1.5 shrink-0">
-                                      {isConnected && (
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 motion-reduce:hidden" />
-                                      )}
-                                      <span
-                                        className={cn(
-                                          "relative inline-flex h-1.5 w-1.5 rounded-full",
-                                          isConnected
-                                            ? "bg-emerald-500"
-                                            : "bg-zinc-400 dark:bg-zinc-500",
-                                        )}
-                                      />
-                                    </span>
-                                    {isConnected
-                                      ? t("sessions.statusConnected")
-                                      : t("sessions.statusDisconnected")}
-                                  </Badge>
                                 </div>
                                 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                   <span className="text-[11px] text-muted-foreground truncate">

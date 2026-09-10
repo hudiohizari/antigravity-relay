@@ -21,20 +21,17 @@ vi.mock("react-i18next", () => ({
     t: (key: string, params?: Record<string, any>) => {
       if (key === "sessions.deviceIPhone") return "iPhone";
       if (key === "sessions.deviceAndroid") return "Android Device";
+      if (key === "sessions.countSingular") return "1 session";
+      if (key === "sessions.countPlural")
+        return `${params?.count ?? 0} sessions`;
+      if (key === "sessions.countAria")
+        return `${params?.count ?? 0} paired sessions`;
       if (params?.port) return `Port: ${params.port}`;
       if (params?.count) return `${params.count} queued commands`;
       if (key === "sessions.revokeAriaLabel" && params?.device)
         return `Revoke session for ${params.device} on ${params?.ip}`;
       if (key === "sessions.confirmRevokeMessage" && params?.device)
         return `Session for ${params.device}`;
-      if (
-        key === "sessions.activeCountRatio" &&
-        params?.active &&
-        params?.total
-      )
-        return `${params.active} of ${params.total} active`;
-      if (key === "sessions.activeCountAria" && params?.count && params?.total)
-        return `${params.count} active sessions out of ${params.total} registered`;
       if (key === "sessions.deviceIdTooltip" && params?.id)
         return `Device ID: ${params.id} (click to copy)`;
       if (key === "sessions.copyDeviceIdAria" && params?.id)
@@ -506,7 +503,7 @@ describe("RelayDashboard Component", () => {
     });
   });
 
-  it("renders socket connection state badge and handles session revoke confirmation", async () => {
+  it("handles session revoke confirmation and verifies absence of connection status badge", async () => {
     vi.mocked(relayActions.revokeRelaySession).mockResolvedValue(true);
 
     render(
@@ -515,11 +512,13 @@ describe("RelayDashboard Component", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("sessions.statusConnected")).toBeDefined();
-
-    const revokeBtn = screen.getByRole("button", {
-      name: /Revoke session for iPhone/,
+    const revokeBtn = await screen.findByRole("button", {
+      name: /Revoke session for iPhone/i,
     });
+    expect(screen.queryByText("sessions.statusConnected")).toBeNull();
+    expect(screen.queryByText("sessions.statusDisconnected")).toBeNull();
+    expect(screen.getByText("1 session")).toBeDefined();
+
     fireEvent.click(revokeBtn);
 
     // Confirmation dialog should open
@@ -595,7 +594,7 @@ describe("RelayDashboard Component", () => {
     });
   });
 
-  it("evaluates session as Connected when socket is connected", async () => {
+  it("does not render connection status badge when session socket is connected", async () => {
     vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
       {
         sessionId: "session-socket-active",
@@ -616,12 +615,12 @@ describe("RelayDashboard Component", () => {
       </QueryClientProvider>,
     );
 
-    const activeBadge = await screen.findByText("sessions.statusConnected");
-    expect(activeBadge).toBeDefined();
+    expect(await screen.findByText("iPhone")).toBeDefined();
+    expect(screen.queryByText("sessions.statusConnected")).toBeNull();
     expect(screen.queryByText("sessions.statusDisconnected")).toBeNull();
   });
 
-  it("evaluates session as Disconnected immediately when socket is disconnected", async () => {
+  it("does not render disconnected badge when session socket is disconnected", async () => {
     vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
       {
         sessionId: "session-disconnected",
@@ -642,14 +641,12 @@ describe("RelayDashboard Component", () => {
       </QueryClientProvider>,
     );
 
-    const disconnectedBadge = await screen.findByText(
-      "sessions.statusDisconnected",
-    );
-    expect(disconnectedBadge).toBeDefined();
+    expect(await screen.findByText("iPhone")).toBeDefined();
+    expect(screen.queryByText("sessions.statusDisconnected")).toBeNull();
     expect(screen.queryByText("sessions.statusConnected")).toBeNull();
   });
 
-  it("renders ratio counter badge in card header when both active and disconnected sessions exist", async () => {
+  it("renders total session count badge in card header when multiple sessions exist", async () => {
     vi.mocked(relayActions.getRelaySessions).mockResolvedValue([
       {
         sessionId: "session-active",
@@ -679,9 +676,15 @@ describe("RelayDashboard Component", () => {
       </QueryClientProvider>,
     );
 
-    // 1 of 2 active should be rendered in the header badge
-    const ratioBadge = await screen.findByText("1 of 2 active");
-    expect(ratioBadge).toBeDefined();
+    // 2 sessions should be rendered in the header badge
+    const countBadge = await screen.findByText("2 sessions");
+    expect(countBadge).toBeDefined();
+    expect(countBadge.textContent).toBe("2 sessions");
+    expect(countBadge.textContent).not.toContain("active");
+    expect(screen.queryByText("sessions.activeCountRatio")).toBeNull();
+    expect(screen.queryByText("sessions.activeCount")).toBeNull();
+    expect(screen.queryByText("sessions.statusConnected")).toBeNull();
+    expect(screen.queryByText("sessions.statusDisconnected")).toBeNull();
   });
 
   it("renders amber status badge, missing binary alert banner, and disabled Start Tunnel button when binary is not installed", async () => {
