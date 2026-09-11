@@ -116,11 +116,17 @@ export function extractDeviceId(
 let cachedFaviconBuffer: Buffer | null = null;
 let cachedFavicon32Buffer: Buffer | null = null;
 let cachedIconPngBuffer: Buffer | null = null;
+let cachedIcon192Buffer: Buffer | null = null;
+let cachedIcon512Buffer: Buffer | null = null;
+let cachedFavicon32DataUri: string | null = null;
 
 export function resetFaviconCache(): void {
   cachedFaviconBuffer = null;
   cachedFavicon32Buffer = null;
   cachedIconPngBuffer = null;
+  cachedIcon192Buffer = null;
+  cachedIcon512Buffer = null;
+  cachedFavicon32DataUri = null;
 }
 
 export function getFaviconBuffer(forceReload = false): Buffer | null {
@@ -130,12 +136,14 @@ export function getFaviconBuffer(forceReload = false): Buffer | null {
   if (cachedFaviconBuffer) return cachedFaviconBuffer;
   const candidates = [
     path.join(process.cwd(), "images", "favicon.ico"),
-    path.join(__dirname, "../../../images/favicon.ico"),
-    path.join(__dirname, "../../assets/icon.png"),
+    path.join(__dirname, "../../images", "favicon.ico"),
+    path.join(__dirname, "../../../images", "favicon.ico"),
+    path.join(__dirname, "../../assets", "favicon.ico"),
+    path.join(process.resourcesPath || "", "images", "favicon.ico"),
   ];
   for (const p of candidates) {
     try {
-      if (fs.existsSync(p)) {
+      if (p && fs.existsSync(p)) {
         cachedFaviconBuffer = fs.readFileSync(p);
         return cachedFaviconBuffer;
       }
@@ -152,14 +160,17 @@ export function getFavicon32Buffer(forceReload = false): Buffer | null {
   const candidates = [
     path.join(process.cwd(), "images", "favicon-32.png"),
     path.join(process.cwd(), "images", "32x32.png"),
-    path.join(__dirname, "../../../images/favicon-32.png"),
-    path.join(__dirname, "../../../images/32x32.png"),
-    path.join(__dirname, "../../assets/favicon-32.png"),
-    path.join(__dirname, "../../assets/32x32.png"),
+    path.join(__dirname, "../../images", "favicon-32.png"),
+    path.join(__dirname, "../../images", "32x32.png"),
+    path.join(__dirname, "../../../images", "favicon-32.png"),
+    path.join(__dirname, "../../../images", "32x32.png"),
+    path.join(__dirname, "../../assets", "favicon-32.png"),
+    path.join(__dirname, "../../assets", "32x32.png"),
+    path.join(process.resourcesPath || "", "images", "favicon-32.png"),
   ];
   for (const p of candidates) {
     try {
-      if (fs.existsSync(p)) {
+      if (p && fs.existsSync(p)) {
         cachedFavicon32Buffer = fs.readFileSync(p);
         return cachedFavicon32Buffer;
       }
@@ -176,8 +187,10 @@ export function getIconPngBuffer(forceReload = false): Buffer | null {
   const candidates = [
     path.join(process.cwd(), "images", "icon.png"),
     path.join(process.cwd(), "src", "assets", "icon.png"),
-    path.join(__dirname, "../../../images/icon.png"),
-    path.join(__dirname, "../../assets/icon.png"),
+    path.join(__dirname, "../../images", "icon.png"),
+    path.join(__dirname, "../../../images", "icon.png"),
+    path.join(__dirname, "../../assets", "icon.png"),
+    path.join(process.resourcesPath || "", "images", "icon.png"),
   ];
   for (const p of candidates) {
     try {
@@ -188,6 +201,108 @@ export function getIconPngBuffer(forceReload = false): Buffer | null {
     } catch (_) {}
   }
   return null;
+}
+
+export function getFavicon32DataUri(forceReload = false): string {
+  if (forceReload) {
+    cachedFavicon32DataUri = null;
+  }
+  if (cachedFavicon32DataUri) return cachedFavicon32DataUri;
+  const buffer = getFavicon32Buffer(forceReload);
+  if (buffer) {
+    cachedFavicon32DataUri = `data:image/png;base64,${buffer.toString("base64")}`;
+    return cachedFavicon32DataUri;
+  }
+  return "";
+}
+
+export function getIcon192Buffer(forceReload = false): Buffer | null {
+  if (forceReload) {
+    cachedIcon192Buffer = null;
+  }
+  if (cachedIcon192Buffer) return cachedIcon192Buffer;
+  const candidates = [
+    path.join(process.cwd(), "images", "icon-192.png"),
+    path.join(__dirname, "../../images", "icon-192.png"),
+    path.join(__dirname, "../../../images", "icon-192.png"),
+    path.join(__dirname, "../../assets", "icon-192.png"),
+    path.join(process.resourcesPath || "", "images", "icon-192.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) {
+        cachedIcon192Buffer = fs.readFileSync(p);
+        return cachedIcon192Buffer;
+      }
+    } catch (_) {}
+  }
+  return getIconPngBuffer(forceReload);
+}
+
+export function getIcon512Buffer(forceReload = false): Buffer | null {
+  if (forceReload) {
+    cachedIcon512Buffer = null;
+  }
+  if (cachedIcon512Buffer) return cachedIcon512Buffer;
+  const candidates = [
+    path.join(process.cwd(), "images", "icon-512.png"),
+    path.join(__dirname, "../../images", "icon-512.png"),
+    path.join(__dirname, "../../../images", "icon-512.png"),
+    path.join(__dirname, "../../assets", "icon-512.png"),
+    path.join(process.resourcesPath || "", "images", "icon-512.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) {
+        cachedIcon512Buffer = fs.readFileSync(p);
+        return cachedIcon512Buffer;
+      }
+    } catch (_) {}
+  }
+  return getIconPngBuffer(forceReload);
+}
+
+export function getManifestJson(): string {
+  return JSON.stringify(
+    {
+      name: "Antigravity Relay",
+      short_name: "Antigravity",
+      description: "Antigravity Remote Web Relay",
+      start_url: "/",
+      scope: "/",
+      display: "standalone",
+      orientation: "any",
+      background_color: "#090d16",
+      theme_color: "#090d16",
+      icons: [
+        {
+          src: "/favicon-32.png",
+          sizes: "32x32",
+          type: "image/png",
+        },
+        {
+          src: "/icon-192.png",
+          sizes: "192x192",
+          type: "image/png",
+          purpose: "any",
+        },
+        {
+          src: "/icon-512.png",
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "any",
+        },
+        {
+          src: "/icon.png",
+          sizes: "1024x1024",
+          type: "image/png",
+          purpose: "any",
+        },
+      ],
+    },
+    null,
+    2,
+  );
 }
 
 const HOP_BY_HOP_HEADERS = new Set([
@@ -274,7 +389,8 @@ export function generateAutoReloadScript(
       syncingSiblingTabs: "Device re-paired successfully. Synchronizing open tabs...",
       keyConsumedError: "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
       staleKeyError: "The previous pairing key is no longer valid. Enter the newly generated key shown on the desktop dashboard.",
-      reconnectingBanner: "Antigravity restarting, reconnecting..."
+      reconnectingBanner: "Antigravity restarting, reconnecting...",
+      relayStoppedBanner: "Relay server stopped, waiting for server..."
     },
     id: {
       overlayTitle: "Akses Dicabut",
@@ -292,7 +408,8 @@ export function generateAutoReloadScript(
       syncingSiblingTabs: "Perangkat berhasil dihubungkan ulang. Menyelaraskan tab yang terbuka...",
       keyConsumedError: "Kunci pairing ini sudah digunakan oleh perangkat lain. Silakan minta kunci baru dari host desktop.",
       staleKeyError: "Kunci pairing sebelumnya sudah tidak valid. Masukkan kunci yang baru ditampilkan di dashboard desktop.",
-      reconnectingBanner: "Antigravity memulai ulang, menghubungkan kembali..."
+      reconnectingBanner: "Antigravity memulai ulang, menghubungkan kembali...",
+      relayStoppedBanner: "Server relay berhenti, menunggu server..."
     }
   };
 
@@ -813,9 +930,13 @@ export function generateAutoReloadScript(
     } catch (_) {}
   }
 
-  function mountReloadBanner(msg) {
+  function mountReloadBanner(msg, type) {
     try {
-      var message = msg || getCatalog().reconnectingBanner || "Antigravity restarting, reconnecting...";
+      var mode = (type === "stopped") ? "stopped" : "restarting";
+      var defaultMsg = (mode === "stopped")
+        ? (getCatalog().relayStoppedBanner || "Relay server stopped, waiting for server...")
+        : (getCatalog().reconnectingBanner || "Antigravity restarting, reconnecting...");
+      var message = msg || defaultMsg;
       var host = document.getElementById("antigravity-reload-host");
       if (!host) {
         if (!document.body) return;
@@ -830,6 +951,14 @@ export function generateAutoReloadScript(
           ".ag-banner { pointer-events: auto; box-sizing: border-box; display: inline-flex; align-items: center; gap: 8px; max-width: min(calc(100vw - 32px), 400px); width: max-content; padding: 8px 16px; border-radius: 9999px; background: rgba(15, 23, 42, 0.90); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3); font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 500; line-height: 1.4; color: #e0f2fe; letter-spacing: -0.01em; text-align: left; word-break: break-word; user-select: none; -webkit-user-select: none; transition: border-color 0.2s ease, transform 0.2s ease; }",
           ".ag-banner:hover { border-color: rgba(56, 189, 248, 0.55); }",
           ".ag-banner:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }",
+          ".ag-banner--stopped, .ag-banner--amber { border-color: rgba(245, 158, 11, 0.45); }",
+          ".ag-banner--stopped:hover, .ag-banner--amber:hover { border-color: rgba(245, 158, 11, 0.65); }",
+          ".ag-banner--stopped:focus-visible, .ag-banner--amber:focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }",
+          ".ag-banner--stopped .ag-dot, .ag-banner--stopped .ag-dot-ping, .ag-banner--amber .ag-dot, .ag-banner--amber .ag-dot-ping { background: #fbbf24; }",
+          ".ag-banner--restarting, .ag-banner--cyan { border-color: rgba(56, 189, 248, 0.35); }",
+          ".ag-banner--restarting:hover, .ag-banner--cyan:hover { border-color: rgba(56, 189, 248, 0.55); }",
+          ".ag-banner--restarting:focus-visible, .ag-banner--cyan:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }",
+          ".ag-banner--restarting .ag-dot, .ag-banner--restarting .ag-dot-ping, .ag-banner--cyan .ag-dot, .ag-banner--cyan .ag-dot-ping { background: #38bdf8; }",
           ".ag-dot-wrapper { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 8px; height: 8px; flex-shrink: 0; margin: 0; padding: 0; }",
           ".ag-dot { position: relative; display: block; width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; flex-shrink: 0; }",
           ".ag-dot-ping { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 50%; background: #38bdf8; opacity: 0.75; animation: ag-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite; pointer-events: none; }",
@@ -840,7 +969,7 @@ export function generateAutoReloadScript(
         shadow.appendChild(style);
 
         var banner = document.createElement("div");
-        banner.className = "ag-banner";
+        banner.className = "ag-banner ag-banner--" + mode + (mode === "stopped" ? " ag-banner--amber" : " ag-banner--cyan");
         banner.setAttribute("role", "status");
         banner.setAttribute("aria-live", "polite");
         banner.setAttribute("aria-atomic", "true");
@@ -849,19 +978,34 @@ export function generateAutoReloadScript(
           message +
           "</span>";
         shadow.appendChild(banner);
+        host.__agBanner = banner;
         host.__agBannerText = banner.querySelector(".ag-text");
-      } else if (host.__agBannerText) {
-        host.__agBannerText.textContent = message;
+        host.dataset.mode = mode;
+      } else {
+        if (host.__agBanner) {
+          host.__agBanner.classList.remove("ag-banner--stopped", "ag-banner--amber", "ag-banner--restarting", "ag-banner--cyan");
+          host.__agBanner.classList.add("ag-banner--" + mode);
+          host.__agBanner.classList.add(mode === "stopped" ? "ag-banner--amber" : "ag-banner--cyan");
+        }
+        if (host.__agBannerText) {
+          host.__agBannerText.textContent = message;
+        }
+        host.dataset.mode = mode;
       }
     } catch (_) {}
   }
   var showBanner = mountReloadBanner;
+  try {
+    window.__agMountReloadBanner = mountReloadBanner;
+    window.__agUnmountReloadBanner = unmountReloadBanner;
+  } catch (_) {}
 
   function triggerReload() {
     if (reloading || window.__antigravitySessionRevoked) return;
     reloading = true;
-    mountReloadBanner(getCatalog().reconnectingBanner);
+    mountReloadBanner(getCatalog().relayStoppedBanner, "stopped");
 
+    var pollAttempts = 0;
     var check = function() {
       if (window.__antigravitySessionRevoked) {
         reloading = false;
@@ -876,19 +1020,24 @@ export function generateAutoReloadScript(
             unmountReloadBanner();
             return;
           }
-          var portChanged = data && data.upstreamPort && initialPort && data.upstreamPort !== initialPort;
-          var epochChanged = data && typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch;
-          var isHealthy = data && data.isRunning && data.upstreamPort && !data.isRestarting;
-
-          if (isHealthy && (portChanged || epochChanged || hasDeadSocket)) {
-            window.location.reload();
-          } else {
+          pollAttempts = 0;
+          if (data && data.isRestarting) {
+            mountReloadBanner(getCatalog().reconnectingBanner, "restarting");
             setTimeout(check, 1000);
+            return;
           }
+          if (data && data.isRunning && data.upstreamPort && !data.isRestarting) {
+            window.location.reload();
+            return;
+          }
+          setTimeout(check, 1000);
         })
         .catch(function() {
           if (!window.__antigravitySessionRevoked) {
-            setTimeout(check, 1000);
+            mountReloadBanner(getCatalog().relayStoppedBanner, "stopped");
+            pollAttempts++;
+            var delay = pollAttempts > 5 ? 3000 : 1000;
+            setTimeout(check, delay);
           } else {
             reloading = false;
             unmountReloadBanner();
@@ -913,6 +1062,9 @@ export function generateAutoReloadScript(
             if (data && (data.type === "SESSION_REVOKED" || data.revoked)) {
               handleRevocation(true);
             }
+            if (data && data.type === "RELAY_STOPPED") {
+              mountReloadBanner(getCatalog().relayStoppedBanner, "stopped");
+            }
           } catch (_) {}
         });
         this.addEventListener("close", function(event) {
@@ -923,7 +1075,7 @@ export function generateAutoReloadScript(
           if (typeof window === "undefined" || window.__antigravitySessionRevoked) {
             return;
           }
-          if (event.code === 1012 || event.code === 1006 || event.code === 1011) {
+          if (event.code === 1012 || event.code === 1006 || event.code === 1011 || event.code === 1000 || event.reason === "Server stopping") {
             hasDeadSocket = true;
             triggerReload();
           }
@@ -1058,16 +1210,24 @@ export function generatePairingHtml(
   const placeholder =
     lang === "id" ? "Masukkan kunci pemasangan..." : "Enter pairing key...";
   const button = lang === "id" ? "Pasangkan Perangkat" : "Pair Device";
+  const dataUri = getFavicon32DataUri();
 
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>${title}</title>
+  <meta name="theme-color" content="#090d16">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Antigravity">
+  <title>${title}</title>${dataUri ? `\n  <link rel="icon" type="image/png" sizes="32x32" href="${dataUri}">` : ""}
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="apple-touch-icon" href="/icon.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
+  <link rel="manifest" href="/manifest.json">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -1190,16 +1350,24 @@ export function generateRevokedHtml(
       ? "Kirim kunci pemasangan baru untuk menghubungkan kembali perangkat yang dicabut ini"
       : "Submit new pairing key to reconnect this revoked device";
   const connectingText = lang === "id" ? "Menghubungkan..." : "Connecting...";
+  const dataUri = getFavicon32DataUri();
 
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>${title}</title>
+  <meta name="theme-color" content="#090d16">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Antigravity">
+  <title>${title}</title>${dataUri ? `\n  <link rel="icon" type="image/png" sizes="32x32" href="${dataUri}">` : ""}
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="apple-touch-icon" href="/icon.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
+  <link rel="manifest" href="/manifest.json">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -1848,6 +2016,40 @@ export class RelayServer {
         .send(buffer);
     });
 
+    // Branded 192x192 PNG icon route for PWA
+    app.get("/icon-192.png", async (_request, reply) => {
+      const buffer = getIcon192Buffer();
+      if (!buffer) {
+        return reply.status(404).send("Not Found");
+      }
+      return reply
+        .header("Content-Type", "image/png")
+        .header("Cache-Control", "public, max-age=86400")
+        .send(buffer);
+    });
+
+    // Branded 512x512 PNG icon route for PWA
+    app.get("/icon-512.png", async (_request, reply) => {
+      const buffer = getIcon512Buffer();
+      if (!buffer) {
+        return reply.status(404).send("Not Found");
+      }
+      return reply
+        .header("Content-Type", "image/png")
+        .header("Cache-Control", "public, max-age=86400")
+        .send(buffer);
+    });
+
+    // Web app manifest routes for PWA
+    const serveManifest = async (_request: unknown, reply: any) => {
+      return reply
+        .header("Content-Type", "application/manifest+json; charset=utf-8")
+        .header("Cache-Control", "public, max-age=86400")
+        .send(getManifestJson());
+    };
+    app.get("/manifest.json", serveManifest);
+    app.get("/manifest.webmanifest", serveManifest);
+
     // Non-proxied status endpoint
     app.get("/api/status", async () => {
       return {
@@ -2271,21 +2473,37 @@ export class RelayServer {
             const rawHtml = await upstreamRes.body.text();
             let finalHtml = rawHtml;
 
-            // Regex-strip any existing <link rel="icon"...> or <link rel="shortcut icon"...> and <link rel="apple-touch-icon"...>
+            // Regex-strip any existing <link rel="icon"...> or <link rel="shortcut icon"...>, <link rel="apple-touch-icon"...>, and <link rel="manifest"...>
             finalHtml = finalHtml.replace(
-              /<link\b[^>]*?\brel=["'](?:(?:shortcut\s+)?icon|apple-touch-icon(?:-precomposed)?)["'][^>]*\/?>/gi,
+              /<link\b(?:[^>"']|"[^"]*"|'[^']*')*?\brel=["']?(?:(?:shortcut\s+)?icon|apple-touch-icon(?:-precomposed)?|manifest)["']?(?:[^>"']|"[^"]*"|'[^']*')*?\/?>/gi,
               "",
             );
 
-            const iconTags =
-              '<link rel="icon" type="image/x-icon" href="/favicon.ico">\n  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">\n  <link rel="apple-touch-icon" href="/icon.png">';
+            const dataUri = getFavicon32DataUri();
+            const pwaTags = [
+              dataUri
+                ? `<link rel="icon" type="image/png" sizes="32x32" href="${dataUri}">`
+                : "",
+              '<link rel="icon" type="image/x-icon" href="/favicon.ico">',
+              '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">',
+              '<link rel="apple-touch-icon" href="/icon.png">',
+              '<link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">',
+              '<link rel="manifest" href="/manifest.json">',
+              '<meta name="theme-color" content="#090d16">',
+              '<meta name="mobile-web-app-capable" content="yes">',
+              '<meta name="apple-mobile-web-app-capable" content="yes">',
+              '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
+              '<meta name="apple-mobile-web-app-title" content="Antigravity">',
+            ]
+              .filter(Boolean)
+              .join("\n  ");
 
             if (finalHtml.includes("<head>")) {
-              finalHtml = finalHtml.replace("<head>", `<head>\n  ${iconTags}`);
+              finalHtml = finalHtml.replace("<head>", `<head>\n  ${pwaTags}`);
             } else if (/<head[^>]*>/i.test(finalHtml)) {
               finalHtml = finalHtml.replace(
                 /<head[^>]*>/i,
-                (match) => `${match}\n  ${iconTags}`,
+                (match) => `${match}\n  ${pwaTags}`,
               );
             }
 
@@ -2467,6 +2685,12 @@ export class RelayServer {
     this.startedAt = undefined;
 
     this.portDiscovery.stop();
+
+    this.broadcastToClients({
+      type: "RELAY_STOPPED",
+      payload: {},
+      timestamp: Date.now(),
+    });
 
     for (const pair of this.activeWsConnections) {
       safeClose(pair.clientWs, 1000, "Server stopping");

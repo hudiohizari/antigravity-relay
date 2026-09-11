@@ -374,6 +374,7 @@ export type RemoteEventType =
   | "BUFFERING_ALERT"
   | "SWAP_RESUMED"
   | "SESSION_REVOKED"
+  | "RELAY_STOPPED"
   | "BUFFERED_ACK"
   | "ERROR";
 

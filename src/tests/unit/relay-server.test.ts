@@ -11,6 +11,10 @@ import {
   resetFaviconCache,
   getFaviconBuffer,
   getFavicon32Buffer,
+  getFavicon32DataUri,
+  getIcon192Buffer,
+  getIcon512Buffer,
+  getManifestJson,
 } from "@/modules/relay/relay-server";
 import { SessionManager } from "@/modules/relay/session-manager";
 import { UpstreamBridge } from "@/modules/relay/upstream-bridge";
@@ -149,10 +153,52 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(buffer.byteLength).toBeGreaterThan(0);
     });
 
-    it("injects icon link tags into proxied HTML responses", async () => {
+    it("serves /icon-192.png and /icon-512.png with image/png and 24h cache-control header", async () => {
+      const res192 = await fetch(`http://127.0.0.1:${relayPort}/icon-192.png`);
+      expect(res192.status).toBe(200);
+      expect(res192.headers.get("content-type")).toContain("image/png");
+      expect(res192.headers.get("cache-control")).toBe("public, max-age=86400");
+      const buf192 = await res192.arrayBuffer();
+      expect(buf192.byteLength).toBeGreaterThan(0);
+
+      const res512 = await fetch(`http://127.0.0.1:${relayPort}/icon-512.png`);
+      expect(res512.status).toBe(200);
+      expect(res512.headers.get("content-type")).toContain("image/png");
+      expect(res512.headers.get("cache-control")).toBe("public, max-age=86400");
+      const buf512 = await res512.arrayBuffer();
+      expect(buf512.byteLength).toBeGreaterThan(0);
+    });
+
+    it("serves /manifest.json and /manifest.webmanifest with valid PWA manifest JSON", async () => {
+      for (const endpoint of ["/manifest.json", "/manifest.webmanifest"]) {
+        const res = await fetch(`http://127.0.0.1:${relayPort}${endpoint}`);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("content-type")).toContain(
+          "application/manifest+json",
+        );
+        expect(res.headers.get("cache-control")).toBe("public, max-age=86400");
+        const json = await res.json();
+        expect(json.name).toBe("Antigravity Relay");
+        expect(json.short_name).toBe("Antigravity");
+        expect(json.start_url).toBe("/");
+        expect(json.display).toBe("standalone");
+        expect(json.background_color).toBe("#090d16");
+        expect(json.theme_color).toBe("#090d16");
+        expect(Array.isArray(json.icons)).toBe(true);
+        expect(json.icons.some((i: any) => i.src === "/icon-192.png")).toBe(
+          true,
+        );
+        expect(json.icons.some((i: any) => i.src === "/icon-512.png")).toBe(
+          true,
+        );
+      }
+    });
+
+    it("injects icon link tags and PWA metadata into proxied HTML responses", async () => {
       const res = await fetch(`http://127.0.0.1:${relayPort}/`);
       expect(res.status).toBe(200);
       const html = await res.text();
+      expect(html).toContain("data:image/png;base64,");
       expect(html).toContain(
         '<link rel="icon" type="image/x-icon" href="/favicon.ico">',
       );
@@ -160,9 +206,20 @@ describe("RelayServer Reverse Proxy Mirror", () => {
         '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">',
       );
       expect(html).toContain('<link rel="apple-touch-icon" href="/icon.png">');
+      expect(html).toContain(
+        '<link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">',
+      );
+      expect(html).toContain('<link rel="manifest" href="/manifest.json">');
+      expect(html).toContain('<meta name="theme-color" content="#090d16">');
+      expect(html).toContain(
+        '<meta name="apple-mobile-web-app-capable" content="yes">',
+      );
+      expect(html).toContain(
+        '<meta name="apple-mobile-web-app-title" content="Antigravity">',
+      );
     });
 
-    it("regex-strips pre-existing upstream icons and replaces with AR branded favicon tags", async () => {
+    it("regex-strips pre-existing upstream icons and replaces with AR branded favicon and PWA tags", async () => {
       const res = await fetch(
         `http://127.0.0.1:${relayPort}/upstream-icons.html`,
       );
@@ -172,13 +229,16 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       // Ensure upstream icons are completely stripped
       expect(html).not.toContain("https://upstream.org/logo.ico");
       expect(html).not.toContain("/legacy-touch.png");
+      expect(html).not.toContain("🎁");
+      expect(html).not.toContain("image/svg+xml");
 
       // Ensure non-icon link tags (e.g. stylesheets) are preserved
       expect(html).toContain(
         '<link rel="stylesheet" href="/compiled_tailwind.css">',
       );
 
-      // Ensure branded AR icon tags are injected
+      // Ensure branded AR icon tags and PWA manifest are injected
+      expect(html).toContain("data:image/png;base64,");
       expect(html).toContain(
         '<link rel="icon" type="image/x-icon" href="/favicon.ico">',
       );
@@ -186,22 +246,38 @@ describe("RelayServer Reverse Proxy Mirror", () => {
         '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">',
       );
       expect(html).toContain('<link rel="apple-touch-icon" href="/icon.png">');
+      expect(html).toContain('<link rel="manifest" href="/manifest.json">');
     });
 
-    it("resets and reloads cached favicon buffers via resetFaviconCache and forceReload", () => {
+    it("resets and reloads cached favicon and PWA icon buffers via resetFaviconCache and forceReload", () => {
       const initialFavicon = getFaviconBuffer();
       const initial32 = getFavicon32Buffer();
+      const initial192 = getIcon192Buffer();
+      const initial512 = getIcon512Buffer();
+      const initialDataUri = getFavicon32DataUri();
       expect(initialFavicon).not.toBeNull();
       expect(initial32).not.toBeNull();
+      expect(initial192).not.toBeNull();
+      expect(initial512).not.toBeNull();
+      expect(initialDataUri).toMatch(/^data:image\/png;base64,/);
 
       // Reset cache
       resetFaviconCache();
       const reloadedFavicon = getFaviconBuffer();
       const reloaded32 = getFavicon32Buffer(true);
+      const reloaded192 = getIcon192Buffer(true);
+      const reloaded512 = getIcon512Buffer(true);
+      const reloadedDataUri = getFavicon32DataUri(true);
       expect(reloadedFavicon).not.toBeNull();
       expect(reloaded32).not.toBeNull();
+      expect(reloaded192).not.toBeNull();
+      expect(reloaded512).not.toBeNull();
+      expect(reloadedDataUri).toMatch(/^data:image\/png;base64,/);
       expect(reloadedFavicon?.byteLength).toBe(initialFavicon?.byteLength);
       expect(reloaded32?.byteLength).toBe(initial32?.byteLength);
+      expect(reloaded192?.byteLength).toBe(initial192?.byteLength);
+      expect(reloaded512?.byteLength).toBe(initial512?.byteLength);
+      expect(reloadedDataUri).toBe(initialDataUri);
     });
 
     it("proxies static asset requests with correct Content-Type headers", async () => {
@@ -325,7 +401,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
           ws.send("ping-frame-1");
         });
 
-        ws.on("message", (data) => {
+        ws.once("message", (data) => {
           expect(data.toString()).toBe("ping-frame-1");
           ws.close();
           resolve();
@@ -582,7 +658,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
           newWs.on("open", () => {
             newWs.send("hello-new-upstream");
           });
-          newWs.on("message", (msg) => {
+          newWs.once("message", (msg) => {
             expect(msg.toString()).toBe("hello-new-upstream");
             newWs.close();
             resolve();
@@ -667,6 +743,65 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       await relayServer.stop();
       expect(relayServer.getStatus().isRunning).toBe(false);
       expect(() => relayServer.dispose()).not.toThrow();
+    });
+
+    it("broadcasts RELAY_STOPPED to all active client sessions before closing sockets on stop()", async () => {
+      const broadcastSpy = vi.spyOn(relayServer, "broadcastToClients");
+
+      const csrfToken = mockUpstream.getCsrfToken();
+      const testDeviceId = "dev_relay_stopped_broadcast_test";
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${relayPort}/connect-websocket`,
+        {
+          headers: {
+            "x-codeium-csrf-token": csrfToken,
+            cookie: `ag_device_id=${testDeviceId}`,
+          },
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        ws.once("open", () => resolve());
+        ws.on("error", reject);
+      });
+
+      const receivedMessages: any[] = [];
+      ws.on("message", (data) => {
+        try {
+          receivedMessages.push(JSON.parse(data.toString()));
+        } catch {
+          receivedMessages.push(data.toString());
+        }
+      });
+
+      const closePromise = new Promise<{ code: number; reason: string }>(
+        (resolve) => {
+          ws.once("close", (code, reason) => {
+            resolve({ code, reason: reason.toString() });
+          });
+        },
+      );
+
+      await relayServer.stop();
+
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "RELAY_STOPPED",
+          payload: {},
+          timestamp: expect.any(Number),
+        }),
+      );
+
+      const stoppedMessage = receivedMessages.find(
+        (msg) => msg && msg.type === "RELAY_STOPPED",
+      );
+      expect(stoppedMessage).toBeDefined();
+
+      const closeEvent = await closePromise;
+      expect(closeEvent.code).toBe(1000);
+      expect(closeEvent.reason).toBe("Server stopping");
+
+      broadcastSpy.mockRestore();
     });
   });
 
@@ -1351,6 +1486,70 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       );
       expect(script).toContain(
         'reconnectingBanner: "Antigravity memulai ulang, menghubungkan kembali..."',
+      );
+    });
+
+    it("contains localized relayStoppedBanner copy for English and Indonesian", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain(
+        'relayStoppedBanner: "Relay server stopped, waiting for server..."',
+      );
+      expect(script).toContain(
+        'relayStoppedBanner: "Server relay berhenti, menunggu server..."',
+      );
+    });
+
+    it("mountReloadBanner supports stopped and restarting visual modes", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain(".ag-banner--stopped");
+      expect(script).toContain("border-color: rgba(245, 158, 11, 0.45)");
+      expect(script).toContain("background: #fbbf24");
+      expect(script).toContain(".ag-banner--restarting");
+      expect(script).toContain("border-color: rgba(56, 189, 248, 0.35)");
+      expect(script).toContain("background: #38bdf8");
+
+      // Execute script in happy-dom
+      const scriptBody = script
+        .replace(/<script[^>]*>/, "")
+        .replace(/<\/script>/, "");
+      new Function(scriptBody)();
+
+      const mountFn = (window as any).__agMountReloadBanner;
+      const unmountFn = (window as any).__agUnmountReloadBanner;
+      expect(typeof mountFn).toBe("function");
+
+      // Stopped mode
+      mountFn(undefined, "stopped");
+      const host = document.getElementById("antigravity-reload-host") as any;
+      expect(host).not.toBeNull();
+      expect(host.dataset.mode).toBe("stopped");
+      expect(host.__agBanner.classList.contains("ag-banner--stopped")).toBe(
+        true,
+      );
+      expect(host.__agBannerText.textContent).toBe(
+        "Relay server stopped, waiting for server...",
+      );
+
+      // Transition to restarting mode
+      mountFn(undefined, "restarting");
+      expect(host.dataset.mode).toBe("restarting");
+      expect(host.__agBanner.classList.contains("ag-banner--restarting")).toBe(
+        true,
+      );
+      expect(host.__agBannerText.textContent).toBe(
+        "Antigravity restarting, reconnecting...",
+      );
+
+      // Clean up
+      unmountFn();
+      expect(document.getElementById("antigravity-reload-host")).toBeNull();
+    });
+
+    it("handles PatchedWS RELAY_STOPPED message in injected script", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain('data.type === "RELAY_STOPPED"');
+      expect(script).toContain(
+        'mountReloadBanner(getCatalog().relayStoppedBanner, "stopped")',
       );
     });
 
