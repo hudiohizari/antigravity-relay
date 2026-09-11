@@ -13,6 +13,7 @@ const ru = {
     running: "Antigravity работает в фоне",
     stopped: "Служба Antigravity остановлена",
     services: "Службы",
+    apps: "Приложения",
     antigravity: "Среда Antigravity",
     relay: "Relay-сервер",
     tunnel: "Туннель Cloudflare",

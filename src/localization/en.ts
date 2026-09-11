@@ -13,6 +13,7 @@ const en = {
     running: "Antigravity is running in background",
     stopped: "Antigravity service stopped",
     services: "Services",
+    apps: "Applications",
     antigravity: "Antigravity Runtime",
     relay: "Relay Server",
     tunnel: "Cloudflare Tunnel",

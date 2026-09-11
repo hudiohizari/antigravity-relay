@@ -13,6 +13,7 @@ const zhCn = {
     running: "Antigravity 正在后台运行",
     stopped: "Antigravity 服务已停止",
     services: "服务",
+    apps: "应用",
     antigravity: "Antigravity 运行时",
     relay: "中继服务器",
     tunnel: "Cloudflare 隧道",

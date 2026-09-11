@@ -13,6 +13,7 @@ const tr = {
     running: "Antigravity arka planda çalışıyor",
     stopped: "Antigravity hizmeti durduruldu",
     services: "Hizmetler",
+    apps: "Uygulamalar",
     antigravity: "Antigravity Çalışma Zamanı",
     relay: "Relay Sunucusu",
     tunnel: "Cloudflare Tüneli",

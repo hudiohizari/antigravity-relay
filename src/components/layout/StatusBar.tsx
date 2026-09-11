@@ -33,6 +33,8 @@ import { useTranslation } from "react-i18next";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -50,6 +52,7 @@ interface StatusBarProps {
 
 interface ManagedService {
   id: "relay" | "tunnel" | "classic" | "ide" | "agy";
+  type: "service" | "app";
   labelKey: string;
   icon: React.ElementType;
   isRunning: boolean;
@@ -367,6 +370,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const services: ManagedService[] = [
     {
       id: "relay",
+      type: "service",
       labelKey: "status.service_relay",
       icon: Server,
       ...relay,
@@ -374,6 +378,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     },
     {
       id: "tunnel",
+      type: "service",
       labelKey: "status.service_tunnel",
       icon: Cloud,
       ...tunnel,
@@ -382,6 +387,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     },
     {
       id: "classic",
+      type: "app",
       labelKey: "status.service_app",
       icon: Workflow,
       ...classic,
@@ -390,6 +396,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     },
     {
       id: "ide",
+      type: "app",
       labelKey: "status.service_ide",
       icon: Code,
       ...ide,
@@ -398,6 +405,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     },
     {
       id: "agy",
+      type: "app",
       labelKey: "status.service_cli",
       icon: Terminal,
       ...agy,
@@ -490,10 +498,33 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           </div>
           <div className="text-muted-foreground mt-0.5 text-xs">{summary}</div>
         </div>
-        <div className="space-y-1.5 pt-1.5">
-          {services.map((service) => (
-            <ServiceRow key={service.id} service={service} />
-          ))}
+
+        <DropdownMenuSeparator className="my-1.5 bg-border/60" />
+
+        <div className="space-y-1 pt-0.5">
+          <DropdownMenuLabel className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            {t("status.services")}
+          </DropdownMenuLabel>
+          <div className="space-y-1">
+            {services
+              .filter((service) => service.type === "service")
+              .map((service) => (
+                <ServiceRow key={service.id} service={service} />
+              ))}
+          </div>
+
+          <DropdownMenuSeparator className="my-2 bg-border/60" />
+
+          <DropdownMenuLabel className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            {t("status.apps")}
+          </DropdownMenuLabel>
+          <div className="space-y-1">
+            {services
+              .filter((service) => service.type === "app")
+              .map((service) => (
+                <ServiceRow key={service.id} service={service} />
+              ))}
+          </div>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

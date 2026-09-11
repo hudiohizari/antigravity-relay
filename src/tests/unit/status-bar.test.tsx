@@ -96,6 +96,18 @@ describe("StatusBar Component", () => {
     expect(screen.getByText("status.service_cli")).toBeDefined();
   });
 
+  it("renders distinct Services and Applications section labels with proper grouping", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <StatusBar defaultOpen={true} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("status.apps")).toBeDefined();
+    const serviceHeaders = screen.getAllByText("status.services");
+    expect(serviceHeaders.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("opens menu and renders all 5 services when DropdownMenuTrigger is clicked", async () => {
     render(
       <QueryClientProvider client={queryClient}>

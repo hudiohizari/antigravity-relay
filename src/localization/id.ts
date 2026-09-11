@@ -13,6 +13,7 @@ const id = {
     running: "Antigravity berjalan di latar belakang",
     stopped: "Layanan Antigravity berhenti",
     services: "Layanan",
+    apps: "Aplikasi",
     antigravity: "Runtime Antigravity",
     relay: "Server Relay",
     tunnel: "Tunnel Cloudflare",

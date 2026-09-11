@@ -15,6 +15,7 @@ const fr = {
     running: "Antigravity fonctionne en arriere-plan",
     stopped: "Service Antigravity arrete",
     services: "Services",
+    apps: "Applications",
     antigravity: "Runtime Antigravity",
     relay: "Serveur Relay",
     tunnel: "Tunnel Cloudflare",

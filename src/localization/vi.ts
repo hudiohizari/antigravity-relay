@@ -13,6 +13,7 @@ const vi = {
     running: "Antigravity đang chạy nền",
     stopped: "Dịch vụ Antigravity đã dừng",
     services: "Dịch vụ",
+    apps: "Ứng dụng",
     antigravity: "Runtime Antigravity",
     relay: "Máy chủ Relay",
     tunnel: "Cloudflare Tunnel",
