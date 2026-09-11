@@ -443,6 +443,79 @@ const fr = {
         "Exemple : --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Detecter",
     },
+    runtimes: {
+      title: "Environnements d execution",
+      description:
+        "Configurez les chemins des executables et les arguments de lancement des environnements Antigravity.",
+      target_app: "Antigravity App",
+      target_ide: "Antigravity IDE",
+      target_cli: "Antigravity CLI (agy)",
+      browse: "Parcourir",
+      clear: "Effacer",
+      detect: "Detecter",
+      detecting: "Detection...",
+      app: {
+        title: "Antigravity App",
+        executable: "Executable Antigravity App",
+        executable_desc:
+          "Chemin utilise pour trouver les donnees du mode portable et lancer Antigravity App.",
+        executable_placeholder:
+          "Exemple : C:\\Program Files\\Antigravity\\Antigravity.exe",
+        args: "Arguments de lancement Antigravity App",
+        args_desc:
+          "Arguments facultatifs transmis au lancement d Antigravity App, comme --user-data-dir.",
+        args_placeholder: "Exemple : --user-data-dir D:\\AntigravityProfile",
+        browse_aria: "Parcourir pour trouver l executable Antigravity App",
+        clear_path_aria: "Effacer le chemin de l executable Antigravity App",
+        clear_args_aria: "Effacer les arguments de lancement d Antigravity App",
+        detect_args: "Detecter",
+        detect_args_aria:
+          "Detecter les arguments de lancement depuis Antigravity App en cours d execution",
+      },
+      ide: {
+        title: "Antigravity IDE",
+        executable: "Executable Antigravity IDE",
+        executable_desc:
+          "Chemin utilise pour localiser et lancer les installations portables ou personnalisees d Antigravity IDE.",
+        executable_placeholder:
+          "Exemple : D:\\Tools\\AntigravityIDE\\AntigravityIDE.exe",
+        args: "Arguments de lancement Antigravity IDE",
+        args_desc:
+          "Arguments facultatifs transmis au lancement d Antigravity IDE, comme un dossier de donnees ou d extensions.",
+        args_placeholder:
+          "Exemple : --user-data-dir D:\\Tools\\AntigravityIDE\\data",
+        browse_aria: "Parcourir pour trouver l executable Antigravity IDE",
+        clear_path_aria: "Effacer le chemin de l executable Antigravity IDE",
+        clear_args_aria: "Effacer les arguments de lancement d Antigravity IDE",
+        detect_args: "Detecter",
+        detect_args_aria:
+          "Detecter les arguments de lancement depuis Antigravity IDE en cours d execution",
+      },
+      cli: {
+        title: "Antigravity CLI (agy)",
+        executable: "Executable Antigravity CLI (agy)",
+        executable_desc:
+          "Chemin utilise pour localiser le binaire agy lorsqu il n est pas present dans le PATH du systeme.",
+        executable_placeholder:
+          "Exemple : /usr/local/bin/agy ou ~/.local/bin/agy",
+        browse_aria: "Parcourir pour trouver l executable Antigravity CLI",
+        clear_path_aria: "Effacer le chemin de l executable Antigravity CLI",
+      },
+      toast: {
+        success_title: "Arguments detectes",
+        success_desc:
+          "Arguments de lancement detectes et appliques depuis {{target}} en cours d execution.",
+        empty_title: "Arguments par defaut actifs",
+        empty_desc:
+          "{{target}} s execute avec les arguments par defaut (aucun argument detecte).",
+        not_running_title: "Processus non lance",
+        not_running_desc:
+          "Aucun processus {{target}} en cours d execution n a ete detecte. Les arguments existants sont conserves.",
+        error_title: "Echec de la detection",
+        error_desc:
+          "Impossible d inspecter les arguments du processus en cours d execution pour {{target}}.",
+      },
+    },
     startup: {
       title: "Demarrage",
       description:

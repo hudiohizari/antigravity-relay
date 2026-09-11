@@ -1,10 +1,55 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { NetworkInterfaceInfo } from "os";
+import { createRouterClient } from "@orpc/server";
+import type { RunningAntigravityProcess } from "@/shared/platform/paths";
+
+const { showOpenDialogMock } = vi.hoisted(() => ({
+  showOpenDialogMock: vi.fn(),
+}));
+
+vi.mock("electron", () => ({
+  dialog: {
+    showOpenDialog: showOpenDialogMock,
+  },
+  shell: {
+    openPath: vi.fn(),
+  },
+}));
+
+const {
+  refreshAntigravityProcessCacheMock,
+  getRunningAntigravityProcessesMock,
+  getAntigravityLaunchArgsFromRunningProcessMock,
+} = vi.hoisted(() => ({
+  refreshAntigravityProcessCacheMock: vi.fn<
+    (...args: unknown[]) => Promise<void>
+  >(async () => {}),
+  getRunningAntigravityProcessesMock: vi.fn<
+    (...args: unknown[]) => RunningAntigravityProcess[]
+  >(() => []),
+  getAntigravityLaunchArgsFromRunningProcessMock: vi.fn<
+    (...args: unknown[]) => string[]
+  >(() => []),
+}));
+
+vi.mock("@/shared/platform/paths", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/shared/platform/paths")>();
+  return {
+    ...actual,
+    refreshAntigravityProcessCache: refreshAntigravityProcessCacheMock,
+    getRunningAntigravityProcesses: getRunningAntigravityProcessesMock,
+    getAntigravityLaunchArgsFromRunningProcess:
+      getAntigravityLaunchArgsFromRunningProcessMock,
+  };
+});
+
 import {
   isRfc1918Address,
   isVirtualAdapter,
   isLanInterfaceName,
   resolveLocalIps,
+  systemHandler,
 } from "@/modules/app-shell/ipc/system/handler";
 
 describe("System Handler LAN Interface Detection & RFC1918 Recognition", () => {
@@ -216,6 +261,204 @@ describe("System Handler LAN Interface Detection & RFC1918 Recognition", () => {
         address: "127.0.0.1",
         name: "loopback",
         isRecommended: false,
+      });
+    });
+  });
+});
+
+describe("systemHandler IPC Router", () => {
+  const client = createRouterClient(systemHandler);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("selectAntigravityExecutable", () => {
+    const originalPlatform = process.platform;
+
+    afterEach(() => {
+      Object.defineProperty(process, "platform", {
+        value: originalPlatform,
+        configurable: true,
+      });
+    });
+
+    it("should configure dialog with showHiddenFiles and CLI app name for cli target", async () => {
+      showOpenDialogMock.mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ["/Users/test/.local/bin/agy"],
+      });
+
+      const result = await client.selectAntigravityExecutable({
+        target: "cli",
+      });
+
+      expect(result).toBe("/Users/test/.local/bin/agy");
+      expect(showOpenDialogMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          properties: ["openFile", "showHiddenFiles"],
+          filters: [
+            {
+              name: "Antigravity CLI (agy) executable",
+              extensions: expect.any(Array),
+            },
+          ],
+        }),
+      );
+    });
+
+    it("should configure dialog with IDE app name for ide target", async () => {
+      showOpenDialogMock.mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ["/Applications/Antigravity IDE.app"],
+      });
+
+      const result = await client.selectAntigravityExecutable({
+        target: "ide",
+      });
+
+      expect(result).toBe("/Applications/Antigravity IDE.app");
+      expect(showOpenDialogMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          properties: ["openFile", "showHiddenFiles"],
+          filters: [
+            {
+              name: "Antigravity IDE executable",
+              extensions: expect.any(Array),
+            },
+          ],
+        }),
+      );
+    });
+
+    it("should configure dialog with classic App name for app target or undefined", async () => {
+      showOpenDialogMock.mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ["/Applications/Antigravity.app"],
+      });
+
+      const result = await client.selectAntigravityExecutable();
+
+      expect(result).toBe("/Applications/Antigravity.app");
+      expect(showOpenDialogMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          properties: ["openFile", "showHiddenFiles"],
+          filters: [
+            {
+              name: "Antigravity executable",
+              extensions: expect.any(Array),
+            },
+          ],
+        }),
+      );
+    });
+
+    it("should use Windows extensions exe, cmd, bat on win32", async () => {
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+        configurable: true,
+      });
+
+      showOpenDialogMock.mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ["C:\\Users\\test\\.local\\bin\\agy.cmd"],
+      });
+
+      await client.selectAntigravityExecutable({ target: "cli" });
+
+      expect(showOpenDialogMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          properties: ["openFile", "showHiddenFiles"],
+          filters: [
+            {
+              name: "Antigravity CLI (agy) executable",
+              extensions: ["exe", "cmd", "bat"],
+            },
+          ],
+        }),
+      );
+    });
+
+    it("should return null when dialog is canceled", async () => {
+      showOpenDialogMock.mockResolvedValueOnce({
+        canceled: true,
+        filePaths: [],
+      });
+
+      const result = await client.selectAntigravityExecutable({
+        target: "ide",
+      });
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("getAntigravityArgs", () => {
+    it("should call refreshAntigravityProcessCache and return running: false when process is not running", async () => {
+      getRunningAntigravityProcessesMock.mockReturnValueOnce([]);
+      getAntigravityLaunchArgsFromRunningProcessMock.mockReturnValueOnce([]);
+
+      const result = await client.getAntigravityArgs({ target: "ide" });
+
+      expect(refreshAntigravityProcessCacheMock).toHaveBeenCalledWith("ide");
+      expect(result).toEqual({
+        running: false,
+        args: [],
+      });
+    });
+
+    it("should return running: true and empty args when process is running without extra args", async () => {
+      getRunningAntigravityProcessesMock.mockReturnValueOnce([
+        {
+          pid: 1234,
+          name: "Antigravity IDE",
+          executablePath: "/path/to/ide",
+          commandLine: "/path/to/ide",
+        },
+      ]);
+      getAntigravityLaunchArgsFromRunningProcessMock.mockReturnValueOnce([]);
+
+      const result = await client.getAntigravityArgs({ target: "ide" });
+
+      expect(refreshAntigravityProcessCacheMock).toHaveBeenCalledWith("ide");
+      expect(result).toEqual({
+        running: true,
+        args: [],
+      });
+    });
+
+    it("should return running: true and parsed args when process is running with custom arguments", async () => {
+      getRunningAntigravityProcessesMock.mockReturnValueOnce([
+        {
+          pid: 5678,
+          name: "Antigravity IDE",
+          executablePath: "/path/to/ide",
+          commandLine: "/path/to/ide --user-data-dir /tmp/dir",
+        },
+      ]);
+      getAntigravityLaunchArgsFromRunningProcessMock.mockReturnValueOnce([
+        "--user-data-dir",
+        "/tmp/dir",
+      ]);
+
+      const result = await client.getAntigravityArgs({ target: "ide" });
+
+      expect(refreshAntigravityProcessCacheMock).toHaveBeenCalledWith("ide");
+      expect(result).toEqual({
+        running: true,
+        args: ["--user-data-dir", "/tmp/dir"],
+      });
+    });
+
+    it("should default to app target when target is omitted", async () => {
+      getRunningAntigravityProcessesMock.mockReturnValueOnce([]);
+      getAntigravityLaunchArgsFromRunningProcessMock.mockReturnValueOnce([]);
+
+      const result = await client.getAntigravityArgs();
+
+      expect(refreshAntigravityProcessCacheMock).toHaveBeenCalledWith("app");
+      expect(result).toEqual({
+        running: false,
+        args: [],
       });
     });
   });

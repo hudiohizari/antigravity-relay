@@ -424,6 +424,79 @@ const vi = {
         "Ví dụ: --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Phát hiện",
     },
+    runtimes: {
+      title: "Môi trường thực thi",
+      description:
+        "Cấu hình đường dẫn tệp thực thi và tham số khởi chạy cho các môi trường Antigravity.",
+      target_app: "Antigravity App",
+      target_ide: "Antigravity IDE",
+      target_cli: "Antigravity CLI (agy)",
+      browse: "Duyệt",
+      clear: "Xóa",
+      detect: "Phát hiện",
+      detecting: "Đang phát hiện...",
+      app: {
+        title: "Antigravity App",
+        executable: "Tệp chạy Antigravity App",
+        executable_desc:
+          "Đường dẫn dùng để tìm dữ liệu portable mode và khởi chạy Antigravity App.",
+        executable_placeholder:
+          "Ví dụ: C:\\Program Files\\Antigravity\\Antigravity.exe",
+        args: "Tham số khởi chạy Antigravity App",
+        args_desc:
+          "Tham số tùy chọn khi khởi chạy Antigravity App, ví dụ --user-data-dir.",
+        args_placeholder: "Ví dụ: --user-data-dir D:\\AntigravityProfile",
+        browse_aria: "Duyệt tìm tệp chạy Antigravity App",
+        clear_path_aria: "Xóa đường dẫn tệp chạy Antigravity App",
+        clear_args_aria: "Xóa tham số khởi chạy Antigravity App",
+        detect_args: "Phát hiện",
+        detect_args_aria:
+          "Phát hiện tham số khởi chạy từ Antigravity App đang chạy",
+      },
+      ide: {
+        title: "Antigravity IDE",
+        executable: "Tệp chạy Antigravity IDE",
+        executable_desc:
+          "Đường dẫn dùng để định vị và khởi chạy bản cài đặt Antigravity IDE di động hoặc tùy chỉnh.",
+        executable_placeholder:
+          "Ví dụ: D:\\Tools\\AntigravityIDE\\AntigravityIDE.exe",
+        args: "Tham số khởi chạy Antigravity IDE",
+        args_desc:
+          "Tham số tùy chọn khi khởi chạy Antigravity IDE, ví dụ thư mục dữ liệu hoặc tiện ích mở rộng tùy chỉnh.",
+        args_placeholder:
+          "Ví dụ: --user-data-dir D:\\Tools\\AntigravityIDE\\data",
+        browse_aria: "Duyệt tìm tệp chạy Antigravity IDE",
+        clear_path_aria: "Xóa đường dẫn tệp chạy Antigravity IDE",
+        clear_args_aria: "Xóa tham số khởi chạy Antigravity IDE",
+        detect_args: "Phát hiện",
+        detect_args_aria:
+          "Phát hiện tham số khởi chạy từ Antigravity IDE đang chạy",
+      },
+      cli: {
+        title: "Antigravity CLI (agy)",
+        executable: "Tệp chạy Antigravity CLI (agy)",
+        executable_desc:
+          "Đường dẫn dùng để định vị tệp nhị phân dòng lệnh agy khi không có trong PATH hệ thống.",
+        executable_placeholder:
+          "Ví dụ: /usr/local/bin/agy hoặc ~/.local/bin/agy",
+        browse_aria: "Duyệt tìm tệp chạy Antigravity CLI",
+        clear_path_aria: "Xóa đường dẫn tệp chạy Antigravity CLI",
+      },
+      toast: {
+        success_title: "Đã phát hiện tham số",
+        success_desc:
+          "Đã phát hiện và áp dụng tham số khởi chạy từ {{target}} đang chạy.",
+        empty_title: "Tham số mặc định đang hoạt động",
+        empty_desc:
+          "{{target}} đang chạy với các tham số mặc định (không phát hiện tham số tùy chỉnh).",
+        not_running_title: "Tiến trình không chạy",
+        not_running_desc:
+          "Không phát hiện tiến trình {{target}} đang chạy. Các tham số hiện tại được giữ nguyên.",
+        error_title: "Phát hiện thất bại",
+        error_desc:
+          "Không thể kiểm tra tham số tiến trình đang chạy của {{target}}.",
+      },
+    },
     startup: {
       title: "Khởi động",
       description: "Điều khiển hành vi khởi động cùng hệ thống.",

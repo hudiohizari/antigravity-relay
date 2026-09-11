@@ -5,6 +5,8 @@ import { dialog, shell } from "electron";
 import {
   getAgentDir,
   getAntigravityLaunchArgsFromRunningProcess,
+  getRunningAntigravityProcesses,
+  refreshAntigravityProcessCache,
 } from "@/shared/platform/paths";
 import {
   AntigravityAppTargetSchema,
@@ -56,13 +58,19 @@ export const systemHandler = os.router({
     .output(z.string().nullable())
     .handler(async ({ input }) => {
       const target = resolveAntigravityAppTarget(input?.target);
-      const appName = target === "ide" ? "Antigravity IDE" : "Antigravity";
+      const appName =
+        target === "ide"
+          ? "Antigravity IDE"
+          : target === "cli"
+            ? "Antigravity CLI (agy)"
+            : "Antigravity";
       const result = await dialog.showOpenDialog({
-        properties: ["openFile"],
+        properties: ["openFile", "showHiddenFiles"],
         filters: [
           {
             name: `${appName} executable`,
-            extensions: process.platform === "win32" ? ["exe"] : ["*"],
+            extensions:
+              process.platform === "win32" ? ["exe", "cmd", "bat"] : ["*"],
           },
         ],
       });
@@ -74,8 +82,19 @@ export const systemHandler = os.router({
     .input(
       z.object({ target: AntigravityAppTargetSchema.optional() }).optional(),
     )
-    .output(z.array(z.string()))
+    .output(
+      z.object({
+        running: z.boolean(),
+        args: z.array(z.string()),
+      }),
+    )
     .handler(async ({ input }) => {
-      return getAntigravityLaunchArgsFromRunningProcess(input?.target);
+      const target = resolveAntigravityAppTarget(input?.target);
+      await refreshAntigravityProcessCache(target);
+      const runningProcesses = getRunningAntigravityProcesses(target);
+      return {
+        running: runningProcesses.length > 0,
+        args: getAntigravityLaunchArgsFromRunningProcess(target),
+      };
     }),
 });

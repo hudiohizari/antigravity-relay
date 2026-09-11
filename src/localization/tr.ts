@@ -425,6 +425,81 @@ const tr = {
         "Örnek: --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Algıla",
     },
+    runtimes: {
+      title: "Ortam Çalışma Zamanları",
+      description:
+        "Antigravity masaüstü ortamları için çalıştırılabilir dosya yollarını ve başlatma argümanlarını yapılandırın.",
+      target_app: "Antigravity App",
+      target_ide: "Antigravity IDE",
+      target_cli: "Antigravity CLI (agy)",
+      browse: "Gözat",
+      clear: "Temizle",
+      detect: "Algıla",
+      detecting: "Algılanıyor...",
+      app: {
+        title: "Antigravity App",
+        executable: "Antigravity App Çalıştırılabilir Dosyası",
+        executable_desc:
+          "Portable mode verilerini bulmak ve Antigravity App uygulamasını başlatmak için kullanılan yol.",
+        executable_placeholder:
+          "Örnek: C:\\Program Files\\Antigravity\\Antigravity.exe",
+        args: "Antigravity App Başlatma Argümanları",
+        args_desc:
+          "Antigravity App başlatılırken iletilecek isteğe bağlı argümanlar, örneğin --user-data-dir.",
+        args_placeholder: "Örnek: --user-data-dir D:\\AntigravityProfile",
+        browse_aria: "Antigravity App çalıştırılabilir dosyasına gözat",
+        clear_path_aria:
+          "Antigravity App çalıştırılabilir dosya yolunu temizle",
+        clear_args_aria: "Antigravity App başlatma argümanlarını temizle",
+        detect_args: "Algıla",
+        detect_args_aria:
+          "Çalışan Antigravity App üzerinden başlatma argümanlarını algıla",
+      },
+      ide: {
+        title: "Antigravity IDE",
+        executable: "Antigravity IDE Çalıştırılabilir Dosyası",
+        executable_desc:
+          "Taşınabilir veya özel Antigravity IDE kurulumlarını bulmak ve başlatmak için kullanılan yol.",
+        executable_placeholder:
+          "Örnek: D:\\Tools\\AntigravityIDE\\AntigravityIDE.exe",
+        args: "Antigravity IDE Başlatma Argümanları",
+        args_desc:
+          "Antigravity IDE başlatılırken iletilecek isteğe bağlı argümanlar, örneğin özel veri veya eklenti dizinleri.",
+        args_placeholder:
+          "Örnek: --user-data-dir D:\\Tools\\AntigravityIDE\\data",
+        browse_aria: "Antigravity IDE çalıştırılabilir dosyasına gözat",
+        clear_path_aria:
+          "Antigravity IDE çalıştırılabilir dosya yolunu temizle",
+        clear_args_aria: "Antigravity IDE başlatma argümanlarını temizle",
+        detect_args: "Algıla",
+        detect_args_aria:
+          "Çalışan Antigravity IDE üzerinden başlatma argümanlarını algıla",
+      },
+      cli: {
+        title: "Antigravity CLI (agy)",
+        executable: "Antigravity CLI (agy) Çalıştırılabilir Dosyası",
+        executable_desc:
+          "Sistem PATH ortamında bulunmadığında agy komut satırı ikili dosyasını bulmak için kullanılan yol.",
+        executable_placeholder:
+          "Örnek: /usr/local/bin/agy veya ~/.local/bin/agy",
+        browse_aria: "Antigravity CLI çalıştırılabilir dosyasına gözat",
+        clear_path_aria:
+          "Antigravity CLI çalıştırılabilir dosya yolunu temizle",
+      },
+      toast: {
+        success_title: "Argümanlar Algılandı",
+        success_desc:
+          "Çalışan {{target}} üzerinden başlatma argümanları algılandı ve uygulandı.",
+        empty_title: "Varsayılan Argümanlar Etkin",
+        empty_desc:
+          "{{target}} varsayılan argümanlarla çalışıyor (özel argüman algılanmadı).",
+        not_running_title: "İşlem Çalışmıyor",
+        not_running_desc:
+          "Çalışan bir {{target}} işlemi algılanmadı. Mevcut argümanlar korundu.",
+        error_title: "Algılama Başarısız",
+        error_desc: "{{target}} için çalışan işlem argümanları incelenemedi.",
+      },
+    },
     startup: {
       title: "Başlangıç",
       description:

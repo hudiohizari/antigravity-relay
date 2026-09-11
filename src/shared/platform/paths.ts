@@ -4,7 +4,10 @@ import fs from "fs";
 import { execSync } from "child_process";
 import findProcess, { type ProcessInfo } from "find-process";
 import { z } from "zod";
-import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import type {
+  AntigravityAppTarget,
+  CanonicalAntigravityAppTarget,
+} from "@/shared/platform/antigravityAppTarget";
 import { resolveAntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 import { detectAgyCliExecutablePath } from "@/modules/antigravity-runtime/binary-patch/agyCliPathDetection";
 
@@ -13,6 +16,7 @@ type PathApi = Pick<typeof path, "dirname" | "join" | "normalize" | "resolve">;
 const AntigravityRelayConfigSchema = z.object({
   antigravity_executable: z.string().nullable().optional(),
   antigravity_ide_executable: z.string().nullable().optional(),
+  antigravity_cli_executable: z.string().nullable().optional(),
   antigravity_args: z.array(z.string()).optional(),
   antigravity_ide_args: z.array(z.string()).optional(),
 });
@@ -245,6 +249,11 @@ export function isTargetAntigravityProcessCandidate(
     false,
     options,
   );
+  const configuredCliPath = getConfiguredAntigravityExecutablePath(
+    "cli",
+    false,
+    options,
+  );
   const strictConfiguredClassicPath = getConfiguredAntigravityExecutablePath(
     "classic",
     true,
@@ -301,7 +310,14 @@ export function isTargetAntigravityProcessCandidate(
     nameLower === "agy" ||
     nameLower === "agy.exe" ||
     commandBase === "agy" ||
-    commandBase === "agy.exe";
+    commandBase === "agy.exe" ||
+    (configuredCliPath !== null &&
+      processExecutablePath !== "" &&
+      areExecutablePathsEquivalent(
+        configuredCliPath,
+        processExecutablePath,
+        options,
+      ));
 
   if (normalizedTarget === "cli" || normalizedTarget === ("agy" as any)) {
     return isAgyBinary;
@@ -347,6 +363,18 @@ export function isConfiguredTargetExecutableProcessCandidate(
   const executablePath = processItem.executablePath || "";
   if (!executablePath) {
     return false;
+  }
+
+  if (normalizedTarget === "cli") {
+    const configuredCliPath = getConfiguredAntigravityExecutablePath(
+      "cli",
+      true,
+      options,
+    );
+    return (
+      configuredCliPath !== null &&
+      areExecutablePathsEquivalent(configuredCliPath, executablePath, options)
+    );
   }
 
   const configuredClassicPath = getConfiguredAntigravityExecutablePath(
@@ -499,7 +527,7 @@ function resolveExecutablePathFromProcessInfo(
   return executableCandidate;
 }
 
-function readAntigravityRelayConfig(
+export function readAntigravityRelayConfig(
   options?: PathResolutionOptions,
 ): AntigravityRelayConfig | null {
   const pathApi = getCurrentPlatformPathApi(options);
@@ -529,22 +557,32 @@ function readAntigravityRelayConfig(
   return null;
 }
 
-interface RunningAntigravityProcess {
+export interface RunningAntigravityProcess {
   pid: number;
   name: string;
   executablePath: string;
   commandLine: string;
 }
 
+export interface RunningProcessCacheEntry {
+  platform: NodeJS.Platform;
+  target: CanonicalAntigravityAppTarget;
+  checkedAt: number;
+  processes: RunningAntigravityProcess[];
+}
+
 const PROCESS_SCAN_TIMEOUT_MS = 2500;
 const PROCESS_SCAN_CACHE_MS = 60000;
 const CONFIG_FILENAME = "gui_config.json";
-let runningProcessCache: {
-  platform: NodeJS.Platform;
-  target: AntigravityAppTarget;
-  checkedAt: number;
-  processes: RunningAntigravityProcess[];
-} | null = null;
+
+export const runningProcessCache = new Map<
+  CanonicalAntigravityAppTarget,
+  RunningProcessCacheEntry
+>();
+
+export function clearRunningProcessCache(): void {
+  runningProcessCache.clear();
+}
 
 interface RefreshProcessCacheOptions extends PathResolutionOptions {
   includeAllProcesses?: boolean;
@@ -569,10 +607,13 @@ function getProcessSearchNames(
   target?: AntigravityAppTarget | null,
   includeAllProcesses = false,
 ): string[] {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
   const searchNames =
-    resolveAntigravityAppTarget(target) === "ide"
+    resolvedTarget === "ide"
       ? ["Antigravity IDE", "antigravity-ide", "Antigravity", "antigravity"]
-      : ["Antigravity", "antigravity"];
+      : resolvedTarget === "cli"
+        ? ["agy", "agy.exe"]
+        : ["Antigravity", "antigravity"];
 
   if (includeAllProcesses) {
     searchNames.push("");
@@ -604,60 +645,90 @@ export async function refreshAntigravityProcessCache(
   options: RefreshProcessCacheOptions = {},
 ): Promise<void> {
   const resolvedTarget = resolveAntigravityAppTarget(target);
-
   const processMap = new Map<number, RunningAntigravityProcess>();
-
-  for (const searchName of getProcessSearchNames(
+  const searchNames = getProcessSearchNames(
     target,
     options.includeAllProcesses,
-  )) {
-    try {
-      const matches = await withTimeout(
-        findProcess("name", searchName, {
-          strict: false,
-          logLevel: "error",
-        }),
-        PROCESS_SCAN_TIMEOUT_MS,
-      );
+  );
+  const startTime = Date.now();
 
-      for (const processInfo of matches) {
-        const runningProcess = processInfoToRunningProcess(processInfo);
-        if (
-          runningProcess.pid > 0 &&
-          isTargetAntigravityProcessCandidate(runningProcess, target, options)
-        ) {
-          processMap.set(runningProcess.pid, runningProcess);
+  try {
+    await withTimeout(
+      (async () => {
+        for (const searchName of searchNames) {
+          const elapsed = Date.now() - startTime;
+          const remaining = PROCESS_SCAN_TIMEOUT_MS - elapsed;
+          if (remaining <= 0) {
+            break;
+          }
+
+          try {
+            const matches = await withTimeout(
+              findProcess("name", searchName, {
+                strict: false,
+                logLevel: "error",
+              }),
+              remaining,
+            );
+
+            for (const processInfo of matches) {
+              const runningProcess = processInfoToRunningProcess(processInfo);
+              if (
+                runningProcess.pid > 0 &&
+                isTargetAntigravityProcessCandidate(
+                  runningProcess,
+                  target,
+                  options,
+                )
+              ) {
+                processMap.set(runningProcess.pid, runningProcess);
+              }
+            }
+          } catch {
+            // Process discovery is opportunistic. Standard and portable path fallbacks still apply.
+          }
         }
-      }
-    } catch {
-      // Process discovery is opportunistic. Standard and portable path fallbacks still apply.
-    }
+      })(),
+      PROCESS_SCAN_TIMEOUT_MS,
+    );
+  } catch {
+    // Process discovery is opportunistic. Standard and portable path fallbacks still apply.
   }
 
-  runningProcessCache = {
-    platform: process.platform,
+  runningProcessCache.set(resolvedTarget, {
+    platform: getCurrentPlatform(options),
     target: resolvedTarget,
     checkedAt: Date.now(),
     processes: Array.from(processMap.values()),
-  };
+  });
 }
 
-function getRunningAntigravityProcesses(
+export function getRunningAntigravityProcesses(
   target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
 ): RunningAntigravityProcess[] {
   const resolvedTarget = resolveAntigravityAppTarget(target);
   const now = Date.now();
+  const currentPlatform = getCurrentPlatform(options);
+  const entry = runningProcessCache.get(resolvedTarget);
 
   if (
-    runningProcessCache &&
-    runningProcessCache.platform === process.platform &&
-    runningProcessCache.target === resolvedTarget &&
-    now - runningProcessCache.checkedAt < PROCESS_SCAN_CACHE_MS
+    entry &&
+    entry.platform === currentPlatform &&
+    entry.target === resolvedTarget &&
+    now - entry.checkedAt < PROCESS_SCAN_CACHE_MS
   ) {
-    return runningProcessCache.processes;
+    return entry.processes;
   }
 
   return [];
+}
+
+export function isAntigravityProcessRunning(
+  target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
+): boolean {
+  return getRunningAntigravityProcesses(target, options).length > 0;
 }
 
 function getUserDataDirFromRunningProcess(
@@ -674,6 +745,7 @@ function getUserDataDirFromRunningProcess(
 
   for (const commandLineArguments of getAntigravityArgsFromRunningProcess(
     target,
+    options,
   )) {
     const userDataDir = extractUserDataDirectoryFromArgs(
       commandLineArguments,
@@ -689,8 +761,9 @@ function getUserDataDirFromRunningProcess(
 
 function getExecutablePathFromRunningProcess(
   target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
 ): string | null {
-  for (const processItem of getRunningAntigravityProcesses(target)) {
+  for (const processItem of getRunningAntigravityProcesses(target, options)) {
     if (
       processItem.executablePath &&
       fs.existsSync(processItem.executablePath)
@@ -704,16 +777,20 @@ function getExecutablePathFromRunningProcess(
 
 export function getAntigravityArgsFromRunningProcess(
   target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
 ): string[][] {
-  return getRunningAntigravityProcesses(target)
+  return getRunningAntigravityProcesses(target, options)
     .map((processItem) => parseCommandLineArguments(processItem.commandLine))
     .filter((commandLineArguments) => commandLineArguments.length > 0);
 }
 
 export function getAntigravityLaunchArgsFromRunningProcess(
   target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
 ): string[] {
-  return getAntigravityArgsFromRunningProcess(target)[0]?.slice(1) || [];
+  return (
+    getAntigravityArgsFromRunningProcess(target, options)[0]?.slice(1) || []
+  );
 }
 
 export function getConfiguredAntigravityArgs(
@@ -730,16 +807,19 @@ export function getConfiguredAntigravityArgs(
   return configuredArgs ?? [];
 }
 
-function getConfiguredAntigravityExecutablePath(
+export function getConfiguredAntigravityExecutablePath(
   target?: AntigravityAppTarget | null,
   requireExists = true,
   options?: PathResolutionOptions,
 ): string | null {
   const rawConfig = readAntigravityRelayConfig(options);
+  const resolvedTarget = resolveAntigravityAppTarget(target);
   const configKey =
-    resolveAntigravityAppTarget(target) === "ide"
+    resolvedTarget === "ide"
       ? "antigravity_ide_executable"
-      : "antigravity_executable";
+      : resolvedTarget === "cli"
+        ? "antigravity_cli_executable"
+        : "antigravity_executable";
   const configuredPath = rawConfig?.[configKey];
 
   const executablePath = configuredPath?.trim();
@@ -1327,14 +1407,20 @@ export function getAntigravityExecutablePath(
 ): string {
   const resolvedTarget = resolveAntigravityAppTarget(target);
   if (resolvedTarget === "cli" || resolvedTarget === ("agy" as any)) {
+    const configuredPath =
+      readAntigravityRelayConfig(options)?.antigravity_cli_executable ?? null;
     return (
       detectAgyCliExecutablePath({
         platform: getCurrentPlatform(options),
+        configuredPath,
       }) ?? ""
     );
   }
   const executableName = getAntigravityAppFolderName(target);
-  const runningExecutablePath = getExecutablePathFromRunningProcess(target);
+  const runningExecutablePath = getExecutablePathFromRunningProcess(
+    target,
+    options,
+  );
 
   if (runningExecutablePath) {
     rememberRunningExecutablePath(resolvedTarget, runningExecutablePath);

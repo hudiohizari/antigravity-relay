@@ -30,33 +30,14 @@ import { useTranslation } from "react-i18next";
 import { setAppLanguage } from "@/modules/app-shell/actions/language";
 import { useAppConfig } from "@/modules/config/hooks/useAppConfig";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, FolderOpen, RefreshCw, X } from "lucide-react";
+import { Loader2, FolderOpen, RefreshCw } from "lucide-react";
 import { ModelVisibilitySettings } from "@/modules/config/components/ModelVisibilitySettings";
 import { AutoSwitchModelSettings } from "@/modules/cloud-account/components/AutoSwitchModelSettings";
 import { WeeklyWarmupSettings } from "@/modules/cloud-account/components/WeeklyWarmupSettings";
 import { useEffect, useState } from "react";
-import {
-  getAntigravityArgs,
-  openLogDirectory,
-  selectAntigravityExecutable,
-} from "@/modules/antigravity-runtime/actions/system";
+import { openLogDirectory } from "@/modules/antigravity-runtime/actions/system";
 import { AntigravityClientCacheSettings } from "@/modules/antigravity-runtime/components/AntigravityClientCacheSettings";
-
-function parseArgsInput(value: string): string[] {
-  const args: string[] = [];
-  const regex = /[^\s"']+|"([^"]*)"|'([^']*)'/gu;
-  let match: RegExpExecArray | null = regex.exec(value);
-
-  while (match !== null) {
-    const matchedToken = match[1] ?? match[2] ?? match[0];
-    if (matchedToken) {
-      args.push(matchedToken);
-    }
-    match = regex.exec(value);
-  }
-
-  return args;
-}
+import { RuntimeTargetSettings } from "@/modules/antigravity-runtime/components/RuntimeTargetSettings";
 
 function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -64,18 +45,7 @@ function SettingsPage() {
   const { config, isLoading, saveConfig } = useAppConfig();
   const { toast } = useToast();
 
-  // Local state for configuration editing
-  const [antigravityExecutable, setAntigravityExecutable] = useState("");
-  const [antigravityArgs, setAntigravityArgs] = useState("");
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
-
-  // Sync config to local state when loaded
-  useEffect(() => {
-    if (config) {
-      setAntigravityExecutable(config.antigravity_executable || "");
-      setAntigravityArgs((config.antigravity_args || []).join(" "));
-    }
-  }, [config]);
 
   const { data: appVersion } = useQuery({
     queryKey: ["app", "version"],
@@ -95,47 +65,6 @@ function SettingsPage() {
 
   const handleLanguageChange = (value: string) => {
     setAppLanguage(value, i18n);
-  };
-
-  const saveAntigravityExecutable = async (value: string) => {
-    const executablePath = value.trim();
-    setAntigravityExecutable(executablePath);
-    if (config) {
-      await saveConfig({
-        ...config,
-        antigravity_executable: executablePath || null,
-      });
-    }
-  };
-
-  const handleSelectAntigravityExecutable = async () => {
-    const selectedPath = await selectAntigravityExecutable("app");
-    if (selectedPath) {
-      await saveAntigravityExecutable(selectedPath);
-    }
-  };
-
-  const saveAntigravityArgs = async (value: string) => {
-    const launchArgs = parseArgsInput(value);
-    setAntigravityArgs(launchArgs.join(" "));
-    if (config) {
-      await saveConfig({
-        ...config,
-        antigravity_args: launchArgs,
-      });
-    }
-  };
-
-  const handleDetectAntigravityArgs = async () => {
-    const detectedArgs = await getAntigravityArgs("app");
-    const nextValue = detectedArgs.join(" ");
-    setAntigravityArgs(nextValue);
-    if (config) {
-      await saveConfig({
-        ...config,
-        antigravity_args: detectedArgs,
-      });
-    }
   };
 
   const handleCheckForUpdates = async () => {
@@ -309,92 +238,11 @@ function SettingsPage() {
                   }}
                 />
               </div>
-
-              <div className="space-y-2 rounded-lg border p-4">
-                <div className="space-y-1">
-                  <Label htmlFor="antigravity-executable">
-                    {t("settings.account.antigravity_executable")}
-                  </Label>
-                  <p className="text-xs text-gray-500">
-                    {t("settings.account.antigravity_executable_desc")}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    id="antigravity-executable"
-                    value={antigravityExecutable}
-                    placeholder={t(
-                      "settings.account.antigravity_executable_placeholder",
-                    )}
-                    onChange={(event) =>
-                      setAntigravityExecutable(event.target.value)
-                    }
-                    onBlur={() =>
-                      saveAntigravityExecutable(antigravityExecutable)
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={handleSelectAntigravityExecutable}
-                  >
-                    <FolderOpen className="h-4 w-4" />
-                  </Button>
-                  {antigravityExecutable && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => saveAntigravityExecutable("")}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2 rounded-lg border p-4">
-                <div className="space-y-1">
-                  <Label htmlFor="antigravity-args">
-                    {t("settings.account.antigravity_args")}
-                  </Label>
-                  <p className="text-xs text-gray-500">
-                    {t("settings.account.antigravity_args_desc")}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    id="antigravity-args"
-                    value={antigravityArgs}
-                    placeholder={t(
-                      "settings.account.antigravity_args_placeholder",
-                    )}
-                    onChange={(event) => setAntigravityArgs(event.target.value)}
-                    onBlur={() => saveAntigravityArgs(antigravityArgs)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleDetectAntigravityArgs}
-                    className="shrink-0"
-                  >
-                    {t("settings.account.detect_antigravity_args")}
-                  </Button>
-                  {antigravityArgs && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => saveAntigravityArgs("")}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
             </CardContent>
           </Card>
+
+          {/* Environment Runtimes Card */}
+          <RuntimeTargetSettings config={config} saveConfig={saveConfig} />
 
           {isAutoStartSupported && (
             <Card>

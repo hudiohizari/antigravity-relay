@@ -424,6 +424,79 @@ const ru = {
         "Например: --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Найти",
     },
+    runtimes: {
+      title: "Среды выполнения",
+      description:
+        "Настройка путей к исполняемым файлам и аргументов запуска для сред Antigravity.",
+      target_app: "Antigravity App",
+      target_ide: "Antigravity IDE",
+      target_cli: "Antigravity CLI (agy)",
+      browse: "Обзор",
+      clear: "Очистить",
+      detect: "Найти",
+      detecting: "Поиск...",
+      app: {
+        title: "Antigravity App",
+        executable: "Файл запуска Antigravity App",
+        executable_desc:
+          "Путь для поиска данных портативного режима и запуска Antigravity App.",
+        executable_placeholder:
+          "Например: C:\\Program Files\\Antigravity\\Antigravity.exe",
+        args: "Аргументы запуска Antigravity App",
+        args_desc:
+          "Необязательные аргументы запуска Antigravity App, например --user-data-dir.",
+        args_placeholder: "Например: --user-data-dir D:\\AntigravityProfile",
+        browse_aria: "Выбрать файл запуска Antigravity App",
+        clear_path_aria: "Очистить путь к файлу запуска Antigravity App",
+        clear_args_aria: "Очистить аргументы запуска Antigravity App",
+        detect_args: "Найти",
+        detect_args_aria:
+          "Найти аргументы запуска из запущенного Antigravity App",
+      },
+      ide: {
+        title: "Antigravity IDE",
+        executable: "Файл запуска Antigravity IDE",
+        executable_desc:
+          "Путь для поиска и запуска портативной или пользовательской версии Antigravity IDE.",
+        executable_placeholder:
+          "Например: D:\\Tools\\AntigravityIDE\\AntigravityIDE.exe",
+        args: "Аргументы запуска Antigravity IDE",
+        args_desc:
+          "Необязательные аргументы запуска Antigravity IDE, например каталоги данных или расширений.",
+        args_placeholder:
+          "Например: --user-data-dir D:\\Tools\\AntigravityIDE\\data",
+        browse_aria: "Выбрать файл запуска Antigravity IDE",
+        clear_path_aria: "Очистить путь к файлу запуска Antigravity IDE",
+        clear_args_aria: "Очистить аргументы запуска Antigravity IDE",
+        detect_args: "Найти",
+        detect_args_aria:
+          "Найти аргументы запуска из запущенного Antigravity IDE",
+      },
+      cli: {
+        title: "Antigravity CLI (agy)",
+        executable: "Файл запуска Antigravity CLI (agy)",
+        executable_desc:
+          "Путь для поиска исполняемого файла agy, если он отсутствует в системном PATH.",
+        executable_placeholder:
+          "Например: /usr/local/bin/agy или ~/.local/bin/agy",
+        browse_aria: "Выбрать файл запуска Antigravity CLI",
+        clear_path_aria: "Очистить путь к файлу запуска Antigravity CLI",
+      },
+      toast: {
+        success_title: "Аргументы обнаружены",
+        success_desc:
+          "Аргументы запуска успешно обнаружены и применены из запущенного процесса {{target}}.",
+        empty_title: "Используются стандартные аргументы",
+        empty_desc:
+          "{{target}} запущен со стандартными аргументами (дополнительные параметры не найдены).",
+        not_running_title: "Процесс не запущен",
+        not_running_desc:
+          "Запущенный процесс {{target}} не обнаружен. Текущие аргументы сохранены.",
+        error_title: "Сбой обнаружения",
+        error_desc:
+          "Не удалось получить аргументы запущенного процесса для {{target}}.",
+      },
+    },
     startup: {
       title: "Автозагрузка",
       description: "Управление запуском приложения при старте системы.",

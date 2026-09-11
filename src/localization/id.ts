@@ -427,6 +427,79 @@ const id = {
         "Contoh: --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Deteksi",
     },
+    runtimes: {
+      title: "Runtime Lingkungan",
+      description:
+        "Konfigurasikan jalur file eksekusi dan argumen peluncuran untuk lingkungan desktop Antigravity.",
+      target_app: "Antigravity App",
+      target_ide: "Antigravity IDE",
+      target_cli: "Antigravity CLI (agy)",
+      browse: "Telusuri",
+      clear: "Bersihkan",
+      detect: "Deteksi",
+      detecting: "Mendeteksi...",
+      app: {
+        title: "Antigravity App",
+        executable: "File Eksekusi Antigravity App",
+        executable_desc:
+          "Jalur yang digunakan untuk menemukan data mode portabel dan meluncurkan Antigravity App.",
+        executable_placeholder:
+          "Contoh: C:\\Program Files\\Antigravity\\Antigravity.exe",
+        args: "Argumen Peluncuran Antigravity App",
+        args_desc:
+          "Argumen opsional yang diteruskan saat meluncurkan Antigravity App, seperti --user-data-dir.",
+        args_placeholder: "Contoh: --user-data-dir D:\\AntigravityProfile",
+        browse_aria: "Telusuri file eksekusi Antigravity App",
+        clear_path_aria: "Hapus jalur file eksekusi Antigravity App",
+        clear_args_aria: "Hapus argumen peluncuran Antigravity App",
+        detect_args: "Deteksi",
+        detect_args_aria:
+          "Deteksi argumen peluncuran dari Antigravity App yang sedang berjalan",
+      },
+      ide: {
+        title: "Antigravity IDE",
+        executable: "File Eksekusi Antigravity IDE",
+        executable_desc:
+          "Jalur yang digunakan untuk menemukan dan meluncurkan instalasi Antigravity IDE portabel atau kustom.",
+        executable_placeholder:
+          "Contoh: D:\\Tools\\AntigravityIDE\\AntigravityIDE.exe",
+        args: "Argumen Peluncuran Antigravity IDE",
+        args_desc:
+          "Argumen opsional yang diteruskan saat meluncurkan Antigravity IDE, seperti direktori data atau ekstensi kustom.",
+        args_placeholder:
+          "Contoh: --user-data-dir D:\\Tools\\AntigravityIDE\\data",
+        browse_aria: "Telusuri file eksekusi Antigravity IDE",
+        clear_path_aria: "Hapus jalur file eksekusi Antigravity IDE",
+        clear_args_aria: "Hapus argumen peluncuran Antigravity IDE",
+        detect_args: "Deteksi",
+        detect_args_aria:
+          "Deteksi argumen peluncuran dari Antigravity IDE yang sedang berjalan",
+      },
+      cli: {
+        title: "Antigravity CLI (agy)",
+        executable: "File Eksekusi Antigravity CLI (agy)",
+        executable_desc:
+          "Jalur yang digunakan untuk menemukan biner baris perintah agy jika tidak ada di PATH sistem.",
+        executable_placeholder:
+          "Contoh: /usr/local/bin/agy atau ~/.local/bin/agy",
+        browse_aria: "Telusuri file eksekusi Antigravity CLI",
+        clear_path_aria: "Hapus jalur file eksekusi Antigravity CLI",
+      },
+      toast: {
+        success_title: "Argumen Terdeteksi",
+        success_desc:
+          "Berhasil mendeteksi dan menerapkan argumen peluncuran dari {{target}} yang sedang berjalan.",
+        empty_title: "Argumen Default Aktif",
+        empty_desc:
+          "{{target}} sedang berjalan dengan argumen default (tidak ada argumen khusus terdeteksi).",
+        not_running_title: "Proses Tidak Berjalan",
+        not_running_desc:
+          "Tidak ada proses {{target}} yang berjalan. Argumen yang sudah ada tetap disimpan.",
+        error_title: "Gagal Mendeteksi",
+        error_desc:
+          "Tidak dapat memeriksa argumen proses yang sedang berjalan untuk {{target}}.",
+      },
+    },
     startup: {
       title: "Mulai Otomatis",
       description:

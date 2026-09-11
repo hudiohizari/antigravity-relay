@@ -1420,4 +1420,123 @@ describe("getAgyCliTokenPaths", () => {
     );
     expect(isNotApp).toBe(false);
   });
+
+  it("should resolve configured antigravity_cli_executable for cli target", async () => {
+    vi.resetModules();
+    setPlatform("darwin");
+    const cliPath = "/usr/local/bin/custom-agy";
+    const agentConfigPath = p.join(
+      os.homedir(),
+      ".antigravity-relay",
+      "gui_config.json",
+    );
+
+    vi.spyOn(fs, "existsSync").mockImplementation((targetPath) => {
+      const normalized = String(targetPath);
+      return normalized === agentConfigPath || normalized === cliPath;
+    });
+    vi.spyOn(fs, "readFileSync").mockImplementation((targetPath) => {
+      if (String(targetPath) === agentConfigPath) {
+        return JSON.stringify({
+          antigravity_cli_executable: cliPath,
+        });
+      }
+      return "";
+    });
+
+    const paths = await import("../../shared/platform/paths");
+    expect(paths.getConfiguredAntigravityExecutablePath("cli")).toBe(cliPath);
+    expect(paths.getConfiguredAntigravityExecutablePath("agy" as any)).toBe(
+      cliPath,
+    );
+    expect(paths.getAntigravityExecutablePath("cli")).toBe(cliPath);
+  });
+
+  it("should fall back to default agy cli detection when configuredPath does not exist", async () => {
+    vi.resetModules();
+    setPlatform("darwin");
+    const configuredMissingPath = "/nonexistent/agy";
+    const defaultLocalPath = p.join(os.homedir(), ".local", "bin", "agy");
+    const agentConfigPath = p.join(
+      os.homedir(),
+      ".antigravity-relay",
+      "gui_config.json",
+    );
+
+    vi.spyOn(fs, "existsSync").mockImplementation((targetPath) => {
+      const normalized = String(targetPath);
+      return normalized === agentConfigPath || normalized === defaultLocalPath;
+    });
+    vi.spyOn(fs, "readFileSync").mockImplementation((targetPath) => {
+      if (String(targetPath) === agentConfigPath) {
+        return JSON.stringify({
+          antigravity_cli_executable: configuredMissingPath,
+        });
+      }
+      return "";
+    });
+
+    const paths = await import("../../shared/platform/paths");
+    expect(
+      paths.getConfiguredAntigravityExecutablePath("cli", true),
+    ).toBeNull();
+    expect(paths.getConfiguredAntigravityExecutablePath("cli", false)).toBe(
+      configuredMissingPath,
+    );
+    expect(paths.getAntigravityExecutablePath("cli")).toBe(defaultLocalPath);
+  });
+
+  it("should maintain independent process cache per target in runningProcessCache Map", async () => {
+    vi.resetModules();
+    setPlatform("darwin");
+
+    const paths = await import("../../shared/platform/paths");
+    paths.clearRunningProcessCache();
+
+    findProcessMock.mockResolvedValueOnce([
+      {
+        pid: 101,
+        ppid: 1,
+        name: "Antigravity IDE",
+        bin: "/Applications/Antigravity IDE.app/Contents/MacOS/Antigravity IDE",
+        cmd: '"/Applications/Antigravity IDE.app/Contents/MacOS/Antigravity IDE" --user-data-dir /tmp/ide-data',
+      },
+    ]);
+    await paths.refreshAntigravityProcessCache("ide");
+
+    findProcessMock.mockResolvedValueOnce([
+      {
+        pid: 202,
+        ppid: 1,
+        name: "Antigravity",
+        bin: "/Applications/Antigravity.app/Contents/MacOS/Antigravity",
+        cmd: "/Applications/Antigravity.app/Contents/MacOS/Antigravity",
+      },
+    ]);
+    await paths.refreshAntigravityProcessCache("classic");
+
+    expect(paths.runningProcessCache.has("ide")).toBe(true);
+    expect(paths.runningProcessCache.has("app")).toBe(true);
+
+    const ideProcesses = paths.getRunningAntigravityProcesses("ide");
+    expect(ideProcesses).toHaveLength(1);
+    expect(ideProcesses[0].pid).toBe(101);
+
+    const appProcesses = paths.getRunningAntigravityProcesses("classic");
+    expect(appProcesses).toHaveLength(1);
+    expect(appProcesses[0].pid).toBe(202);
+
+    expect(paths.getAntigravityLaunchArgsFromRunningProcess("ide")).toEqual([
+      "--user-data-dir",
+      "/tmp/ide-data",
+    ]);
+    expect(paths.getAntigravityLaunchArgsFromRunningProcess("classic")).toEqual(
+      [],
+    );
+
+    paths.clearRunningProcessCache();
+    expect(paths.runningProcessCache.size).toBe(0);
+    expect(paths.getRunningAntigravityProcesses("ide")).toEqual([]);
+    expect(paths.getRunningAntigravityProcesses("classic")).toEqual([]);
+  });
 });

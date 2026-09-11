@@ -396,6 +396,71 @@ const zhCn = {
         "例如：--user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "检测",
     },
+    runtimes: {
+      title: "环境运行程序",
+      description: "配置 Antigravity 桌面环境的可执行文件路径与启动参数。",
+      target_app: "Antigravity App",
+      target_ide: "Antigravity IDE",
+      target_cli: "Antigravity CLI (agy)",
+      browse: "浏览",
+      clear: "清除",
+      detect: "检测",
+      detecting: "检测中...",
+      app: {
+        title: "Antigravity App",
+        executable: "Antigravity App 可执行文件",
+        executable_desc: "用于查找便携模式数据并启动 Antigravity App 的路径。",
+        executable_placeholder:
+          "例如：C:\\Program Files\\Antigravity\\Antigravity.exe",
+        args: "Antigravity App 启动参数",
+        args_desc:
+          "启动 Antigravity App 时传入的可选参数，例如 --user-data-dir。",
+        args_placeholder: "例如：--user-data-dir D:\\AntigravityProfile",
+        browse_aria: "浏览 Antigravity App 可执行文件",
+        clear_path_aria: "清除 Antigravity App 可执行文件路径",
+        clear_args_aria: "清除 Antigravity App 启动参数",
+        detect_args: "检测",
+        detect_args_aria: "从正在运行的 Antigravity App 检测启动参数",
+      },
+      ide: {
+        title: "Antigravity IDE",
+        executable: "Antigravity IDE 可执行文件",
+        executable_desc:
+          "用于查找并启动便携版或自定义 Antigravity IDE 安装的路径。",
+        executable_placeholder:
+          "例如：D:\\Tools\\AntigravityIDE\\AntigravityIDE.exe",
+        args: "Antigravity IDE 启动参数",
+        args_desc:
+          "启动 Antigravity IDE 时传入的可选参数，例如自定义数据或扩展目录。",
+        args_placeholder:
+          "例如：--user-data-dir D:\\Tools\\AntigravityIDE\\data",
+        browse_aria: "浏览 Antigravity IDE 可执行文件",
+        clear_path_aria: "清除 Antigravity IDE 可执行文件路径",
+        clear_args_aria: "清除 Antigravity IDE 启动参数",
+        detect_args: "检测",
+        detect_args_aria: "从正在运行的 Antigravity IDE 检测启动参数",
+      },
+      cli: {
+        title: "Antigravity CLI (agy)",
+        executable: "Antigravity CLI (agy) 可执行文件",
+        executable_desc:
+          "当系统 PATH 中不存在 agy 时，用于定位 agy 命令行二进制文件的路径。",
+        executable_placeholder: "例如：/usr/local/bin/agy 或 ~/.local/bin/agy",
+        browse_aria: "浏览 Antigravity CLI 可执行文件",
+        clear_path_aria: "清除 Antigravity CLI 可执行文件路径",
+      },
+      toast: {
+        success_title: "已检测到参数",
+        success_desc: "已成功从运行中的 {{target}} 检测并应用启动参数。",
+        empty_title: "默认参数生效中",
+        empty_desc: "{{target}} 正在以默认参数运行（未检测到自定义参数）。",
+        not_running_title: "进程未运行",
+        not_running_desc:
+          "未检测到正在运行的 {{target}} 进程。已保留现有参数。",
+        error_title: "检测失败",
+        error_desc: "无法读取 {{target}} 运行进程的启动参数。",
+      },
+    },
     startup: {
       title: "启动",
       description: "控制系统启动时的应用行为。",
