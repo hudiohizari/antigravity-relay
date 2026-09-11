@@ -209,7 +209,7 @@ export class CloudMonitorService {
   private static activeIntervalId: NodeJS.Timeout | null = null;
   private static POLL_INTERVAL = 1000 * 60 * 5; // 5 minutes (standby)
   private static ACTIVE_POLL_INTERVAL = 1000 * 15; // 15 seconds (active)
-  private static DEBOUNCE_TIME = 10000; // 10 seconds
+  private static DEBOUNCE_TIME = 60000; // 60 seconds
   private static lastFocusTime: number = 0;
   private static activePollPromise: Promise<void> | null = null;
   private static weeklyWarmupExecutor: WeeklyWarmupExecutor | null = null;
@@ -305,8 +305,8 @@ export class CloudMonitorService {
     logger.info("Monitor: App focused, triggering immediate poll...");
     this.lastFocusTime = now;
 
-    // 3. Trigger Poll
-    await this.poll().catch((e) => {
+    // 3. Trigger Poll (active-only on focus to prevent aggressive full-sweep polling)
+    await this.poll({ onlyActive: true }).catch((e) => {
       logger.error("Monitor: Focus poll failed", e);
     });
     // 4. Reset the background interval so we don't double-poll shortly after
@@ -376,7 +376,7 @@ export class CloudMonitorService {
     }
   }
 
-  static async poll(): Promise<void> {
+  static async poll(options?: { onlyActive?: boolean }): Promise<void> {
     this.stopped = false;
     if (
       this.isContinuousPollingEnabled() &&
@@ -390,7 +390,7 @@ export class CloudMonitorService {
       return this.activePollPromise;
     }
 
-    const pollPromise = this.executePoll();
+    const pollPromise = this.executePoll(options);
     this.activePollPromise = pollPromise;
 
     try {

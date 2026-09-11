@@ -554,12 +554,13 @@ describe("CloudMonitorService", () => {
         .mockResolvedValue(undefined);
 
       CloudMonitorService.start();
-      vi.setSystemTime(Date.now() + 20000);
+      vi.setSystemTime(Date.now() + 65000);
 
       await CloudMonitorService.handleAppFocus();
 
-      // Called once by start, once by focus
+      // Called once by start, once by focus (with onlyActive: true)
       expect(pollSpy).toHaveBeenCalledTimes(2);
+      expect(pollSpy).toHaveBeenLastCalledWith({ onlyActive: true });
     });
 
     it("should NOT trigger poll if debounced (focused too soon)", async () => {
@@ -588,7 +589,7 @@ describe("CloudMonitorService", () => {
       CloudMonitorService.start();
       pollSpy.mockRestore(); // Restore so we can test the real guard logic
 
-      vi.setSystemTime(Date.now() + 20000);
+      vi.setSystemTime(Date.now() + 65000);
 
       // 2. Mock getAccounts to delay
       let resolveGetAccounts: (value: unknown) => void;
@@ -642,7 +643,7 @@ describe("CloudMonitorService", () => {
       CloudMonitorService.start();
       pollSpy.mockRestore(); // Restore real poll
 
-      vi.setSystemTime(Date.now() + 20000);
+      vi.setSystemTime(Date.now() + 65000);
 
       // Needs to handle async poll
       vi.mocked(CloudAccountRepo.getAccounts).mockResolvedValue([]);
