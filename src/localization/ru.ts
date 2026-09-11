@@ -623,6 +623,21 @@ const ru = {
   cloud: {
     title: "Аккаунты",
     description: "Управление пулом аккаунтов Google Gemini.",
+    summary: {
+      statusUnified: "Единый режим (1 активен)",
+      statusUnifiedSubtitle: "Все среды синхронизированы",
+      statusDiverged: "Разделено ({{count}} сред расходятся)",
+      statusDivergedSubtitle: "В средах запущены разные аккаунты",
+    },
+    divergedBanner: {
+      title: "Рассинхронизация сред",
+      description: "В средах используются разные аккаунты: {{targets}}",
+      strandedWarning:
+        "Среда {{target}} осталась на аккаунте с исчерпанным лимитом.",
+      resyncAction: "Синхронизировать все среды с {{email}}",
+      resyncActionDefault: "Синхронизировать все среды",
+      resyncing: "Синхронизация...",
+    },
     security: {
       compatibilityMode: {
         title: "Используется совместимое хранилище ключа",
@@ -899,6 +914,15 @@ const ru = {
       },
     },
     toast: {
+      resyncSuccessTitle: "Среды синхронизированы",
+      resyncSuccessDesc: "Все среды успешно синхронизированы с {{email}}.",
+      resyncPartialTitle: "Частичная синхронизация",
+      resyncPartialDesc:
+        "Переключено для {{succeeded}}, но произошел сбой для {{failed}}.",
+      resyncFailedTitle: "Ошибка синхронизации",
+      allAccountsExhaustedTitle: "Лимиты всех аккаунтов исчерпаны",
+      allAccountsExhaustedDesc:
+        "Лимиты всех аккаунтов в пуле сейчас исчерпаны. Добавьте аккаунт или дождитесь сброса квоты.",
       syncSuccess: {
         title: "Синхронизация успешна",
         description: "Импортирован {{email}} из IDE.",

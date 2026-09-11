@@ -100,6 +100,8 @@ vi.mock("@/modules/cloud-account/hooks/useCloudAccounts", () => ({
     isPending: false,
   }),
   useImportCloudAccounts: () => ({ mutate: vi.fn(), isPending: false }),
+  useSyncState: () => ({ data: undefined }),
+  useResyncAllEnvironments: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 describe("CloudAccountList OAuth Client Guards", () => {

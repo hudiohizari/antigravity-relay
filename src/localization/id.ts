@@ -631,6 +631,21 @@ const id = {
   cloud: {
     title: "Akun",
     description: "Kelola kumpulan akun Google Gemini Anda.",
+    summary: {
+      statusUnified: "Terpadu (1 Aktif)",
+      statusUnifiedSubtitle: "Semua lingkungan tersinkronisasi",
+      statusDiverged: "Terpisah ({{count}} Target Berbeda)",
+      statusDivergedSubtitle: "Lingkungan menggunakan akun yang berbeda",
+    },
+    divergedBanner: {
+      title: "Lingkungan Tidak Sinkron",
+      description: "Lingkungan menggunakan akun yang berbeda: {{targets}}",
+      strandedWarning:
+        "Target {{target}} tertahan pada akun yang mencapai batas laju.",
+      resyncAction: "Sinkronkan Ulang Semua Lingkungan ke {{email}}",
+      resyncActionDefault: "Sinkronkan Ulang Semua Lingkungan",
+      resyncing: "Menyinkronkan ulang...",
+    },
     security: {
       compatibilityMode: {
         title: "Penyimpanan kunci mode kompatibilitas aktif",
@@ -904,6 +919,15 @@ const id = {
       },
     },
     toast: {
+      resyncSuccessTitle: "Lingkungan Berhasil Disinkronkan Ulang",
+      resyncSuccessDesc: "Semua lingkungan telah disinkronkan ke {{email}}.",
+      resyncPartialTitle: "Sinkronisasi Ulang Sebagian",
+      resyncPartialDesc:
+        "Berhasil beralih untuk {{succeeded}}, tetapi gagal untuk {{failed}}.",
+      resyncFailedTitle: "Gagal Menyinkronkan Ulang",
+      allAccountsExhaustedTitle: "Semua Akun Mencapai Batas Laju",
+      allAccountsExhaustedDesc:
+        "Semua akun dalam pool Anda saat ini mencapai batas laju. Tambahkan akun baru atau tunggu reset kuota.",
       syncSuccess: {
         title: "Sinkronisasi Berhasil",
         description: "Mengimpor {{email}} dari Antigravity.",

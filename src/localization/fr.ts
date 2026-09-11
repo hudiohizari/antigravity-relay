@@ -648,6 +648,23 @@ const fr = {
   cloud: {
     title: "Comptes",
     description: "Gerez votre pool de comptes Google Gemini.",
+    summary: {
+      statusUnified: "Unifié (1 actif)",
+      statusUnifiedSubtitle: "Tous les environnements sont synchronisés",
+      statusDiverged: "Divergence ({{count}} cibles séparées)",
+      statusDivergedSubtitle:
+        "Les environnements utilisent des comptes différents",
+    },
+    divergedBanner: {
+      title: "Environnements désynchronisés",
+      description:
+        "Les environnements utilisent des comptes différents : {{targets}}",
+      strandedWarning:
+        "La cible {{target}} est bloquée sur un compte limité en quota.",
+      resyncAction: "Resynchroniser tous les environnements sur {{email}}",
+      resyncActionDefault: "Resynchroniser tous les environnements",
+      resyncing: "Resynchronisation...",
+    },
     security: {
       compatibilityMode: {
         title: "Le stockage de cle de compatibilite est actif",
@@ -856,6 +873,16 @@ const fr = {
       },
     },
     toast: {
+      resyncSuccessTitle: "Environnements resynchronisés",
+      resyncSuccessDesc:
+        "Tous les environnements sont synchronisés sur {{email}}.",
+      resyncPartialTitle: "Resynchronisation partielle",
+      resyncPartialDesc:
+        "Basculé pour {{succeeded}}, mais échec pour {{failed}}.",
+      resyncFailedTitle: "Échec de la resynchronisation",
+      allAccountsExhaustedTitle: "Tous les comptes sont limités",
+      allAccountsExhaustedDesc:
+        "Tous les comptes de votre pool sont actuellement limités par le quota. Ajoutez un compte ou attendez la réinitialisation.",
       syncSuccess: {
         title: "Synchronisation reussie",
         description: "{{email}} importe depuis l IDE.",

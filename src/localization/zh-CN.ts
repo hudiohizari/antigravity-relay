@@ -583,6 +583,20 @@ const zhCn = {
   cloud: {
     title: "账号列表",
     description: "管理您的 Google Gemini 账号池。",
+    summary: {
+      statusUnified: "统一模式 (1 个活跃)",
+      statusUnifiedSubtitle: "所有环境已同步",
+      statusDiverged: "状态分歧 ({{count}} 个环境分离)",
+      statusDivergedSubtitle: "各环境正在运行不同的账号",
+    },
+    divergedBanner: {
+      title: "环境状态不同步",
+      description: "各环境正在运行不同的账号：{{targets}}",
+      strandedWarning: "目标 {{target}} 滞留在受限账号上。",
+      resyncAction: "重新同步所有环境至 {{email}}",
+      resyncActionDefault: "重新同步所有环境",
+      resyncing: "正在重新同步...",
+    },
     security: {
       compatibilityMode: {
         title: "正在使用兼容密钥存储",
@@ -840,6 +854,14 @@ const zhCn = {
       },
     },
     toast: {
+      resyncSuccessTitle: "环境已重新同步",
+      resyncSuccessDesc: "所有环境已成功同步至 {{email}}。",
+      resyncPartialTitle: "部分环境重新同步完成",
+      resyncPartialDesc: "已切换 {{succeeded}}，但 {{failed}} 切换失败。",
+      resyncFailedTitle: "重新同步失败",
+      allAccountsExhaustedTitle: "所有账号均已受限",
+      allAccountsExhaustedDesc:
+        "账号池中的所有账号当前均已达到配额限制。请添加新账号或等待配额重置。",
       syncSuccess: {
         title: "同步成功",
         description: "已从 IDE 导入 {{email}}。",

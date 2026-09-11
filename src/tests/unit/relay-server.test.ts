@@ -1604,6 +1604,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(switchSpy).toHaveBeenCalledWith({
         reason: "HTTP 429 upstream rate limit",
         source: "relay",
+        appTarget: "all",
       });
 
       expect(res.status).toBe(503);

@@ -622,6 +622,21 @@ const vi = {
   cloud: {
     title: "Tài khoản",
     description: "Quản lý pool tài khoản Google Gemini của bạn.",
+    summary: {
+      statusUnified: "Hợp nhất (1 đang hoạt động)",
+      statusUnifiedSubtitle: "Tất cả môi trường đã đồng bộ",
+      statusDiverged: "Phân tách ({{count}} mục tiêu riêng lẻ)",
+      statusDivergedSubtitle: "Các môi trường đang chạy tài khoản khác nhau",
+    },
+    divergedBanner: {
+      title: "Môi trường bị lệch đồng bộ",
+      description: "Các môi trường đang chạy tài khoản khác nhau: {{targets}}",
+      strandedWarning:
+        "Mục tiêu {{target}} bị kẹt trên tài khoản đã hết hạn ngạch.",
+      resyncAction: "Đồng bộ lại tất cả môi trường sang {{email}}",
+      resyncActionDefault: "Đồng bộ lại tất cả môi trường",
+      resyncing: "Đang đồng bộ lại...",
+    },
     security: {
       compatibilityMode: {
         title: "Đang sử dụng kho khóa tương thích",
@@ -895,6 +910,15 @@ const vi = {
       },
     },
     toast: {
+      resyncSuccessTitle: "Đã đồng bộ lại môi trường",
+      resyncSuccessDesc: "Tất cả môi trường đã đồng bộ sang {{email}}.",
+      resyncPartialTitle: "Đồng bộ lại một phần",
+      resyncPartialDesc:
+        "Đã chuyển đổi {{succeeded}}, nhưng thất bại với {{failed}}.",
+      resyncFailedTitle: "Đồng bộ lại thất bại",
+      allAccountsExhaustedTitle: "Tất cả tài khoản đều bị giới hạn",
+      allAccountsExhaustedDesc:
+        "Tất cả tài khoản trong nhóm đều đang bị giới hạn hạn ngạch. Vui lòng thêm tài khoản mới hoặc chờ làm mới hạn ngạch.",
       syncSuccess: {
         title: "Đồng bộ thành công",
         description: "Đã nhập {{email}} từ IDE.",

@@ -15,7 +15,11 @@ import {
   startAuthFlow,
   useExportCloudAccounts,
   useImportCloudAccounts,
+  useSyncState,
+  useResyncAllEnvironments,
 } from "@/modules/cloud-account/hooks/useCloudAccounts";
+import { CloudAccountDivergedBanner } from "@/modules/cloud-account/components/CloudAccountDivergedBanner";
+import { evaluateDivergedState } from "@/modules/cloud-account/utils/divergedState";
 import { IdentityProfileDialog } from "@/modules/identity-profile/components/IdentityProfileDialog";
 import { CloudAccount } from "@/modules/cloud-account/types";
 import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
@@ -85,6 +89,85 @@ export function CloudAccountList() {
   const { toast } = useToast();
   const lastLoadErrorToastAtRef = useRef<number>(0);
   const lastSubmittedAuthCodeRef = useRef<string | null>(null);
+
+  const { data: operationalState } = useSyncState?.() ?? { data: undefined };
+  const resyncMutation = useResyncAllEnvironments?.() ?? {
+    mutateAsync: async () => ({ success: false }),
+    isPending: false,
+  };
+
+  const {
+    isDiverged,
+    splitTargetsCount,
+    divergedTargets,
+    resolvedCandidateEmail,
+  } = useMemo(
+    () => evaluateDivergedState(accounts, operationalState),
+    [accounts, operationalState],
+  );
+
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const wasDivergedRef = useRef(false);
+
+  useEffect(() => {
+    if (wasDivergedRef.current && !isDiverged) {
+      requestAnimationFrame(() => {
+        summaryRef.current?.focus({ preventScroll: true });
+      });
+    }
+    wasDivergedRef.current = isDiverged;
+  }, [isDiverged]);
+
+  const handleResyncAll = useCallback(async () => {
+    try {
+      const result = await resyncMutation.mutateAsync({});
+      if (result.success) {
+        if (result.overall === "partial") {
+          const succeeded = result.succeededTargets?.join(", ") ?? "";
+          const failed =
+            result.failedTargets?.map((f) => f.target).join(", ") ?? "";
+          toast({
+            title: t("cloud.toast.resyncPartialTitle"),
+            description: t("cloud.toast.resyncPartialDesc", {
+              succeeded,
+              failed,
+            }),
+          });
+        } else {
+          const email =
+            (result.accountId
+              ? accounts?.find((a) => a.id === result.accountId)?.email
+              : undefined) ||
+            resolvedCandidateEmail ||
+            "";
+          toast({
+            title: t("cloud.toast.resyncSuccessTitle"),
+            description: t("cloud.toast.resyncSuccessDesc", { email }),
+          });
+        }
+      } else {
+        if (result.reason === "all_accounts_exhausted") {
+          toast({
+            title: t("cloud.toast.allAccountsExhaustedTitle"),
+            description: t("cloud.toast.allAccountsExhaustedDesc"),
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: t("cloud.toast.resyncFailedTitle"),
+            description: result.reason || t("common.unknownError"),
+            variant: "destructive",
+          });
+        }
+      }
+    } catch (err) {
+      toast({
+        title: t("cloud.toast.resyncFailedTitle"),
+        description: getLocalizedErrorMessage(err, t),
+        variant: "destructive",
+      });
+    }
+  }, [accounts, resyncMutation, resolvedCandidateEmail, t, toast]);
 
   const gridLayout: GridLayout = (config?.grid_layout as GridLayout) || "auto";
   const [quotaWindow, setQuotaWindow] = useState<QuotaWindow>(() =>
@@ -837,6 +920,18 @@ export function CloudAccountList() {
 
   return (
     <div className="space-y-5 pb-20">
+      <div
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {!isDiverged &&
+          wasDivergedRef.current &&
+          resolvedCandidateEmail &&
+          t("cloud.toast.resyncSuccessDesc", { email: resolvedCandidateEmail })}
+      </div>
+
       {securityStatus?.state === "degraded" ? (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
           <div className="text-sm font-medium">
@@ -848,11 +943,14 @@ export function CloudAccountList() {
         </div>
       ) : null}
       <CloudAccountListSummary
+        summaryRef={summaryRef}
         totalAccounts={totalAccounts}
         activeAccounts={activeAccounts}
         rateLimitedAccounts={rateLimitedAccounts}
         overallQuotaPercentage={overallQuotaPercentage}
         effectiveQuotaStatus={effectiveQuotaStatus}
+        isDiverged={isDiverged}
+        splitTargetsCount={splitTargetsCount}
       />
 
       <CloudAccountToolbar
@@ -921,6 +1019,16 @@ export function CloudAccountList() {
         }}
         onQuotaWindowChange={setQuotaWindow}
       />
+
+      {isDiverged && (
+        <CloudAccountDivergedBanner
+          divergedTargets={divergedTargets}
+          resolvedCandidateEmail={resolvedCandidateEmail}
+          isResyncing={resyncMutation.isPending}
+          onResyncAll={handleResyncAll}
+          summaryRef={summaryRef}
+        />
+      )}
 
       <CloudAccountGrid
         accounts={sortedAccounts}

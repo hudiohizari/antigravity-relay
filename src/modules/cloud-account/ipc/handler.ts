@@ -1046,6 +1046,149 @@ export async function switchCloudAccount(
   });
 }
 
+export interface ResyncAllEnvironmentsResult {
+  success: boolean;
+  overall: "success" | "partial" | "failed";
+  accountId?: string;
+  resolutionBranch:
+    | "explicit"
+    | "app_healthy"
+    | "cli_healthy"
+    | "ide_healthy"
+    | "best_quota_fallback"
+    | "exhausted";
+  succeededTargets: AntigravityAppTarget[];
+  failedTargets: FailedTargetReport[];
+  results?: Partial<
+    Record<AntigravityAppTarget, { success: boolean; error?: string }>
+  >;
+  reason?: string;
+  switchedAt?: number;
+}
+
+export async function resyncAllEnvironments(
+  accountId?: string,
+): Promise<ResyncAllEnvironmentsResult> {
+  const accounts = await CloudAccountRepo.getAccounts();
+  const { AutoSwitchService } =
+    await import("@/modules/cloud-account/services/AutoSwitchService");
+
+  let resolvedAccountId: string | undefined;
+  let resolutionBranch:
+    | "explicit"
+    | "app_healthy"
+    | "cli_healthy"
+    | "ide_healthy"
+    | "best_quota_fallback"
+    | "exhausted" = "best_quota_fallback";
+
+  if (accountId && accountId.trim() !== "") {
+    const targetAcc = accounts.find((a) => a.id === accountId.trim());
+    if (!targetAcc) {
+      throw new Error(`Account not found: ${accountId}`);
+    }
+    resolvedAccountId = targetAcc.id;
+    resolutionBranch = "explicit";
+  } else {
+    // Master Resolution Rule:
+    // Priority 1: Antigravity 2.0 (App) active account (if healthy)
+    const appAccountId =
+      CloudAccountSettingsStore.getActiveAccountIdForTarget("app");
+    const appAccount = appAccountId
+      ? accounts.find((a) => a.id === appAccountId)
+      : undefined;
+    if (
+      appAccount &&
+      appAccount.status === "active" &&
+      !AutoSwitchService.isAccountDepleted(appAccount)
+    ) {
+      resolvedAccountId = appAccount.id;
+      resolutionBranch = "app_healthy";
+    }
+
+    // Priority 2: Antigravity CLI (agy) active account (if healthy)
+    if (!resolvedAccountId) {
+      const cliAccountId =
+        CloudAccountSettingsStore.getActiveAccountIdForTarget("cli");
+      const cliAccount = cliAccountId
+        ? accounts.find((a) => a.id === cliAccountId)
+        : undefined;
+      if (
+        cliAccount &&
+        cliAccount.status === "active" &&
+        !AutoSwitchService.isAccountDepleted(cliAccount)
+      ) {
+        resolvedAccountId = cliAccount.id;
+        resolutionBranch = "cli_healthy";
+      }
+    }
+
+    // Priority 3: Antigravity IDE active account (if healthy)
+    if (!resolvedAccountId) {
+      const ideAccountId =
+        CloudAccountSettingsStore.getActiveAccountIdForTarget("ide");
+      const ideAccount = ideAccountId
+        ? accounts.find((a) => a.id === ideAccountId)
+        : undefined;
+      if (
+        ideAccount &&
+        ideAccount.status === "active" &&
+        !AutoSwitchService.isAccountDepleted(ideAccount)
+      ) {
+        resolvedAccountId = ideAccount.id;
+        resolutionBranch = "ide_healthy";
+      }
+    }
+
+    // Priority 4: Highest 5h rolling quota candidate via findBestAccount()
+    if (!resolvedAccountId) {
+      const bestAccount = await AutoSwitchService.findBestAccount("");
+      if (bestAccount) {
+        resolvedAccountId = bestAccount.id;
+        resolutionBranch = "best_quota_fallback";
+      } else {
+        // Exhausted pool fallback: abort mutation cleanly and emit all_accounts_exhausted
+        logger.warn(
+          "ResyncAllEnvironments: All cloud accounts are rate-limited or exhausted. Aborting resync.",
+        );
+        cloudAccountEvents.emit("all_accounts_exhausted", {
+          reason: "All cloud accounts are rate-limited or exhausted",
+          source: "resync",
+          timestamp: Date.now(),
+        });
+        return {
+          success: false,
+          overall: "failed",
+          resolutionBranch: "exhausted",
+          reason: "all_accounts_exhausted",
+          succeededTargets: [],
+          failedTargets: [],
+          switchedAt: Date.now(),
+        };
+      }
+    }
+  }
+
+  // Execute lockstep alignment across all installed targets
+  const switchResult = await switchCloudAccount(resolvedAccountId, "all");
+  CloudAccountSettingsStore.setUnifiedMode(true);
+
+  logger.info(
+    `ResyncAllEnvironments: Aligned targets to ${resolvedAccountId} (branch: ${resolutionBranch}, overall: ${switchResult.overall})`,
+  );
+
+  return {
+    success: switchResult.overall !== "failed",
+    overall: switchResult.overall,
+    accountId: resolvedAccountId,
+    resolutionBranch,
+    succeededTargets: switchResult.succeededTargets,
+    failedTargets: switchResult.failedTargets,
+    results: switchResult.results,
+    switchedAt: switchResult.switchedAt,
+  };
+}
+
 export async function getCloudIdentityProfiles(
   accountId: string,
 ): Promise<DeviceProfilesSnapshot> {

@@ -27,6 +27,10 @@ export function useTrayAccountSync(): void {
         refetchType: "active",
       });
       queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.syncState,
+        refetchType: "active",
+      });
+      queryClient.invalidateQueries({
         queryKey: ["currentAccount"],
         refetchType: "active",
       });

@@ -623,6 +623,21 @@ const en = {
   cloud: {
     title: "Accounts",
     description: "Manage your Google Gemini account pool.",
+    summary: {
+      statusUnified: "Unified (1 Active)",
+      statusUnifiedSubtitle: "All environments synchronized",
+      statusDiverged: "Diverged ({{count}} Targets Split)",
+      statusDivergedSubtitle: "Environments running different accounts",
+    },
+    divergedBanner: {
+      title: "Environments Desynchronized",
+      description: "Environments are running different accounts: {{targets}}",
+      strandedWarning:
+        "Target {{target}} is stranded on a rate-limited account.",
+      resyncAction: "Resync All Environments to {{email}}",
+      resyncActionDefault: "Resync All Environments",
+      resyncing: "Resyncing...",
+    },
     security: {
       compatibilityMode: {
         title: "Compatibility key storage is active",
@@ -898,6 +913,14 @@ const en = {
       },
     },
     toast: {
+      resyncSuccessTitle: "Environments Resynchronized",
+      resyncSuccessDesc: "All environments synchronized to {{email}}.",
+      resyncPartialTitle: "Partial Resynchronization",
+      resyncPartialDesc: "Switched {{succeeded}}, but failed for {{failed}}.",
+      resyncFailedTitle: "Resynchronization Failed",
+      allAccountsExhaustedTitle: "All Accounts Rate-Limited",
+      allAccountsExhaustedDesc:
+        "All accounts in your pool are currently rate-limited. Add or wait for quota reset.",
       syncSuccess: {
         title: "Sync Successful",
         description: "Imported {{email}} from Antigravity.",

@@ -17,6 +17,9 @@ vi.mock(
     CloudAccountSettingsStore: {
       getSetting: vi.fn(),
       getActiveAccountIdForTarget: vi.fn(),
+      isUnifiedMode: vi.fn(() => false),
+      setUnifiedMode: vi.fn(),
+      getOperationalState: vi.fn(),
     },
   }),
 );
@@ -619,7 +622,11 @@ describe("AutoSwitchService", () => {
         source: "relay",
       });
 
-      expect(result).toEqual({ switched: false, noAccountLeft: true });
+      expect(result).toEqual({
+        switched: false,
+        noAccountLeft: true,
+        reason: "all_accounts_exhausted",
+      });
       expect(switchCloudAccount).not.toHaveBeenCalled();
     });
 

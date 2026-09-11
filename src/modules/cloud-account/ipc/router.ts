@@ -15,6 +15,7 @@ import {
   restoreCloudIdentityProfileRevision,
   restoreCloudBaselineProfile,
   switchCloudAccount,
+  resyncAllEnvironments,
   getAutoSwitchEnabled,
   setAutoSwitchEnabled,
   getAutoSwitchModelsConfig,
@@ -27,6 +28,7 @@ import {
   exportCloudAccounts,
   importCloudAccounts,
 } from "./handler";
+import { CloudAccountSettingsStore } from "@/modules/cloud-account/persistence/cloud-account-settings-store";
 import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandler";
 import {
   AGY_SYNC_FROM_IDE_UNSUPPORTED_MESSAGE,
@@ -249,6 +251,72 @@ export const cloudRouter = os.router({
     )
     .handler(async ({ input }) => {
       return await switchCloudAccount(input.accountId, input.appTarget);
+    }),
+
+  resyncAllEnvironments: os
+    .input(z.object({ accountId: z.string().optional() }).optional())
+    .output(
+      z.object({
+        success: z.boolean(),
+        overall: z.enum(["success", "partial", "failed"]).optional(),
+        accountId: z.string().optional(),
+        resolutionBranch: z
+          .enum([
+            "explicit",
+            "app_healthy",
+            "cli_healthy",
+            "ide_healthy",
+            "best_quota_fallback",
+            "exhausted",
+          ])
+          .optional(),
+        succeededTargets: z.array(AntigravityAppTargetSchema).optional(),
+        failedTargets: z
+          .array(
+            z.object({
+              target: AntigravityAppTargetSchema,
+              error: z.string(),
+            }),
+          )
+          .optional(),
+        results: z
+          .record(
+            z.string(),
+            z.object({ success: z.boolean(), error: z.string().optional() }),
+          )
+          .optional(),
+        reason: z.string().optional(),
+        switchedAt: z.number().optional(),
+      }),
+    )
+    .handler(async ({ input }) => {
+      return await resyncAllEnvironments(input?.accountId);
+    }),
+
+  getSyncState: os
+    .output(
+      z.object({
+        isUnifiedMode: z.boolean(),
+        isPhysicallyUnified: z.boolean(),
+        activeAccountId: z.string(),
+        targetAccounts: z.record(z.string(), z.string()),
+        installedTargets: z.array(AntigravityAppTargetSchema),
+        divergedTargets: z.array(AntigravityAppTargetSchema),
+      }),
+    )
+    .handler(async () => {
+      return CloudAccountSettingsStore.getOperationalState();
+    }),
+
+  isUnifiedMode: os.output(z.boolean()).handler(async () => {
+    return CloudAccountSettingsStore.isUnifiedMode();
+  }),
+
+  setUnifiedMode: os
+    .input(z.object({ enabled: z.boolean() }))
+    .output(z.void())
+    .handler(async ({ input }) => {
+      CloudAccountSettingsStore.setUnifiedMode(input.enabled);
     }),
 
   getAutoSwitchEnabled: os.output(z.boolean()).handler(async () => {

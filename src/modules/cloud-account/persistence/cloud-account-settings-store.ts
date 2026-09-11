@@ -10,7 +10,18 @@ import { settings } from "@/shared/persistence/database/schema";
 import { getCloudDb } from "./cloud-account-db";
 
 const ACTIVE_ACCOUNT_SETTING_PREFIX = "active_cloud_account";
+const UNIFIED_MODE_SETTING_KEY = "unified_mode";
 const StringSettingSchema = z.string();
+const BooleanSettingSchema = z.boolean();
+
+export interface TargetOperationalState {
+  isUnifiedMode: boolean;
+  isPhysicallyUnified: boolean;
+  activeAccountId: string;
+  targetAccounts: Record<AntigravityAppTarget, string>;
+  installedTargets: AntigravityAppTarget[];
+  divergedTargets: AntigravityAppTarget[];
+}
 
 export class CloudAccountSettingsStore {
   /** Missing settings use the default; corrupt or unavailable storage must remain an error. */
@@ -33,8 +44,10 @@ export class CloudAccountSettingsStore {
   }
 
   static getSetting<T>(key: string, defaultValue: T, schema: z.ZodType<T>): T {
-    const { raw, orm } = getCloudDb();
+    let rawDb: { close: () => void } | null = null;
     try {
+      const { raw, orm } = getCloudDb();
+      rawDb = raw;
       const row = orm
         .select({ value: settings.value })
         .from(settings)
@@ -57,7 +70,9 @@ export class CloudAccountSettingsStore {
       logger.error(`Failed to get setting ${key}`, error);
       return defaultValue;
     } finally {
-      raw.close();
+      if (rawDb) {
+        rawDb.close();
+      }
     }
   }
 
@@ -192,5 +207,65 @@ export class CloudAccountSettingsStore {
       }
     }
     return evicted;
+  }
+
+  static isUnifiedMode(): boolean {
+    return this.getSetting(
+      UNIFIED_MODE_SETTING_KEY,
+      true,
+      BooleanSettingSchema,
+    );
+  }
+
+  static setUnifiedMode(enabled: boolean): void {
+    this.setSetting(UNIFIED_MODE_SETTING_KEY, enabled);
+  }
+
+  static getOperationalState(): TargetOperationalState {
+    const isUnified = this.isUnifiedMode();
+    const candidateTargets: AntigravityAppTarget[] = ["app", "ide", "cli"];
+    const installedTargets = candidateTargets.filter((t) =>
+      isAntigravityTargetInstalled(t),
+    );
+
+    const appAcc = this.getActiveAccountIdForTarget("app");
+    const ideAcc = this.getActiveAccountIdForTarget("ide");
+    const cliAcc = this.getActiveAccountIdForTarget("cli");
+
+    const targetAccounts: Record<AntigravityAppTarget, string> = {
+      app: appAcc,
+      ide: ideAcc,
+      cli: cliAcc,
+      classic: appAcc,
+      agy: cliAcc,
+    };
+
+    // Determine primary activeAccountId:
+    // Prefer installed targets in order: app -> cli -> ide
+    const activeTarget = installedTargets.find((t) =>
+      Boolean(targetAccounts[t]),
+    );
+    const activeAccountId = activeTarget
+      ? targetAccounts[activeTarget]
+      : targetAccounts.app || "";
+
+    const isPhysicallyUnified =
+      installedTargets.length <= 1 ||
+      installedTargets.every(
+        (t) => targetAccounts[t] === targetAccounts[installedTargets[0]],
+      );
+
+    const divergedTargets = isPhysicallyUnified
+      ? []
+      : installedTargets.filter((t) => targetAccounts[t] !== activeAccountId);
+
+    return {
+      isUnifiedMode: isUnified,
+      isPhysicallyUnified,
+      activeAccountId,
+      targetAccounts,
+      installedTargets,
+      divergedTargets,
+    };
   }
 }

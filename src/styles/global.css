@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 @plugin 'tailwindcss-animate';
 
@@ -32,7 +32,8 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
 
-  --font-sans: Geist, 'Microsoft YaHei', 'Heiti SC', 'WenQuanYi Micro Hei', sans-serif;
+  --font-sans:
+    Geist, "Microsoft YaHei", "Heiti SC", "WenQuanYi Micro Hei", sans-serif;
   --font-mono: Geist Mono, monospace;
   --font-tomorrow: Tomorrow, sans-serif;
 
@@ -74,44 +75,45 @@
 
 @layer base {
   @font-face {
-    font-family: 'Geist';
+    font-family: "Geist";
 
-    src: url('../assets/fonts/geist/geist.ttf') format('truetype');
+    src: url("../assets/fonts/geist/geist.ttf") format("truetype");
   }
   @font-face {
-    font-family: 'Geist Mono';
+    font-family: "Geist Mono";
     font-display: swap;
 
-    src: url('../assets/fonts/geist-mono/geist-mono.ttf') format('truetype');
+    src: url("../assets/fonts/geist-mono/geist-mono.ttf") format("truetype");
   }
 
   @font-face {
-    font-family: 'Tomorrow';
+    font-family: "Tomorrow";
     font-weight: 400;
     font-style: normal;
 
-    src: url('../assets/fonts/tomorrow/tomorrow-regular.ttf') format('truetype');
+    src: url("../assets/fonts/tomorrow/tomorrow-regular.ttf") format("truetype");
   }
   @font-face {
-    font-family: 'Tomorrow';
+    font-family: "Tomorrow";
     font-weight: 400;
     font-style: italic;
 
-    src: url('../assets/fonts/tomorrow/tomorrow-italic.ttf') format('truetype');
+    src: url("../assets/fonts/tomorrow/tomorrow-italic.ttf") format("truetype");
   }
   @font-face {
-    font-family: 'Tomorrow';
+    font-family: "Tomorrow";
     font-weight: 700;
     font-style: normal;
 
-    src: url('../assets/fonts/tomorrow/tomorrow-bold.ttf') format('truetype');
+    src: url("../assets/fonts/tomorrow/tomorrow-bold.ttf") format("truetype");
   }
   @font-face {
-    font-family: 'Tomorrow';
+    font-family: "Tomorrow";
     font-weight: 700;
     font-style: italic;
 
-    src: url('../assets/fonts/tomorrow/tomorrow-bold-italic.ttf') format('truetype');
+    src: url("../assets/fonts/tomorrow/tomorrow-bold-italic.ttf")
+      format("truetype");
   }
   body {
     letter-spacing: var(--tracking-normal);
@@ -164,14 +166,106 @@
     --shadow-color: hsl(0 0% 0%);
     --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
     --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-    --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-    --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-    --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
-    --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
-    --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+    --shadow-sm:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+    --shadow:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+    --shadow-md:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+    --shadow-lg:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+    --shadow-xl:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
     --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
     --tracking-normal: 0em;
     --spacing: 0.25rem;
+
+    /* Multi-Target Synchronization Color Primitives */
+    --primitive-emerald-50: #ecfdf5;
+    --primitive-emerald-100: #d1fae5;
+    --primitive-emerald-200: #a7f3d0;
+    --primitive-emerald-400: #34d399;
+    --primitive-emerald-500: #10b981;
+    --primitive-emerald-600: #059669;
+    --primitive-emerald-700: #047857;
+    --primitive-emerald-800: #065f46;
+    --primitive-emerald-900: #064e3b;
+    --primitive-emerald-950: #022c22;
+
+    --primitive-amber-50: #fffbeb;
+    --primitive-amber-100: #fef3c7;
+    --primitive-amber-200: #fde68a;
+    --primitive-amber-400: #fbbf24;
+    --primitive-amber-500: #f59e0b;
+    --primitive-amber-600: #d97706;
+    --primitive-amber-700: #b45309;
+    --primitive-amber-800: #92400e;
+    --primitive-amber-900: #78350f;
+    --primitive-amber-950: #451a03;
+
+    --primitive-rose-500: #f43f5e;
+    --primitive-rose-600: #e11d48;
+    --primitive-rose-700: #be123c;
+
+    --primitive-zinc-100: #f4f4f5;
+    --primitive-zinc-200: #e4e4e7;
+    --primitive-zinc-400: #a1a1aa;
+    --primitive-zinc-700: #3f3f46;
+    --primitive-zinc-800: #27272a;
+    --primitive-zinc-900: #18181b;
+    --primitive-zinc-950: #09090b;
+
+    /* Multi-Target Synchronization Semantic Tokens (Light) */
+    --status-unified-bg: rgba(16, 185, 129, 0.1);
+    --status-unified-border: rgba(16, 185, 129, 0.25);
+    --status-unified-text: var(--primitive-emerald-700);
+    --status-unified-dot: var(--primitive-emerald-600);
+    --status-diverged-bg: rgba(245, 158, 11, 0.1);
+    --status-diverged-border: rgba(245, 158, 11, 0.35);
+    --status-diverged-text: var(--primitive-amber-800);
+    --status-diverged-desc: var(--primitive-amber-900);
+    --status-stranded-pill-bg: rgba(244, 63, 94, 0.12);
+    --status-stranded-pill-border: rgba(244, 63, 94, 0.3);
+    --status-stranded-pill-text: var(--primitive-rose-700);
+    --action-resync-primary-bg: var(--primitive-zinc-950);
+    --action-resync-primary-fg: #ffffff;
+    --action-resync-hover-bg: var(--primitive-zinc-800);
+    --action-resync-ring: var(--primitive-zinc-950);
+
+    /* Component Tokens */
+    --summary-status-badge-radius: var(--radius-md);
+    --summary-status-badge-padding-x: 0.75rem;
+    --summary-status-badge-padding-y: 0.375rem;
+    --summary-status-badge-gap: 0.375rem;
+    --summary-status-badge-font-size: 0.8125rem;
+    --summary-status-badge-font-weight: 600;
+
+    --banner-diverged-radius: var(--radius-lg);
+    --banner-diverged-border-width: 1px;
+    --banner-diverged-padding: 1rem;
+    --banner-diverged-gap: 1rem;
+    --banner-diverged-title-size: 0.9375rem;
+    --banner-diverged-title-weight: 600;
+    --banner-diverged-desc-size: 0.8125rem;
+    --banner-diverged-desc-line-height: 1.375rem;
+
+    --stranded-pill-radius: 9999px;
+    --stranded-pill-padding-x: 0.5rem;
+    --stranded-pill-padding-y: 0.125rem;
+    --stranded-pill-font-size: 0.6875rem;
+    --stranded-pill-font-weight: 600;
+    --stranded-pill-gap: 0.25rem;
+
+    --btn-resync-height: 2.75rem;
+    --btn-resync-padding-x: 1rem;
+    --btn-resync-padding-y: 0.625rem;
+    --btn-resync-radius: var(--radius-md);
+    --btn-resync-font-size: 0.875rem;
+    --btn-resync-font-weight: 600;
+    --btn-resync-gap: 0.5rem;
+    --btn-resync-icon-size: 1rem;
+    --btn-resync-focus-ring-width: 2px;
+    --btn-resync-focus-ring-offset: 2px;
   }
 
   .dark {
@@ -219,12 +313,34 @@
     --shadow-color: hsl(0 0% 0%);
     --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
     --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-    --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-    --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-    --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
-    --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
-    --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+    --shadow-sm:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+    --shadow:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+    --shadow-md:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+    --shadow-lg:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+    --shadow-xl:
+      0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
     --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+
+    /* Multi-Target Synchronization Semantic Tokens (Dark) */
+    --status-unified-bg: rgba(16, 185, 129, 0.15);
+    --status-unified-border: rgba(16, 185, 129, 0.35);
+    --status-unified-text: var(--primitive-emerald-400);
+    --status-unified-dot: var(--primitive-emerald-500);
+    --status-diverged-bg: rgba(245, 158, 11, 0.15);
+    --status-diverged-border: rgba(245, 158, 11, 0.4);
+    --status-diverged-text: var(--primitive-amber-400);
+    --status-diverged-desc: var(--primitive-amber-200);
+    --status-stranded-pill-bg: rgba(244, 63, 94, 0.18);
+    --status-stranded-pill-border: rgba(244, 63, 94, 0.4);
+    --status-stranded-pill-text: #fda4af;
+    --action-resync-primary-bg: #fafafa;
+    --action-resync-primary-fg: var(--primitive-zinc-950);
+    --action-resync-hover-bg: var(--primitive-zinc-100);
+    --action-resync-ring: var(--primitive-zinc-400);
   }
 }
 

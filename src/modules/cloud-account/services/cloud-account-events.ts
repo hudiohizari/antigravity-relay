@@ -26,16 +26,24 @@ export interface AccountSyncRequestedEvent {
   target?: AntigravityAppTarget;
 }
 
+export interface AllAccountsExhaustedEvent {
+  reason?: string;
+  source?: string;
+  timestamp?: number;
+}
+
 export interface CloudAccountEventMap {
   "account:switched": AccountSwitchedEvent;
   "account:quota_updated": AccountQuotaUpdatedEvent;
   "account:deleted": AccountDeletedEvent;
   "account:sync_requested": AccountSyncRequestedEvent;
+  all_accounts_exhausted: AllAccountsExhaustedEvent;
   // Aliases for backwards/forwards compatibility
   "account-switched": AccountSwitchedEvent;
   "account-updated": AccountQuotaUpdatedEvent;
   "account-deleted": AccountDeletedEvent;
   "account-sync-requested": AccountSyncRequestedEvent;
+  "account:all_exhausted": AllAccountsExhaustedEvent;
 }
 
 export class CloudAccountEventEmitter extends EventEmitter {
@@ -61,6 +69,10 @@ export class CloudAccountEventEmitter extends EventEmitter {
         super.emit("account-sync-requested", payload);
       } else if (event === "account-sync-requested") {
         super.emit("account:sync_requested", payload);
+      } else if (event === "all_accounts_exhausted") {
+        super.emit("account:all_exhausted", payload);
+      } else if (event === "account:all_exhausted") {
+        super.emit("all_accounts_exhausted", payload);
       }
     }
     return res;

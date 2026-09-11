@@ -2545,10 +2545,14 @@ export class RelayServer {
             try {
               const { AutoSwitchService } =
                 await import("@/modules/cloud-account/services/AutoSwitchService");
+              const { CloudAccountSettingsStore } =
+                await import("@/modules/cloud-account/persistence/cloud-account-settings-store");
+              const isUnified = CloudAccountSettingsStore.isUnifiedMode();
               const switchResult =
                 await AutoSwitchService.triggerRateLimitSwitch({
                   reason: "HTTP 429 upstream rate limit",
                   source: "relay",
+                  appTarget: isUnified ? "all" : undefined,
                 });
 
               if (switchResult.switched && switchResult.nextAccount) {
@@ -2607,11 +2611,15 @@ export class RelayServer {
             try {
               const { AutoSwitchService } =
                 await import("@/modules/cloud-account/services/AutoSwitchService");
+              const { CloudAccountSettingsStore } =
+                await import("@/modules/cloud-account/persistence/cloud-account-settings-store");
+              const isUnified = CloudAccountSettingsStore.isUnifiedMode();
               const switchResult =
                 await AutoSwitchService.triggerRateLimitSwitch({
                   error: fetchErr,
                   reason: "Upstream rate limit connection error",
                   source: "relay",
+                  appTarget: isUnified ? "all" : undefined,
                 });
               if (switchResult.switched && switchResult.nextAccount) {
                 return reply

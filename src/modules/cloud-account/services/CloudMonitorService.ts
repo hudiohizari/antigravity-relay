@@ -635,16 +635,19 @@ export class CloudMonitorService {
                 `Monitor: Quota request rate-limited for ${account.email}, keeping cached quota as fallback.`,
               );
             }
-            for (const target of resolveAutoSwitchTargets()) {
+            const isUnified = CloudAccountSettingsStore.isUnifiedMode();
+            if (isUnified) {
               const activeId =
-                CloudAccountSettingsStore.getActiveAccountIdForTarget(target);
+                CloudAccountSettingsStore.getActiveAccountIdForTarget(
+                  undefined,
+                );
               if (activeId === account.id || (!activeId && account.is_active)) {
                 try {
                   await AutoSwitchService.triggerRateLimitSwitch({
                     accountId: account.id,
                     error,
                     reason: classified.reason,
-                    appTarget: target,
+                    appTarget: "all",
                     source: "monitor",
                   });
                 } catch (switchErr) {
@@ -652,6 +655,30 @@ export class CloudMonitorService {
                     `Monitor: Immediate rate-limit switch failed for ${account.email}`,
                     switchErr,
                   );
+                }
+              }
+            } else {
+              for (const target of resolveAutoSwitchTargets()) {
+                const activeId =
+                  CloudAccountSettingsStore.getActiveAccountIdForTarget(target);
+                if (
+                  activeId === account.id ||
+                  (!activeId && account.is_active)
+                ) {
+                  try {
+                    await AutoSwitchService.triggerRateLimitSwitch({
+                      accountId: account.id,
+                      error,
+                      reason: classified.reason,
+                      appTarget: target,
+                      source: "monitor",
+                    });
+                  } catch (switchErr) {
+                    logger.error(
+                      `Monitor: Immediate rate-limit switch failed for ${account.email}`,
+                      switchErr,
+                    );
+                  }
                 }
               }
             }
@@ -737,17 +764,18 @@ export class CloudMonitorService {
     }
 
     // 5. Check for Auto-Switch
-    for (const target of resolveAutoSwitchTargets()) {
-      try {
-        await AutoSwitchService.checkAndSwitchIfNeeded(target);
-      } catch (switchError) {
-        // A switch failure is specific to one target and must not discard the quota results
-        // already collected above, which the caller reports as a whole-poll failure.
-        logger.error(
-          `AutoSwitch: Failed to switch target ${target}`,
-          switchError,
-        );
-      }
+    try {
+      const isUnified = CloudAccountSettingsStore.isUnifiedMode();
+      await AutoSwitchService.checkAndSwitchIfNeeded(
+        isUnified ? "all" : undefined,
+      );
+    } catch (switchError) {
+      // A switch failure must not discard the quota results
+      // already collected above, which the caller reports as a whole-poll failure.
+      logger.error(
+        "AutoSwitch: Failed to execute scheduled switch check",
+        switchError,
+      );
     }
     if (epoch === this.stopEpoch && !options?.onlyActive) {
       await this.runWeeklyWarmups(refreshedAccounts);

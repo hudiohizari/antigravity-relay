@@ -248,8 +248,8 @@ describe("CloudMonitorService", () => {
     expect(AutoSwitchService.checkAndSwitchIfNeeded).toHaveBeenCalled();
   });
 
-  it("skips auto-switch for targets whose storage.json is absent", async () => {
-    vi.mocked(hasAntigravityStorage).mockReturnValue(false);
+  it("triggers auto-switch with 'all' in unified mode", async () => {
+    vi.mocked(CloudAccountSettingsStore.isUnifiedMode).mockReturnValue(true);
     vi.mocked(CloudAccountRepo.getAccounts).mockResolvedValue([
       {
         id: "acc1",
@@ -268,19 +268,17 @@ describe("CloudMonitorService", () => {
     await vi.advanceTimersByTimeAsync(1000);
     await pollPromise;
 
-    // Quota still refreshes; only the switch attempt is skipped.
     expect(CloudAccountRepo.updateQuota).toHaveBeenCalledWith(
       "acc1",
       expect.anything(),
     );
-    expect(AutoSwitchService.checkAndSwitchIfNeeded).not.toHaveBeenCalled();
+    expect(AutoSwitchService.checkAndSwitchIfNeeded).toHaveBeenCalledWith(
+      "all",
+    );
   });
 
-  it("includes the agy CLI target when its executable is detected", async () => {
-    vi.mocked(hasAntigravityStorage).mockReturnValue(false);
-    vi.mocked(detectAgyCliExecutablePath).mockReturnValue(
-      "/Users/x/.local/bin/agy",
-    );
+  it("triggers auto-switch with undefined when unified mode is disabled", async () => {
+    vi.mocked(CloudAccountSettingsStore.isUnifiedMode).mockReturnValue(false);
     vi.mocked(CloudAccountRepo.getAccounts).mockResolvedValue([
       {
         id: "acc1",
@@ -299,9 +297,8 @@ describe("CloudMonitorService", () => {
     await vi.advanceTimersByTimeAsync(1000);
     await pollPromise;
 
-    // Only agy/cli resolves (no desktop storage.json), so it must be the target passed to the switch.
     expect(AutoSwitchService.checkAndSwitchIfNeeded).toHaveBeenCalledWith(
-      "cli",
+      undefined,
     );
   });
 

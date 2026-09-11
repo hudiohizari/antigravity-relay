@@ -628,6 +628,21 @@ const tr = {
   cloud: {
     title: "Hesaplar",
     description: "Google Gemini hesap havuzunuzu yönetin.",
+    summary: {
+      statusUnified: "Birleşik (1 Etkin)",
+      statusUnifiedSubtitle: "Tüm ortamlar eşitlendi",
+      statusDiverged: "Ayrışmış ({{count}} Hedef Bölünmüş)",
+      statusDivergedSubtitle: "Ortamlar farklı hesapları çalıştırıyor",
+    },
+    divergedBanner: {
+      title: "Ortamların Eşitlemesi Bozuldu",
+      description: "Ortamlar farklı hesapları çalıştırıyor: {{targets}}",
+      strandedWarning:
+        "{{target}} hedefi hız sınırına takılmış bir hesapta kaldı.",
+      resyncAction: "Tüm Ortamları {{email}} ile Yeniden Eşitle",
+      resyncActionDefault: "Tüm Ortamları Yeniden Eşitle",
+      resyncing: "Yeniden eşitleniyor...",
+    },
     security: {
       compatibilityMode: {
         title: "Uyumluluk anahtarı depolaması etkin",
@@ -901,6 +916,15 @@ const tr = {
       },
     },
     toast: {
+      resyncSuccessTitle: "Ortamlar Yeniden Eşitlendi",
+      resyncSuccessDesc: "Tüm ortamlar {{email}} hesabıyla eşitlendi.",
+      resyncPartialTitle: "Kısmi Yeniden Eşitleme",
+      resyncPartialDesc:
+        "{{succeeded}} hedefleri değiştirildi, ancak {{failed}} hedefleri başarısız oldu.",
+      resyncFailedTitle: "Yeniden Eşitleme Başarısız Oldu",
+      allAccountsExhaustedTitle: "Tüm Hesaplar Hız Sınırında",
+      allAccountsExhaustedDesc:
+        "Havuzunuzdaki tüm hesapların kotası şu anda sınırda. Yeni hesap ekleyin veya kota sıfırlanmasını bekleyin.",
       syncSuccess: {
         title: "Eşitleme Başarılı",
         description: "IDE'den {{email}} içe aktarıldı.",

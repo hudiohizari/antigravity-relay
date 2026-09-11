@@ -39,6 +39,22 @@ export function switchCloudAccount(input: {
   return ipc.client.cloud.switchCloudAccount(input);
 }
 
+export function resyncAllEnvironments(input?: { accountId?: string }) {
+  return ipc.client.cloud.resyncAllEnvironments(input);
+}
+
+export function getSyncState() {
+  return ipc.client.cloud.getSyncState();
+}
+
+export function isUnifiedMode() {
+  return ipc.client.cloud.isUnifiedMode();
+}
+
+export function setUnifiedMode(input: { enabled: boolean }) {
+  return ipc.client.cloud.setUnifiedMode(input);
+}
+
 export function getAutoSwitchEnabled() {
   return ipc.client.cloud.getAutoSwitchEnabled();
 }

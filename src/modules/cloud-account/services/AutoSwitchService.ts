@@ -8,6 +8,7 @@ import {
   type CloudAccount,
 } from "@/modules/cloud-account/types";
 import { switchCloudAccount } from "@/modules/cloud-account/ipc/handler";
+import { runWithSwitchGuard } from "@/modules/antigravity-runtime/switch/switchGuard";
 import { cloudAccountEvents } from "./cloud-account-events";
 import { logger } from "@/shared/logging/logger";
 import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
@@ -28,7 +29,7 @@ export interface RateLimitSwitchOptions {
   accountId?: string;
   error?: unknown;
   reason?: string;
-  appTarget?: AntigravityAppTarget;
+  appTarget?: AntigravityAppTarget | "all";
   source?: "monitor" | "relay" | "app";
 }
 
@@ -43,6 +44,8 @@ export interface RateLimitSwitchResult {
 const BooleanSettingSchema = z.boolean();
 
 export class AutoSwitchService {
+  private static inFlightAutoSwitchPromise: Promise<RateLimitSwitchResult> | null =
+    null;
   private static switchTimestamps: number[] = [];
   private static lastExhaustionNotificationTime = 0;
   private static readonly CIRCUIT_BREAKER_WINDOW_MS = 30 * 1000; // 30 seconds
@@ -51,6 +54,7 @@ export class AutoSwitchService {
   static resetCircuitBreakerForTesting(): void {
     this.switchTimestamps = [];
     this.lastExhaustionNotificationTime = 0;
+    this.inFlightAutoSwitchPromise = null;
   }
 
   private static isCircuitBreakerTripped(totalAccounts: number): boolean {
@@ -283,6 +287,29 @@ export class AutoSwitchService {
     };
   }
 
+  private static async isCurrentActiveAccountHealthy(
+    appTarget?: AntigravityAppTarget | "all",
+  ): Promise<boolean> {
+    try {
+      const isUnified = CloudAccountSettingsStore.isUnifiedMode();
+      const target = isUnified || appTarget === "all" ? undefined : appTarget;
+      const activeAccountId =
+        CloudAccountSettingsStore.getActiveAccountIdForTarget(target);
+      if (!activeAccountId) return false;
+
+      const accounts = await CloudAccountRepo.getAccounts();
+      const activeAccount = accounts.find((a) => a.id === activeAccountId);
+      if (!activeAccount) return false;
+
+      return (
+        activeAccount.status === "active" &&
+        !this.isAccountDepleted(activeAccount)
+      );
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Immediately switches account upon encountering a rate-limit error (HTTP 429 / resource_exhausted).
    * Non-rate-limit errors (401, 5xx, invalid_grant, timeouts) are explicitly ignored.
@@ -290,7 +317,7 @@ export class AutoSwitchService {
   static async triggerRateLimitSwitch(
     options: RateLimitSwitchOptions = {},
   ): Promise<RateLimitSwitchResult> {
-    const { accountId, error, reason, appTarget, source = "app" } = options;
+    const { error, reason, appTarget, source = "app" } = options;
 
     // 1. Strict rate limit verification: ignore other errors
     const errorCandidate = error ?? reason;
@@ -314,68 +341,126 @@ export class AutoSwitchService {
       return { switched: false, ignored: true, reason: "disabled" };
     }
 
-    // 3. Resolve target account
-    const accounts = await CloudAccountRepo.getAccounts();
-    const activeAccountId =
-      accountId ??
-      CloudAccountSettingsStore.getActiveAccountIdForTarget(appTarget);
-    const targetAccount = activeAccountId
-      ? accounts.find((account) => account.id === activeAccountId)
-      : undefined;
-    const currentAccount =
-      targetAccount ?? accounts.find((account) => account.is_active);
-
-    if (!currentAccount) {
-      logger.warn(
-        `AutoSwitch (${source}): No active account found to switch from.`,
+    // 3. Singleflight promise mutex: await in-flight switch if active
+    if (this.inFlightAutoSwitchPromise) {
+      logger.info(
+        `AutoSwitch (${source}): In-flight switch already active; awaiting resolution...`,
       );
-      return { switched: false, ignored: true, reason: "no_active_account" };
+      const inFlightResult = await this.inFlightAutoSwitchPromise;
+
+      // Post-resolution check: if active account is already healthy, return without re-rotating
+      const isHealthy = await this.isCurrentActiveAccountHealthy(appTarget);
+      if (isHealthy) {
+        logger.info(
+          `AutoSwitch (${source}): Post-resolution check: active account is healthy. Skipping redundant switch.`,
+        );
+        return inFlightResult;
+      }
     }
 
-    // 4. Mark current account as rate_limited in DB
-    const rateLimitReason =
-      reason ||
-      (error ? extractErrorMessage(error) : "Rate limit exceeded (HTTP 429)");
-    logger.warn(
-      `AutoSwitch (${source}): Account ${currentAccount.email} rate-limited: ${rateLimitReason}. Initiating immediate switch...`,
-    );
-    await CloudAccountRepo.setAccountStatus(
-      currentAccount.id,
-      "rate_limited",
-      rateLimitReason,
-    );
+    // 4. Acquire singleflight mutex with guaranteed try...finally release
+    this.inFlightAutoSwitchPromise = (async () => {
+      try {
+        return await this.executeRateLimitSwitch(options);
+      } finally {
+        this.inFlightAutoSwitchPromise = null;
+      }
+    })();
 
-    // Circuit breaker check
-    if (this.isCircuitBreakerTripped(accounts.length)) {
+    return await this.inFlightAutoSwitchPromise;
+  }
+
+  private static async executeRateLimitSwitch(
+    options: RateLimitSwitchOptions,
+  ): Promise<RateLimitSwitchResult> {
+    const { accountId, error, reason, appTarget, source = "app" } = options;
+
+    const isUnified = CloudAccountSettingsStore.isUnifiedMode();
+    const effectiveTarget: AntigravityAppTarget | "all" | undefined = isUnified
+      ? "all"
+      : appTarget;
+
+    return await runWithSwitchGuard("cloud-account-switch", async () => {
+      // Resolve target account
+      const accounts = await CloudAccountRepo.getAccounts();
+      const lookupTarget =
+        effectiveTarget === "all" ? undefined : effectiveTarget;
+      const activeAccountId =
+        accountId ??
+        CloudAccountSettingsStore.getActiveAccountIdForTarget(lookupTarget);
+      const targetAccount = activeAccountId
+        ? accounts.find((account) => account.id === activeAccountId)
+        : undefined;
+      const currentAccount =
+        targetAccount ?? accounts.find((account) => account.is_active);
+
+      if (!currentAccount) {
+        logger.warn(
+          `AutoSwitch (${source}): No active account found to switch from.`,
+        );
+        return { switched: false, ignored: true, reason: "no_active_account" };
+      }
+
+      // Mark current account as rate_limited in DB
+      const rateLimitReason =
+        reason ||
+        (error ? extractErrorMessage(error) : "Rate limit exceeded (HTTP 429)");
       logger.warn(
-        `AutoSwitch (${source}): Switch loop circuit breaker tripped (${this.switchTimestamps.length} switches in 30s). Halting automated switching.`,
+        `AutoSwitch (${source}): Account ${currentAccount.email} rate-limited: ${rateLimitReason}. Initiating immediate switch...`,
       );
-      this.notifyExhaustion(
-        "Auto-switch loop detected: rapid switching halted. Please check account quotas manually.",
+      await CloudAccountRepo.setAccountStatus(
+        currentAccount.id,
+        "rate_limited",
+        rateLimitReason,
       );
-      return {
-        switched: false,
-        noAccountLeft: true,
-        reason: "circuit_breaker_tripped",
-      };
-    }
 
-    // 5. Find candidate with highest 5h limit
-    const nextAccount = await this.findBestAccount(currentAccount.id);
+      // Circuit breaker check
+      if (this.isCircuitBreakerTripped(accounts.length)) {
+        logger.warn(
+          `AutoSwitch (${source}): Switch loop circuit breaker tripped (${this.switchTimestamps.length} switches in 30s). Halting automated switching.`,
+        );
+        this.notifyExhaustion(
+          "Auto-switch loop detected: rapid switching halted. Please check account quotas manually.",
+        );
+        return {
+          switched: false,
+          noAccountLeft: true,
+          reason: "circuit_breaker_tripped",
+        };
+      }
 
-    if (nextAccount) {
+      // Find candidate with highest 5h limit
+      const nextAccount = await this.findBestAccount(currentAccount.id);
+
+      if (!nextAccount) {
+        logger.warn(
+          `AutoSwitch (${source}): All accounts rate-limited or depleted. No candidate available. Aborting mutation.`,
+        );
+        cloudAccountEvents.emit("all_accounts_exhausted", {
+          reason: "All cloud accounts are rate-limited or exhausted",
+          source,
+          timestamp: Date.now(),
+        });
+        this.notifyExhaustion();
+        return {
+          switched: false,
+          noAccountLeft: true,
+          reason: "all_accounts_exhausted",
+        };
+      }
+
       const quota5h = this.getAccount5hQuotaScore(nextAccount);
       const quotaPct = Math.round(quota5h.bottleneck5h);
       logger.info(
-        `AutoSwitch (${source}): Switching to ${nextAccount.email} (Highest 5h Quota: ${quotaPct}%)...`,
+        `AutoSwitch (${source}): Switching to ${nextAccount.email} (Highest 5h Quota: ${quotaPct}%, target=${effectiveTarget})...`,
       );
 
       try {
-        await switchCloudAccount(nextAccount.id, appTarget);
+        await switchCloudAccount(nextAccount.id, effectiveTarget);
         this.recordSwitch();
         cloudAccountEvents.emit("account:switched", {
           accountId: nextAccount.id,
-          target: appTarget,
+          target: effectiveTarget,
           account: nextAccount,
         });
 
@@ -396,16 +481,7 @@ export class AutoSwitchService {
         );
         throw switchError;
       }
-    }
-
-    // 6. No accounts left with capacity
-    logger.warn(
-      `AutoSwitch (${source}): All accounts rate-limited or depleted. No candidate available.`,
-    );
-
-    this.notifyExhaustion();
-
-    return { switched: false, noAccountLeft: true };
+    });
   }
 
   /**
@@ -413,7 +489,7 @@ export class AutoSwitchService {
    * Checks if we need to switch from the current account.
    */
   static async checkAndSwitchIfNeeded(
-    appTarget?: AntigravityAppTarget | undefined,
+    appTarget?: AntigravityAppTarget | "all" | undefined,
   ): Promise<boolean> {
     const enabled = CloudAccountSettingsStore.getSetting(
       "auto_switch_enabled",
@@ -422,17 +498,22 @@ export class AutoSwitchService {
     );
     if (!enabled) return false;
 
+    const isUnified = CloudAccountSettingsStore.isUnifiedMode();
+    const effectiveTarget = appTarget ?? (isUnified ? "all" : undefined);
+    const lookupTarget =
+      effectiveTarget === "all" ? undefined : effectiveTarget;
+
     // Get current active account for the target
     const accounts = await CloudAccountRepo.getAccounts();
     const activeAccountId =
-      CloudAccountSettingsStore.getActiveAccountIdForTarget(appTarget);
+      CloudAccountSettingsStore.getActiveAccountIdForTarget(lookupTarget);
     const targetAccount = activeAccountId
       ? accounts.find((account) => account.id === activeAccountId)
       : undefined;
 
     if (activeAccountId && !targetAccount) {
       logger.warn(
-        `AutoSwitch: Active account ${activeAccountId} for target ${appTarget ?? "default"} no longer exists; falling back to the global active account.`,
+        `AutoSwitch: Active account ${activeAccountId} for target ${lookupTarget ?? "default"} no longer exists; falling back to the global active account.`,
       );
     }
 
@@ -446,7 +527,7 @@ export class AutoSwitchService {
       const result = await this.triggerRateLimitSwitch({
         accountId: currentAccount.id,
         reason: currentAccount.status_reason || "Rate limit detected",
-        appTarget,
+        appTarget: effectiveTarget,
         source: "monitor",
       });
       return result.switched;
@@ -478,11 +559,11 @@ export class AutoSwitchService {
           `AutoSwitch: Switching to ${nextAccount.email} (Highest 5h: ${quotaPct}%)...`,
         );
 
-        await switchCloudAccount(nextAccount.id, appTarget);
+        await switchCloudAccount(nextAccount.id, effectiveTarget);
         this.recordSwitch();
         cloudAccountEvents.emit("account:switched", {
           accountId: nextAccount.id,
-          target: appTarget,
+          target: effectiveTarget,
           account: nextAccount,
         });
 

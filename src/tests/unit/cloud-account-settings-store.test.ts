@@ -138,3 +138,107 @@ describe("CloudAccountSettingsStore.getActiveAccountIdForTarget", () => {
     expect(deleteSettingSpy).toHaveBeenCalledWith("active_cloud_account.agy");
   });
 });
+
+describe("CloudAccountSettingsStore Unified Mode & Operational State", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns true by default for isUnifiedMode()", () => {
+    const getSettingSpy = vi
+      .spyOn(CloudAccountSettingsStore, "getSetting")
+      .mockImplementation((_key, defaultValue) => defaultValue as any);
+
+    expect(CloudAccountSettingsStore.isUnifiedMode()).toBe(true);
+    expect(getSettingSpy).toHaveBeenCalledWith(
+      "unified_mode",
+      true,
+      expect.anything(),
+    );
+  });
+
+  it("persists unified mode setting via setUnifiedMode()", () => {
+    const setSettingSpy = vi
+      .spyOn(CloudAccountSettingsStore, "setSetting")
+      .mockImplementation(() => {});
+
+    CloudAccountSettingsStore.setUnifiedMode(false);
+    expect(setSettingSpy).toHaveBeenCalledWith("unified_mode", false);
+
+    CloudAccountSettingsStore.setUnifiedMode(true);
+    expect(setSettingSpy).toHaveBeenCalledWith("unified_mode", true);
+  });
+
+  it("returns operational state indicating physically unified when all installed targets share one account", async () => {
+    const paths = await import("@/shared/platform/paths");
+    vi.spyOn(paths, "isAntigravityTargetInstalled").mockImplementation(
+      (target) => {
+        return target === "app" || target === "cli";
+      },
+    );
+    vi.spyOn(CloudAccountSettingsStore, "isUnifiedMode").mockReturnValue(true);
+    vi.spyOn(
+      CloudAccountSettingsStore,
+      "getActiveAccountIdForTarget",
+    ).mockImplementation((target) => {
+      if (target === "app" || target === "cli") return "acc-shared";
+      return "";
+    });
+
+    const state = CloudAccountSettingsStore.getOperationalState();
+    expect(state.isUnifiedMode).toBe(true);
+    expect(state.isPhysicallyUnified).toBe(true);
+    expect(state.activeAccountId).toBe("acc-shared");
+    expect(state.installedTargets).toEqual(["app", "cli"]);
+    expect(state.divergedTargets).toEqual([]);
+    expect(state.targetAccounts.app).toBe("acc-shared");
+    expect(state.targetAccounts.cli).toBe("acc-shared");
+  });
+
+  it("returns operational state indicating diverged when installed targets point to different accounts", async () => {
+    const paths = await import("@/shared/platform/paths");
+    vi.spyOn(paths, "isAntigravityTargetInstalled").mockImplementation(
+      (target) => {
+        return target === "app" || target === "cli";
+      },
+    );
+    vi.spyOn(CloudAccountSettingsStore, "isUnifiedMode").mockReturnValue(true);
+    vi.spyOn(
+      CloudAccountSettingsStore,
+      "getActiveAccountIdForTarget",
+    ).mockImplementation((target) => {
+      if (target === "app") return "acc-app";
+      if (target === "cli") return "acc-cli";
+      return "";
+    });
+
+    const state = CloudAccountSettingsStore.getOperationalState();
+    expect(state.isUnifiedMode).toBe(true);
+    expect(state.isPhysicallyUnified).toBe(false);
+    expect(state.activeAccountId).toBe("acc-app");
+    expect(state.installedTargets).toEqual(["app", "cli"]);
+    expect(state.divergedTargets).toEqual(["cli"]);
+  });
+
+  it("handles single installed target as physically unified", async () => {
+    const paths = await import("@/shared/platform/paths");
+    vi.spyOn(paths, "isAntigravityTargetInstalled").mockImplementation(
+      (target) => {
+        return target === "app";
+      },
+    );
+    vi.spyOn(CloudAccountSettingsStore, "isUnifiedMode").mockReturnValue(true);
+    vi.spyOn(
+      CloudAccountSettingsStore,
+      "getActiveAccountIdForTarget",
+    ).mockImplementation((target) => {
+      if (target === "app") return "acc-single";
+      return "";
+    });
+
+    const state = CloudAccountSettingsStore.getOperationalState();
+    expect(state.isPhysicallyUnified).toBe(true);
+    expect(state.divergedTargets).toEqual([]);
+    expect(state.activeAccountId).toBe("acc-single");
+  });
+});

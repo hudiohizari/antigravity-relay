@@ -22,6 +22,8 @@ import {
   forcePollCloudMonitor,
   getWeeklyWarmupConfig,
   setWeeklyWarmupConfig,
+  getSyncState,
+  resyncAllEnvironments,
 } from "@/modules/cloud-account/actions/cloud";
 import type { WeeklyWarmupConfig } from "@/modules/cloud-account/services/weekly-warmup-contract";
 import { syncLocalAccount } from "@/modules/cloud-account/actions/cloud";
@@ -42,6 +44,7 @@ export const QUERY_KEYS = {
   cloudAccounts: ["cloudAccounts"],
   securityStatus: ["cloudAccountSecurityStatus"],
   oauthClients: ["oauthClients"],
+  syncState: ["cloudSyncState"],
 };
 
 export function useCloudAccounts(refetchInterval: number | false = false) {
@@ -132,6 +135,29 @@ export function useSwitchCloudAccount() {
     }) => Promise<any>,
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.cloudAccounts });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.syncState });
+      queryClient.invalidateQueries({ queryKey: ["currentAccount"] });
+      queryClient.invalidateQueries({ queryKey: ["process", "status"] });
+    },
+  });
+}
+
+export function useSyncState() {
+  return useQuery({
+    queryKey: QUERY_KEYS.syncState,
+    queryFn: getSyncState,
+    staleTime: 1000 * 30,
+  });
+}
+
+export function useResyncAllEnvironments() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: resyncAllEnvironments,
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.cloudAccounts });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.syncState });
       queryClient.invalidateQueries({ queryKey: ["currentAccount"] });
       queryClient.invalidateQueries({ queryKey: ["process", "status"] });
     },

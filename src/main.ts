@@ -19,6 +19,7 @@ import { applyStartupGpuSwitches } from "@/modules/app-shell/utils/startupGpuSwi
 import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandler";
 import { initDatabase } from "@/modules/account/public";
 import { CloudMonitorService } from "@/modules/cloud-account/services/CloudMonitorService";
+import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
 import { RelayController } from "@/modules/relay/relay-controller";
 
 // Static Imports to fix Bundle Resolution Errors
@@ -151,6 +152,18 @@ let hasShownInstallNotice = false;
 let pendingManualUpdate: ManualUpdateInfo | null = null;
 let isManualUpdateRendererReady = false;
 const notifiedManualUpdateVersions = new Set<string>();
+
+cloudAccountEvents.on("account:switched", (payload) => {
+  if (globalMainWindow && !globalMainWindow.isDestroyed()) {
+    globalMainWindow.webContents.send("account-switched", payload);
+  }
+});
+
+cloudAccountEvents.on("account:quota_updated", (payload) => {
+  if (globalMainWindow && !globalMainWindow.isDestroyed()) {
+    globalMainWindow.webContents.send("accounts-updated", payload);
+  }
+});
 
 function isRunningFromExpectedInstallDir() {
   return isRunningFromExpectedInstallDirUtil({
