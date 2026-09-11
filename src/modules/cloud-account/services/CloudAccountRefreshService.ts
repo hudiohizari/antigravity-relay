@@ -1,17 +1,21 @@
-import type { CloudAccount } from '@/modules/cloud-account/types';
+import type { CloudAccount } from "@/modules/cloud-account/types";
 import {
   CloudAccountHealthService,
   evictAccountFromActiveLeaseCache,
   syncAccountOAuthHealthToActiveLeaseCache,
-} from './CloudAccountHealthService';
-import { GoogleAPIService, OAuthTokenRefreshError, type TokenResponse } from './GoogleAPIService';
+} from "./CloudAccountHealthService";
+import {
+  GoogleAPIService,
+  OAuthTokenRefreshError,
+  type TokenResponse,
+} from "./GoogleAPIService";
 
 export interface CloudAccountRefreshRequest {
   accountId: string;
   refreshToken: string;
   proxyUrl?: string;
   oauthClientKey?: string;
-  health?: CloudAccount['health'];
+  health?: CloudAccount["health"];
   signal?: AbortSignal;
 }
 
@@ -23,8 +27,12 @@ export interface CloudAccountRefreshRequest {
 export class CloudAccountRefreshService {
   private static readonly operationLocks = new Map<string, Promise<void>>();
 
-  static async refreshAccessToken(request: CloudAccountRefreshRequest): Promise<TokenResponse> {
-    return this.runAccountOperation(request.accountId, () => this.refreshAccessTokenLocked(request));
+  static async refreshAccessToken(
+    request: CloudAccountRefreshRequest,
+  ): Promise<TokenResponse> {
+    return this.runAccountOperation(request.accountId, () =>
+      this.refreshAccessTokenLocked(request),
+    );
   }
 
   static async clearFailureState(accountId: string): Promise<void> {
@@ -34,12 +42,11 @@ export class CloudAccountRefreshService {
         await CloudAccountHealthService.mutateHealth(
           accountId,
           (currentHealth) =>
-            currentHealth?.validation ? { validation: currentHealth.validation } : undefined,
+            currentHealth?.validation
+              ? { validation: currentHealth.validation }
+              : undefined,
         );
       }
-
-      const { reloadNestServerAccountLeaseCache } = await import('@/server/main');
-      await reloadNestServerAccountLeaseCache();
     });
   }
 
@@ -53,7 +60,9 @@ export class CloudAccountRefreshService {
   ): Promise<TokenResponse> {
     // request.health is only a transport hint. The persisted value is authoritative
     // because another caller may have changed the account while this request waited.
-    const effectiveHealth = await CloudAccountHealthService.getHealth(request.accountId);
+    const effectiveHealth = await CloudAccountHealthService.getHealth(
+      request.accountId,
+    );
     if (effectiveHealth?.oauth?.refresh_blocked) {
       throw new CloudAccountRefreshBlockedError(request.accountId);
     }
@@ -75,13 +84,21 @@ export class CloudAccountRefreshService {
         const clearedHealth = await CloudAccountHealthService.mutateHealth(
           request.accountId,
           (currentHealth) =>
-            currentHealth?.validation ? { validation: currentHealth.validation } : undefined,
+            currentHealth?.validation
+              ? { validation: currentHealth.validation }
+              : undefined,
         );
-        await syncAccountOAuthHealthToActiveLeaseCache(request.accountId, clearedHealth?.oauth);
+        await syncAccountOAuthHealthToActiveLeaseCache(
+          request.accountId,
+          clearedHealth?.oauth,
+        );
       }
       return refreshedToken;
     } catch (error) {
-      if (!(error instanceof OAuthTokenRefreshError) || error.code !== 'invalid_grant') {
+      if (
+        !(error instanceof OAuthTokenRefreshError) ||
+        error.code !== "invalid_grant"
+      ) {
         throw error;
       }
 
@@ -89,7 +106,10 @@ export class CloudAccountRefreshService {
       const updatedHealth = await CloudAccountHealthService.mutateHealth(
         request.accountId,
         (currentHealth) => {
-          const failureCount = Math.min(2, (currentHealth?.oauth?.invalid_grant_count ?? 0) + 1);
+          const failureCount = Math.min(
+            2,
+            (currentHealth?.oauth?.invalid_grant_count ?? 0) + 1,
+          );
           return {
             ...currentHealth,
             oauth: {
@@ -97,13 +117,16 @@ export class CloudAccountRefreshService {
               invalid_grant_count: failureCount,
               invalid_grant_last_at_ms: failureAt,
               blocked_at_ms: failureCount >= 2 ? failureAt : undefined,
-              reason: 'invalid_grant',
+              reason: "invalid_grant",
             },
           };
         },
       );
       if (!updatedHealth?.oauth?.refresh_blocked) {
-        await syncAccountOAuthHealthToActiveLeaseCache(request.accountId, updatedHealth?.oauth);
+        await syncAccountOAuthHealthToActiveLeaseCache(
+          request.accountId,
+          updatedHealth?.oauth,
+        );
         throw error;
       }
 
@@ -116,8 +139,11 @@ export class CloudAccountRefreshService {
     accountId: string,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const previousOperation = this.operationLocks.get(accountId) ?? Promise.resolve();
-    const operationPromise = previousOperation.catch(() => undefined).then(operation);
+    const previousOperation =
+      this.operationLocks.get(accountId) ?? Promise.resolve();
+    const operationPromise = previousOperation
+      .catch(() => undefined)
+      .then(operation);
     const operationTail = operationPromise.then(
       () => undefined,
       () => undefined,
@@ -139,22 +165,27 @@ export class CloudAccountRefreshBlockedError extends Error {
     readonly accountId: string,
     options?: ErrorOptions,
   ) {
-    super(`Automatic token refresh is blocked for account ${accountId}`, options);
-    this.name = 'CloudAccountRefreshBlockedError';
+    super(
+      `Automatic token refresh is blocked for account ${accountId}`,
+      options,
+    );
+    this.name = "CloudAccountRefreshBlockedError";
   }
 }
 
 export const CLOUD_ACCOUNT_REAUTH_REQUIRED_REASON =
-  'Repeated OAuth invalid_grant responses require account reauthorization';
+  "Repeated OAuth invalid_grant responses require account reauthorization";
 
 export function isRetryableInvalidGrantRefreshError(
   error: unknown,
 ): error is OAuthTokenRefreshError {
-  return error instanceof OAuthTokenRefreshError && error.code === 'invalid_grant';
+  return (
+    error instanceof OAuthTokenRefreshError && error.code === "invalid_grant"
+  );
 }
 
 export function createCloudAccountRefreshRequest(
-  account: Pick<CloudAccount, 'id' | 'proxy_url' | 'token' | 'health'>,
+  account: Pick<CloudAccount, "id" | "proxy_url" | "token" | "health">,
   signal?: AbortSignal,
 ): CloudAccountRefreshRequest {
   return {

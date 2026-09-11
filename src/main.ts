@@ -19,7 +19,6 @@ import { applyStartupGpuSwitches } from "@/modules/app-shell/utils/startupGpuSwi
 import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandler";
 import { initDatabase } from "@/modules/account/public";
 import { CloudMonitorService } from "@/modules/cloud-account/services/CloudMonitorService";
-import { createWeeklyWarmupExecutor } from "@/modules/proxy-gateway/weekly-warmup-executor";
 import { RelayController } from "@/modules/relay/relay-controller";
 
 // Static Imports to fix Bundle Resolution Errors
@@ -731,9 +730,6 @@ app
     try {
       // Start OAuth Server
       AuthServer.start();
-      CloudMonitorService.configureWeeklyWarmupExecutor(
-        createWeeklyWarmupExecutor(),
-      );
 
       // Restore Relay Server if previously ON (does not auto-start on first run)
       try {

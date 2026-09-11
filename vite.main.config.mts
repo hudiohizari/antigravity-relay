@@ -28,15 +28,6 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(process.cwd(), './src'),
-        kafkajs: path.resolve(process.cwd(), './src/mocks/empty.ts'),
-        mqtt: path.resolve(process.cwd(), './src/mocks/empty.ts'),
-        amqplib: path.resolve(process.cwd(), './src/mocks/empty.ts'),
-        'amqp-connection-manager': path.resolve(process.cwd(), './src/mocks/empty.ts'),
-        nats: path.resolve(process.cwd(), './src/mocks/empty.ts'),
-        ioredis: path.resolve(process.cwd(), './src/mocks/empty.ts'),
-        '@fastify/view': path.resolve(process.cwd(), './src/mocks/empty.ts'),
-        '@nestjs/microservices': path.resolve(process.cwd(), './src/mocks/nestjs-microservices'),
-        '@nestjs/websockets': path.resolve(process.cwd(), './src/mocks/nestjs-websockets'),
       },
     },
     build: {

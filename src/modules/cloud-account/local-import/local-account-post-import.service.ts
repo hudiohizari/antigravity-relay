@@ -1,9 +1,9 @@
-import { randomUUID } from 'crypto';
-import { logger } from '@/shared/logging/logger';
+import { randomUUID } from "crypto";
+import { logger } from "@/shared/logging/logger";
 import type {
   LocalAccountPostImportCacheReloadStatus,
   LocalAccountPostImportTaskSnapshot,
-} from './import-types';
+} from "./import-types";
 
 const DEFAULT_MAX_CONCURRENCY = 3;
 const DEFAULT_MAX_TASKS = 32;
@@ -13,7 +13,7 @@ export type LocalAccountPostImportTaskRunner = () => Promise<void>;
 
 export interface LocalAccountPostImportDependencies {
   refreshAccountQuota: (accountId: string) => Promise<void>;
-  reloadAccountCache: () => Promise<'reloaded' | 'skipped'>;
+  reloadAccountCache: () => Promise<"reloaded" | "skipped">;
   createTaskId: () => string;
   now: () => number;
   defer: (task: LocalAccountPostImportTaskRunner) => void;
@@ -30,19 +30,23 @@ interface MutablePostImportTask extends LocalAccountPostImportTaskSnapshot {
   forgetAt: number;
 }
 
-function normalizePositiveInteger(value: number | undefined, fallback: number): number {
-  return value !== undefined && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+function normalizePositiveInteger(
+  value: number | undefined,
+  fallback: number,
+): number {
+  return value !== undefined && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
 }
 
 function createDefaultDependencies(): LocalAccountPostImportDependencies {
   return {
     refreshAccountQuota: async (accountId) => {
-      const { refreshAccountQuota } = await import('../ipc/handler');
+      const { refreshAccountQuota } = await import("../ipc/handler");
       await refreshAccountQuota(accountId);
     },
     reloadAccountCache: async () => {
-      const { reloadNestServerAccountLeaseCache } = await import('@/server/main');
-      return (await reloadNestServerAccountLeaseCache()) ? 'reloaded' : 'skipped';
+      return "skipped";
     },
     createTaskId: randomUUID,
     now: Date.now,
@@ -70,9 +74,18 @@ export class LocalAccountPostImportService {
 
   constructor(options: LocalAccountPostImportOptions = {}) {
     this.dependencies = options.dependencies ?? createDefaultDependencies();
-    this.maxConcurrency = normalizePositiveInteger(options.maxConcurrency, DEFAULT_MAX_CONCURRENCY);
-    this.maxTasks = normalizePositiveInteger(options.maxTasks, DEFAULT_MAX_TASKS);
-    this.taskTtlMs = normalizePositiveInteger(options.taskTtlMs, DEFAULT_TASK_TTL_MS);
+    this.maxConcurrency = normalizePositiveInteger(
+      options.maxConcurrency,
+      DEFAULT_MAX_CONCURRENCY,
+    );
+    this.maxTasks = normalizePositiveInteger(
+      options.maxTasks,
+      DEFAULT_MAX_TASKS,
+    );
+    this.taskTtlMs = normalizePositiveInteger(
+      options.taskTtlMs,
+      DEFAULT_TASK_TTL_MS,
+    );
   }
 
   schedule(accountIds: string[]): string | undefined {
@@ -87,12 +100,12 @@ export class LocalAccountPostImportService {
     const taskId = this.dependencies.createTaskId();
     const task: MutablePostImportTask = {
       taskId,
-      status: 'queued',
+      status: "queued",
       totalAccounts: uniqueAccountIds.length,
       completedAccounts: 0,
       refreshedAccountIds: [],
       failedAccountIds: [],
-      cacheReloadStatus: 'pending',
+      cacheReloadStatus: "pending",
       createdAt: now,
       forgetAt: now + this.taskTtlMs,
     };
@@ -118,12 +131,17 @@ export class LocalAccountPostImportService {
       cacheReloadStatus: task.cacheReloadStatus,
       createdAt: task.createdAt,
       ...(task.startedAt === undefined ? {} : { startedAt: task.startedAt }),
-      ...(task.completedAt === undefined ? {} : { completedAt: task.completedAt }),
+      ...(task.completedAt === undefined
+        ? {}
+        : { completedAt: task.completedAt }),
     };
   }
 
-  private async runTask(task: MutablePostImportTask, accountIds: string[]): Promise<void> {
-    task.status = 'running';
+  private async runTask(
+    task: MutablePostImportTask,
+    accountIds: string[],
+  ): Promise<void> {
+    task.status = "running";
     task.startedAt = this.dependencies.now();
     let nextIndex = 0;
     const workerCount = Math.min(this.maxConcurrency, accountIds.length);
@@ -137,7 +155,9 @@ export class LocalAccountPostImportService {
           task.refreshedAccountIds.push(accountId);
         } catch {
           task.failedAccountIds.push(accountId);
-          logger.warn(`Post-import quota refresh failed for account ${accountId}`);
+          logger.warn(
+            `Post-import quota refresh failed for account ${accountId}`,
+          );
         } finally {
           task.completedAccounts += 1;
         }
@@ -146,7 +166,7 @@ export class LocalAccountPostImportService {
 
     await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
     task.cacheReloadStatus = await this.reloadAccountCache();
-    task.status = 'completed';
+    task.status = "completed";
     task.completedAt = this.dependencies.now();
     task.forgetAt = task.completedAt + this.taskTtlMs;
   }
@@ -155,14 +175,14 @@ export class LocalAccountPostImportService {
     try {
       return await this.dependencies.reloadAccountCache();
     } catch {
-      logger.warn('Post-import account cache reload failed');
-      return 'failed';
+      logger.warn("Post-import account cache reload failed");
+      return "failed";
     }
   }
 
   private cleanup(now: number): void {
     for (const [taskId, task] of this.tasks) {
-      if (task.status === 'completed' && task.forgetAt <= now) {
+      if (task.status === "completed" && task.forgetAt <= now) {
         this.tasks.delete(taskId);
       }
     }
@@ -171,7 +191,7 @@ export class LocalAccountPostImportService {
   private evictOldestTasks(): void {
     while (this.tasks.size >= this.maxTasks) {
       const oldestTaskId = this.tasks.keys().next().value;
-      if (typeof oldestTaskId !== 'string') {
+      if (typeof oldestTaskId !== "string") {
         return;
       }
       this.tasks.delete(oldestTaskId);
@@ -179,4 +199,5 @@ export class LocalAccountPostImportService {
   }
 }
 
-export const localAccountPostImportService = new LocalAccountPostImportService();
+export const localAccountPostImportService =
+  new LocalAccountPostImportService();

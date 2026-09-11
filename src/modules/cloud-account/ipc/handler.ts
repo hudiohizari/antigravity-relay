@@ -24,7 +24,6 @@ import fs from "fs";
 import { isEmpty, isString } from "lodash-es";
 import { updateTrayMenu } from "@/modules/app-shell/ipc/tray/handler";
 import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
-import { proxyModelAvailabilityStore } from "@/modules/proxy-gateway/server/shared/services/model-availability.service";
 import {
   ensureGlobalOriginalFromCurrentStorage,
   generateDeviceProfile,
@@ -653,7 +652,6 @@ export async function refreshAccountQuota(
     account.last_used = Math.floor(Date.now() / 1000);
     await clearAccountStatus(account);
     await clearValidationHealthAfterSuccessfulProbe(account);
-    proxyModelAvailabilityStore.clearCapabilityFailures(account.id);
     notifyTrayUpdate(account);
     CloudMonitorService.scheduleWeeklyWarmup([account]);
     return account;
@@ -707,7 +705,6 @@ export async function refreshAccountQuota(
         account.last_used = Math.floor(Date.now() / 1000);
         await clearAccountStatus(account);
         await clearValidationHealthAfterSuccessfulProbe(account);
-        proxyModelAvailabilityStore.clearCapabilityFailures(account.id);
         CloudMonitorService.scheduleWeeklyWarmup([account]);
         return account;
       } catch (refreshError) {

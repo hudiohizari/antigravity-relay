@@ -1,10 +1,8 @@
-import { CloudAccountRepo } from '@/modules/cloud-account/persistence/cloudHandler';
-import type { CloudAccount, CloudAccountHealth } from '@/modules/cloud-account/types';
-import {
-  evictNestServerAccountLeaseAccount,
-  reloadNestServerAccountLeaseCache,
-  updateNestServerAccountLeaseOAuthHealth,
-} from '@/server/main';
+import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandler";
+import type {
+  CloudAccount,
+  CloudAccountHealth,
+} from "@/modules/cloud-account/types";
 
 type HealthMutation = (
   currentHealth: CloudAccountHealth | undefined,
@@ -15,7 +13,9 @@ interface HealthMutationOptions {
   rollbackOnAfterCommitFailure?: boolean;
 }
 
-function normalizeHealth(health: CloudAccountHealth | undefined): CloudAccountHealth | undefined {
+function normalizeHealth(
+  health: CloudAccountHealth | undefined,
+): CloudAccountHealth | undefined {
   if (!health?.validation && !health?.oauth) {
     return undefined;
   }
@@ -32,7 +32,9 @@ export class CloudAccountHealthService {
     Promise<CloudAccountHealth | undefined>
   >();
 
-  static async getHealth(accountId: string): Promise<CloudAccountHealth | undefined> {
+  static async getHealth(
+    accountId: string,
+  ): Promise<CloudAccountHealth | undefined> {
     await this.mutationLocks.get(accountId)?.catch(() => undefined);
     return (await CloudAccountRepo.getAccount(accountId))?.health;
   }
@@ -87,20 +89,17 @@ export class CloudAccountHealthService {
   }
 }
 
-export async function evictAccountFromActiveLeaseCache(accountId: string): Promise<void> {
-  evictNestServerAccountLeaseAccount(accountId);
-}
+export async function evictAccountFromActiveLeaseCache(
+  _accountId: string,
+): Promise<void> {}
 
 export async function syncAccountOAuthHealthToActiveLeaseCache(
-  accountId: string,
-  oauthHealth: CloudAccountHealth['oauth'],
-): Promise<void> {
-  updateNestServerAccountLeaseOAuthHealth(accountId, oauthHealth);
-}
+  _accountId: string,
+  _oauthHealth: CloudAccountHealth["oauth"],
+): Promise<void> {}
 
 /**
- * Clears sticky validation state only after a successful provider probe and
- * makes the recovered account visible to an already-running proxy cache.
+ * Clears sticky validation state only after a successful provider probe.
  */
 export async function clearValidationHealthAfterSuccessfulProbe(
   account: CloudAccount,
@@ -116,12 +115,6 @@ export async function clearValidationHealthAfterSuccessfulProbe(
         return currentHealth;
       }
       return currentHealth.oauth ? { oauth: currentHealth.oauth } : undefined;
-    },
-    {
-      afterCommit: async () => {
-        await reloadNestServerAccountLeaseCache();
-      },
-      rollbackOnAfterCommitFailure: true,
     },
   );
 

@@ -1,7 +1,6 @@
 import { accountRouter, databaseRouter } from "@/modules/account/ipc/router";
 import { cloudRouter } from "@/modules/cloud-account/ipc/router";
 import { configRouter } from "@/modules/config/ipc/router";
-import { gatewayRouter } from "@/modules/proxy-gateway/ipc/router";
 import { antigravityRuntimeRouter } from "@/modules/antigravity-runtime/ipc/router";
 import { appShellRouter } from "@/modules/app-shell/ipc/router";
 import { relayRouter, tunnelRouter } from "@/modules/relay/ipc/router";
@@ -164,7 +163,6 @@ export const router = os.use(logMiddleware).router({
   account: accountRouter,
   cloud: cloudRouter,
   config: configRouter,
-  gateway: gatewayRouter,
   relay: relayRouter,
   tunnel: tunnelRouter,
 });

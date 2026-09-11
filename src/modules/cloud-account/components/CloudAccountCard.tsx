@@ -39,7 +39,6 @@ import {
   Fingerprint,
   Eye,
   EyeOff,
-  TriangleAlert,
   ExternalLink,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -56,8 +55,6 @@ import {
   getQuotaStatus,
 } from "@/modules/cloud-account/utils/quota-display";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ipc } from "@/ipc/manager";
 import { useSetAccountProxy } from "@/modules/cloud-account/hooks/useCloudAccounts";
 import { isValidProxyUrl } from "@/shared/utils/url";
 import { getCloudAccountBlockedStatusLabel } from "@/modules/cloud-account/utils/accountValidationStatus";
@@ -78,9 +75,6 @@ import { isWeeklyQuotaBucket } from "@/modules/cloud-account/utils/quota-groups"
 import { openAccountValidationLink } from "@/modules/cloud-account/actions/cloud";
 
 type ModelQuotaEntry = [string, CloudQuotaModelInfo];
-type LiveModelAvailability = Awaited<
-  ReturnType<typeof ipc.client.gateway.modelAvailability>
->[number];
 
 const GEMINI_LEGACY_MODEL_PATTERN = /gemini-[12](\.|$|-)/i;
 const GEMINI_PRO_COMBINED_MODEL_ID = "gemini-3.1-pro-low/high";
@@ -129,78 +123,6 @@ function formatModelDisplayName(modelName: string): string {
     .join(" ");
 }
 
-function formatCompactDuration(milliseconds: number): string {
-  const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainingSeconds = seconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${remainingSeconds}s`;
-  }
-  return `${remainingSeconds}s`;
-}
-
-function getAvailabilityModelCandidates(modelName: string): Set<string> {
-  const normalized = modelName.replace(/^models\//i, "").toLowerCase();
-  const candidates = new Set([normalized]);
-
-  if (
-    normalized === GEMINI_PRO_COMBINED_MODEL_ID ||
-    normalized === "gemini-3.1-pro" ||
-    normalized === "gemini-3.1-pro-high" ||
-    normalized === "gemini-3-pro-high"
-  ) {
-    candidates.add("gemini-pro-agent");
-    candidates.add("gemini-3.1-pro-low");
-    candidates.add("gemini-3.1-pro-high");
-    candidates.add("gemini-3.1-pro-preview");
-    candidates.add("gemini-3-pro-preview");
-  }
-
-  if (normalized === "gemini-3.5-flash") {
-    candidates.add("gemini-3.5-flash-extra-low");
-    candidates.add("gemini-3.5-flash-low");
-    candidates.add("gemini-3-flash-agent");
-  }
-
-  if (
-    normalized === "gemini-3.1-flash-image" ||
-    normalized === "gemini-3-flash-image"
-  ) {
-    candidates.add("gemini-3.1-flash-image");
-    candidates.add("gemini-3-flash-image");
-  }
-
-  if (
-    normalized === "gemini-3-pro-image" ||
-    normalized === "gemini-3.1-pro-image"
-  ) {
-    candidates.add("gemini-3-pro-image");
-    candidates.add("gemini-3.1-pro-image");
-  }
-
-  return candidates;
-}
-
-function findModelAvailability(
-  availabilityEntries: LiveModelAvailability[],
-  accountId: string,
-  modelName: string,
-): LiveModelAvailability | undefined {
-  const candidates = getAvailabilityModelCandidates(modelName);
-  return availabilityEntries
-    .filter(
-      (entry) =>
-        entry.accountId === accountId &&
-        candidates.has(entry.modelId.replace(/^models\//i, "").toLowerCase()),
-    )
-    .sort((left, right) => right.detectedAt - left.detectedAt)[0];
-}
-
 interface CloudAccountCardProps {
   account: CloudAccount;
   quotaWindow?: QuotaWindow;
@@ -239,11 +161,6 @@ export function CloudAccountCard({
   const setAccountProxy = useSetAccountProxy();
   const [proxyUrl, setProxyUrl] = useState(account.proxy_url || "");
   const [proxySaved, setProxySaved] = useState(false);
-  const { data: modelAvailability = [] } = useQuery({
-    queryKey: ["gateway", "modelAvailability"],
-    queryFn: () => ipc.client.gateway.modelAvailability(),
-    refetchInterval: 15_000,
-  });
   const isActiveAnywhere = !!account.is_active_classic;
 
   const getQuotaTextColorClass = (percentage: number) => {
@@ -313,135 +230,48 @@ export function CloudAccountCard({
           <div className="bg-border/50 h-px flex-1" />
         </div>
         {models.map(([modelName, info]) => {
-          const availability = findModelAvailability(
-            modelAvailability,
-            account.id,
-            modelName,
-          );
-          const now = Date.now();
-          const isLiveLimitActive =
-            !!availability && availability.unavailableUntil > now;
-          const statusLabel = availability?.status
-            ? `HTTP ${availability.status}`
-            : "ERR";
-          const reasonLabel =
-            availability?.reason === "model_not_supported"
-              ? t("cloud.card.liveLimitModelNotSupported")
-              : availability?.reason === "model_forbidden"
-                ? t("cloud.card.liveLimitModelForbidden")
-                : availability?.reason === "quota_exhausted"
-                  ? t("cloud.card.liveLimitQuotaExhausted")
-                  : t("cloud.card.liveLimitRateLimited");
-          const liveLimitTimingLabel = availability
-            ? isLiveLimitActive
-              ? t("cloud.card.liveLimitRemaining", {
-                  duration: formatCompactDuration(
-                    availability.unavailableUntil - now,
-                  ),
-                })
-              : t("cloud.card.liveLimitDetectedAgo", {
-                  duration: formatCompactDuration(
-                    now - availability.detectedAt,
-                  ),
-                })
-            : null;
-          const availabilityTitle = availability
-            ? [
-                isLiveLimitActive
-                  ? t("cloud.card.liveLimitActiveTitle")
-                  : t("cloud.card.liveLimitRecentTitle"),
-                `${statusLabel}: ${reasonLabel}.`,
-                t("cloud.card.liveLimitQuotaSnapshot", {
-                  percentage: info.percentage,
-                }),
-                availability.message
-                  ? t("cloud.card.liveLimitMessage", {
-                      message: availability.message,
-                    })
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" ")
-            : modelName;
           return (
             <div
               key={modelName}
-              className={cn(
-                "group/item hover:bg-muted/60 hover:border-border/60 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-lg border border-transparent px-2 py-1.5 text-sm transition-all",
-                availability &&
-                  "border-amber-400/60 bg-amber-50/70 ring-1 ring-amber-400/20 dark:border-amber-500/60 dark:bg-amber-950/25",
-                isLiveLimitActive &&
-                  "border-rose-400/70 bg-rose-50/80 ring-rose-400/25 dark:border-rose-500/70 dark:bg-rose-950/30",
-              )}
-              title={availabilityTitle}
+              className="group/item hover:bg-muted/60 hover:border-border/60 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-transparent px-2 py-1.5 text-sm transition-all duration-150"
+              title={`${formatModelDisplayName(modelName)} · ${formatResetTimeTitleText(info.resetTime)}`}
             >
               <div className="min-w-0">
-                <span
-                  className={cn(
-                    "text-muted-foreground group-hover/item:text-foreground flex min-w-0 items-center gap-1 truncate font-semibold",
-                    availability && "text-amber-700 dark:text-amber-300",
-                    isLiveLimitActive && "text-rose-700 dark:text-rose-300",
-                  )}
-                >
-                  {availability && (
-                    <TriangleAlert
-                      className={cn(
-                        "size-3 shrink-0 text-amber-500",
-                        isLiveLimitActive && "text-rose-500",
-                      )}
-                      aria-hidden="true"
-                    />
-                  )}
+                <span className="text-muted-foreground group-hover/item:text-foreground flex min-w-0 items-center truncate font-semibold transition-colors">
                   <span className="truncate">
                     {formatModelDisplayName(modelName)}
                   </span>
                 </span>
-                {availability && liveLimitTimingLabel && (
-                  <span
-                    className={cn(
-                      "mt-0.5 block truncate text-[9px] leading-tight text-amber-700/80 dark:text-amber-300/80",
-                      isLiveLimitActive &&
-                        "text-rose-700/80 dark:text-rose-300/80",
-                    )}
-                  >
-                    {reasonLabel} · {liveLimitTimingLabel}
-                  </span>
-                )}
               </div>
-              <div className="flex flex-col items-end gap-0.5">
+              <div className="flex flex-col items-end gap-0.5 shrink-0">
                 <span
-                  className="text-muted-foreground text-[9px] leading-none opacity-80"
+                  className="text-muted-foreground text-[9px] leading-none opacity-80 select-none"
                   title={formatResetTimeTitleText(info.resetTime)}
                 >
                   {formatResetTimeLabelText(info.resetTime)}
                 </span>
-                <div className="flex items-baseline gap-1">
-                  {availability && (
-                    <span
-                      className={cn(
-                        "rounded bg-amber-500/15 px-1 py-px font-mono text-[9px] leading-none font-bold text-amber-700 dark:text-amber-300",
-                        isLiveLimitActive &&
-                          "bg-rose-500/15 text-rose-700 dark:text-rose-300",
-                      )}
-                    >
-                      {statusLabel}
-                    </span>
-                  )}
+                <div className="flex items-baseline gap-1.5">
                   <span
                     className={cn(
-                      "font-mono text-xs leading-none font-bold",
-                      availability
-                        ? isLiveLimitActive
-                          ? "text-rose-700 dark:text-rose-300"
-                          : "text-amber-700 dark:text-amber-300"
-                        : getQuotaTextColorClass(info.percentage),
+                      "font-mono text-xs leading-none font-bold tabular-nums",
+                      getQuotaTextColorClass(info.percentage),
                     )}
                   >
                     {info.percentage}%
                   </span>
-                  <div className="bg-muted/70 border-border/20 h-1.5 w-16 overflow-hidden rounded-full border shadow-inner">
+                  <div
+                    className="bg-muted/70 border-border/20 h-1.5 w-16 overflow-hidden rounded-full border shadow-inner"
+                    role="progressbar"
+                    aria-valuenow={info.percentage}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${formatModelDisplayName(modelName)} quota remaining`}
+                  >
                     <div
-                      className={`h-full rounded-full transition-all duration-300 ${getQuotaBarColorClass(info.percentage)}`}
+                      className={cn(
+                        "h-full rounded-full transition-all duration-300",
+                        getQuotaBarColorClass(info.percentage),
+                      )}
                       style={{
                         width: `${clampQuotaPercentage(info.percentage)}%`,
                       }}
@@ -757,20 +587,23 @@ export function CloudAccountCard({
       </CardContent>
 
       <CardFooter className="bg-muted/10 relative mt-auto flex h-11 shrink-0 items-center justify-between overflow-hidden border-t p-2 px-4">
-        {/* Idle State / Used Time Indicator */}
+        {/* Idle State / Used Time Indicator & Proxy Badge */}
         <div className="flex w-full items-center justify-between transition-all duration-300 group-hover:pointer-events-none group-hover:opacity-0">
           <span className="text-muted-foreground truncate text-[11px]">
             {t("cloud.card.used")}{" "}
             {formatDistanceToNow(account.last_used * 1000, { addSuffix: true })}
           </span>
           {account.proxy_url && (
-            <span className="text-primary bg-primary/10 border-primary/20 origin-right scale-90 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold">
-              Proxy
+            <span
+              className="text-primary bg-primary/10 border-primary/20 origin-right scale-90 rounded-full border px-2 py-0.5 text-[9px] font-semibold tracking-wide select-none"
+              title={account.proxy_url}
+            >
+              {t("cloud.card.proxy")}
             </span>
           )}
         </div>
 
-        {/* Hover State Container (fades in, fixed h-11) */}
+        {/* Hover State Container (Action Buttons + Outbound Proxy Input) */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-3 p-2 px-4 opacity-0 transition-all duration-300 ease-in-out group-hover:pointer-events-auto group-hover:opacity-100">
           {/* Action Icons group with Tooltips */}
           <div className="flex shrink-0 items-center gap-1">
@@ -781,9 +614,10 @@ export function CloudAccountCard({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="hover:bg-accent border-border/50 h-7 w-7 cursor-pointer rounded-md"
+                    className="hover:bg-accent border-border/50 h-7 w-7 cursor-pointer rounded-md focus-visible:ring-2 focus-visible:ring-primary"
                     onClick={() => onRefresh(account.id)}
                     disabled={isRefreshing}
+                    aria-label={t("cloud.card.refresh")}
                   >
                     <RefreshCw
                       className={cn(
@@ -804,8 +638,9 @@ export function CloudAccountCard({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="hover:bg-accent border-border/50 h-7 w-7 cursor-pointer rounded-md"
+                    className="hover:bg-accent border-border/50 h-7 w-7 cursor-pointer rounded-md focus-visible:ring-2 focus-visible:ring-primary"
                     onClick={() => onManageIdentity(account.id)}
+                    aria-label={t("cloud.card.identityProfile")}
                   >
                     <Fingerprint className="h-3.5 w-3.5" />
                   </Button>
@@ -821,9 +656,10 @@ export function CloudAccountCard({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 border-border/50 h-7 w-7 cursor-pointer rounded-md"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 border-border/50 h-7 w-7 cursor-pointer rounded-md focus-visible:ring-2 focus-visible:ring-destructive"
                     onClick={() => onDelete(account.id)}
                     disabled={isDeleting}
+                    aria-label={t("cloud.card.delete")}
                   >
                     <Trash className="h-3.5 w-3.5" />
                   </Button>
@@ -858,8 +694,9 @@ export function CloudAccountCard({
                   setTimeout(() => setProxySaved(false), 2000);
                 }
               }}
+              aria-label={t("cloud.card.proxy")}
               placeholder={t("cloud.card.proxyPlaceholder")}
-              className="bg-muted/20 border-border/40 focus-visible:bg-background focus-visible:ring-primary/30 h-7 w-full rounded-md text-[11px] transition-all focus-visible:ring-1"
+              className="bg-muted/20 border-border/40 focus-visible:bg-background focus-visible:ring-primary/30 h-7 w-full rounded-md text-[11px] transition-all focus-visible:ring-1 pr-14"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.currentTarget.blur();
@@ -867,7 +704,11 @@ export function CloudAccountCard({
               }}
             />
             {proxySaved && (
-              <span className="bg-background absolute top-1/2 right-2 -translate-y-1/2 rounded px-1 text-[9px] font-semibold text-green-500">
+              <span
+                className="bg-background absolute top-1/2 right-2 -translate-y-1/2 rounded px-1 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 shadow-sm animate-in fade-in zoom-in-95 duration-150 select-none"
+                role="status"
+                aria-live="polite"
+              >
                 {t("cloud.card.proxySaved")}
               </span>
             )}

@@ -1,17 +1,18 @@
-import axios from 'axios';
-import { isString } from 'lodash-es';
-import { getAntigravityVersion } from '@/modules/antigravity-runtime/utils/antigravityVersion';
-import { createAxiosHttpClient } from '@/shared/http/axios-json-client';
-import { logger } from '../../../../../shared/logging/logger';
+import axios from "axios";
+import { isString } from "lodash-es";
+import { getAntigravityVersion } from "@/modules/antigravity-runtime/utils/antigravityVersion";
+import { createAxiosHttpClient } from "@/shared/http/axios-json-client";
+import { logger } from "@/shared/logging/logger";
 
-const REMOTE_VERSION_URL = 'https://antigravity-auto-updater-974169037036.us-central1.run.app';
-const CHANGELOG_URL = 'https://antigravity.google/changelog';
-export const FALLBACK_VERSION = '2.0.3';
+const REMOTE_VERSION_URL =
+  "https://antigravity-auto-updater-974169037036.us-central1.run.app";
+const CHANGELOG_URL = "https://antigravity.google/changelog";
+export const FALLBACK_VERSION = "2.0.3";
 const DEFAULT_REMOTE_TIMEOUT_MS = 2500;
 const VERSION_REGEX = /\d+\.\d+\.\d+/g;
 const userAgentHttpClient = createAxiosHttpClient(axios.create());
 
-type UserAgentSource = 'local' | 'remote' | 'changelog' | 'fallback';
+type UserAgentSource = "local" | "remote" | "changelog" | "fallback";
 
 interface UserAgentResolution {
   source: UserAgentSource;
@@ -22,7 +23,9 @@ interface UserAgentResolution {
 let cachedUserAgentResolution: UserAgentResolution | null = null;
 let pendingUserAgentResolution: Promise<UserAgentResolution> | null = null;
 
-function normalizeNonEmptyString(value: string | null | undefined): string | null {
+function normalizeNonEmptyString(
+  value: string | null | undefined,
+): string | null {
   if (!isString(value)) {
     return null;
   }
@@ -37,22 +40,22 @@ function normalizeNonEmptyString(value: string | null | undefined): string | nul
 
 function getPlatformTag(): string {
   switch (process.platform) {
-    case 'win32':
-      return 'windows';
-    case 'darwin':
-      return 'darwin';
+    case "win32":
+      return "windows";
+    case "darwin":
+      return "darwin";
     default:
-      return 'linux';
+      return "linux";
   }
 }
 
 function getArchTag(): string {
-  if (process.arch === 'x64') {
-    return 'amd64';
+  if (process.arch === "x64") {
+    return "amd64";
   }
 
-  if (process.arch === 'arm64') {
-    return 'arm64';
+  if (process.arch === "arm64") {
+    return "arm64";
   }
 
   return process.arch;
@@ -63,8 +66,8 @@ export function buildUserAgent(version: string): string {
 }
 
 function compareSemverVersions(left: string, right: string): number {
-  const leftParts = left.split('.').map((part) => Number.parseInt(part, 10));
-  const rightParts = right.split('.').map((part) => Number.parseInt(part, 10));
+  const leftParts = left.split(".").map((part) => Number.parseInt(part, 10));
+  const rightParts = right.split(".").map((part) => Number.parseInt(part, 10));
   const maxLength = Math.max(leftParts.length, rightParts.length);
 
   for (let index = 0; index < maxLength; index += 1) {
@@ -99,7 +102,7 @@ function extractHighestSemver(text: string): string | null {
 }
 
 function shouldSkipRemoteVersionLookup(): boolean {
-  return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+  return process.env.NODE_ENV === "test" || process.env.VITEST === "true";
 }
 
 export function resolveLocalInstalledVersion(): string | null {
@@ -121,12 +124,12 @@ async function fetchTextPayload(url: string): Promise<string | null> {
   try {
     const discoveryVersion = resolveLocalInstalledVersion() ?? FALLBACK_VERSION;
     const response = await userAgentHttpClient.requestRaw(url, {
-      operation: 'default-user-agent-discovery',
+      operation: "default-user-agent-discovery",
       request: {
         timeout: DEFAULT_REMOTE_TIMEOUT_MS,
-        responseType: 'text',
+        responseType: "text",
         headers: {
-          'User-Agent': buildUserAgent(discoveryVersion),
+          "User-Agent": buildUserAgent(discoveryVersion),
         },
       },
     });
@@ -142,7 +145,7 @@ async function fetchTextPayload(url: string): Promise<string | null> {
 }
 
 async function resolveRemoteVersion(): Promise<{
-  source: Extract<UserAgentSource, 'remote' | 'changelog'>;
+  source: Extract<UserAgentSource, "remote" | "changelog">;
   version: string;
 } | null> {
   if (shouldSkipRemoteVersionLookup()) {
@@ -154,7 +157,7 @@ async function resolveRemoteVersion(): Promise<{
     const parsed = extractHighestSemver(remotePayload);
     if (parsed) {
       return {
-        source: 'remote',
+        source: "remote",
         version: parsed,
       };
     }
@@ -171,23 +174,26 @@ async function resolveRemoteVersion(): Promise<{
   }
 
   return {
-    source: 'changelog',
+    source: "changelog",
     version: parsed,
   };
 }
 
 async function resolveDefaultUserAgentResolution(): Promise<UserAgentResolution> {
   let bestVersion = FALLBACK_VERSION;
-  let bestSource: UserAgentSource = 'fallback';
+  let bestSource: UserAgentSource = "fallback";
 
   const localVersion = resolveLocalInstalledVersion();
   if (localVersion && compareSemverVersions(localVersion, bestVersion) > 0) {
     bestVersion = localVersion;
-    bestSource = 'local';
+    bestSource = "local";
   }
 
   const remoteVersion = await resolveRemoteVersion();
-  if (remoteVersion && compareSemverVersions(remoteVersion.version, bestVersion) > 0) {
+  if (
+    remoteVersion &&
+    compareSemverVersions(remoteVersion.version, bestVersion) > 0
+  ) {
     bestVersion = remoteVersion.version;
     bestSource = remoteVersion.source;
   }

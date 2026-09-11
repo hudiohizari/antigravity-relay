@@ -24,7 +24,6 @@ import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarge
 import { hasAntigravityStorage } from "@/shared/platform/paths";
 import { detectAgyCliExecutablePath } from "@/modules/antigravity-runtime/binary-patch/agyCliPathDetection";
 import { ConfigManager } from "@/modules/config/ipc/manager";
-import { proxyModelAvailabilityStore } from "@/modules/proxy-gateway/server/shared/services/model-availability.service";
 import { WeeklyWarmupService } from "./WeeklyWarmupService";
 import type { WeeklyWarmupExecutor } from "./weekly-warmup-contract";
 import { cloudAccountEvents } from "./cloud-account-events";
@@ -616,7 +615,6 @@ export class CloudMonitorService {
         account.status = "active";
         account.status_reason = undefined;
         refreshedAccounts.push(account);
-        proxyModelAvailabilityStore.clearCapabilityFailures(account.id);
         cloudAccountEvents.emit("account:quota_updated", {
           accountId: account.id,
           quota,

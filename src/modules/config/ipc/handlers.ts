@@ -1,7 +1,6 @@
 import { AppConfig } from "@/modules/config/types";
 import { ConfigManager } from "@/modules/config/ipc/manager";
 import { syncAutoStart } from "@/modules/antigravity-runtime/utils/autoStart";
-import { setServerConfig } from "@/server/server-config";
 
 export function loadConfig(): AppConfig {
   return ConfigManager.loadConfig();
@@ -18,7 +17,6 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   // and handing the running server the pre-migration object would leave it routing from maps
   // that no longer exist on disk.
   const savedConfig = ConfigManager.getCachedConfig() ?? config;
-  setServerConfig(savedConfig.proxy);
   if (previous.auto_startup !== savedConfig.auto_startup) {
     syncAutoStart(savedConfig);
   }

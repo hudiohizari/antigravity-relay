@@ -207,7 +207,7 @@ export class MockUpstreamServer {
       }
 
       if (url === "/upstream-icons.html") {
-        const html = `<!doctype html><html><head><title>Upstream App</title><link rel="shortcut icon" href="https://upstream.org/logo.ico"><link rel="apple-touch-icon" href="/legacy-touch.png"><link rel="stylesheet" href="/compiled_tailwind.css"></head><body><h1>Upstream with Icons</h1></body></html>`;
+        const html = `<!doctype html><html><head><title>Upstream App</title><link rel="shortcut icon" href="https://upstream.org/logo.ico"><link rel="apple-touch-icon" href="/legacy-touch.png"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎁</text></svg>"/><link rel="stylesheet" href="/compiled_tailwind.css"></head><body><h1>Upstream with Icons</h1></body></html>`;
         res.writeHead(200, {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-cache",
