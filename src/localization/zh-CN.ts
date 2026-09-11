@@ -291,6 +291,14 @@ const zhCn = {
     switchedTargetTitle: "账号已切换",
     switchedTargetDescription: "已通过系统托盘将 {{target}} 切换到 {{email}}。",
   },
+  autoSwitch: {
+    toastTitle: "自动切换: 速率限制",
+    toastTargetTitle: "自动切换: {{target}}",
+    toastAllDescription: "由于速率限制，已将所有环境切换到 {{email}}。",
+    toastTargetDescription: "由于速率限制，已将 {{target}} 切换到 {{email}}。",
+    toastQuotaDescription: "由于配额耗尽，已将所有环境切换到 {{email}}。",
+    toastGenericDescription: "已自动将所有环境切换到 {{email}}。",
+  },
   account: {
     current: "当前",
     lastUsed: "上次使用 {{time}}",

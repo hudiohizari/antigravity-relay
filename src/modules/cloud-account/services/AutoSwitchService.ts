@@ -456,13 +456,11 @@ export class AutoSwitchService {
       );
 
       try {
-        await switchCloudAccount(nextAccount.id, effectiveTarget);
-        this.recordSwitch();
-        cloudAccountEvents.emit("account:switched", {
-          accountId: nextAccount.id,
-          target: effectiveTarget,
-          account: nextAccount,
+        await switchCloudAccount(nextAccount.id, effectiveTarget, {
+          source: "auto_switch",
+          reason: "rate_limit",
         });
+        this.recordSwitch();
 
         try {
           new Notification({
@@ -559,13 +557,11 @@ export class AutoSwitchService {
           `AutoSwitch: Switching to ${nextAccount.email} (Highest 5h: ${quotaPct}%)...`,
         );
 
-        await switchCloudAccount(nextAccount.id, effectiveTarget);
-        this.recordSwitch();
-        cloudAccountEvents.emit("account:switched", {
-          accountId: nextAccount.id,
-          target: effectiveTarget,
-          account: nextAccount,
+        await switchCloudAccount(nextAccount.id, effectiveTarget, {
+          source: "auto_switch",
+          reason: "quota_exhausted",
         });
+        this.recordSwitch();
 
         try {
           new Notification({

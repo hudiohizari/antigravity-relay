@@ -316,6 +316,18 @@ const ru = {
     switchedTargetDescription:
       "Среда {{target}} переключена на {{email}} через системный трей.",
   },
+  autoSwitch: {
+    toastTitle: "Авто-переключение: лимит запросов",
+    toastTargetTitle: "Авто-переключение: {{target}}",
+    toastAllDescription:
+      "Все среды переключены на {{email}} из-за лимита запросов.",
+    toastTargetDescription:
+      "Среда {{target}} переключена на {{email}} из-за лимита запросов.",
+    toastQuotaDescription:
+      "Все среды переключены на {{email}} из-за исчерпания квоты.",
+    toastGenericDescription:
+      "Все среды автоматически переключены на {{email}}.",
+  },
   account: {
     current: "Текущий",
     lastUsed: "Последнее использование {{time}}",

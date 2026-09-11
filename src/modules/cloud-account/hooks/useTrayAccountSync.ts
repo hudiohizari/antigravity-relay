@@ -1,15 +1,22 @@
-import { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { Zap } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { QUERY_KEYS } from "@/modules/cloud-account/hooks/useCloudAccounts";
 import type { CloudAccount } from "@/modules/cloud-account/types";
+import type {
+  CloudAccountSwitchReason,
+  CloudAccountSwitchSource,
+} from "@/modules/cloud-account/services/cloud-account-events";
 
 export type TraySwitchedPayload =
   | string
   | {
       accountId: string;
       target?: "all" | "app" | "ide" | "cli" | "classic" | "agy";
+      source?: CloudAccountSwitchSource;
+      reason?: CloudAccountSwitchReason;
     };
 
 export function useTrayAccountSync(): void {
@@ -57,6 +64,12 @@ export function useTrayAccountSync(): void {
           : rawTarget === "agy"
             ? "cli"
             : rawTarget;
+      const payloadObj =
+        typeof payload === "object" && payload !== null ? payload : null;
+      const source = payloadObj?.source;
+      const reason = payloadObj?.reason;
+      void reason;
+
       let switchedEmail: string | undefined;
 
       queryClient.setQueryData<CloudAccount[]>(
@@ -123,24 +136,85 @@ export function useTrayAccountSync(): void {
         },
       );
 
+      // 1. Strict suppression for manual in-app switches and resync actions
+      if (source === "manual" || source === "resync") {
+        scheduleInvalidate();
+        return;
+      }
+
       const email = switchedEmail ?? accountId;
 
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        payload.target &&
-        payload.target !== "all"
-      ) {
+      // 2. Distinct Auto-Switch Toast (Amber Accent + Lucide Zap + 4500ms Duration)
+      if (source === "auto_switch") {
+        const isAll = target === "all";
         const canonicalKey =
-          payload.target === "classic"
+          rawTarget === "classic"
             ? "app"
-            : payload.target === "agy"
+            : rawTarget === "agy"
               ? "cli"
-              : payload.target;
+              : rawTarget;
         const targetName =
           t(`cloud.target.${canonicalKey}`) ||
-          t(`cloud.target.${payload.target}`) ||
-          payload.target;
+          t(`cloud.target.${rawTarget}`) ||
+          rawTarget;
+
+        const description = isAll
+          ? t("autoSwitch.toastAllDescription", { email })
+          : t("autoSwitch.toastTargetDescription", {
+              target: targetName,
+              email,
+            });
+
+        const titleText = isAll
+          ? t("autoSwitch.toastTitle")
+          : t("autoSwitch.toastTargetTitle", { target: targetName });
+
+        toast({
+          title: React.createElement(
+            "div",
+            { className: "flex items-center gap-2 min-w-0" },
+            React.createElement(Zap, {
+              className: "h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400",
+              "aria-hidden": "true",
+            }),
+            React.createElement(
+              "span",
+              {
+                className:
+                  "font-semibold text-amber-950 dark:text-amber-100 truncate",
+              },
+              titleText,
+            ),
+          ),
+          description: React.createElement(
+            "span",
+            {
+              className:
+                "block text-sm text-amber-900/90 dark:text-amber-200/90 break-words [overflow-wrap:anywhere]",
+            },
+            description,
+          ),
+          className:
+            "border-amber-500/30 bg-amber-500/10 dark:border-amber-500/35 dark:bg-amber-500/15 text-foreground shadow-lg",
+          duration: 4500,
+        });
+
+        scheduleInvalidate();
+        return;
+      }
+
+      // 3. Standard Tray Switch Toast (source === 'tray' or legacy fallback)
+      if (payloadObj && payloadObj.target && payloadObj.target !== "all") {
+        const canonicalKey =
+          payloadObj.target === "classic"
+            ? "app"
+            : payloadObj.target === "agy"
+              ? "cli"
+              : payloadObj.target;
+        const targetName =
+          t(`cloud.target.${canonicalKey}`) ||
+          t(`cloud.target.${payloadObj.target}`) ||
+          payloadObj.target;
         toast({
           title: t("traySync.switchedTargetTitle"),
           description: t("traySync.switchedTargetDescription", {
@@ -149,11 +223,7 @@ export function useTrayAccountSync(): void {
           }),
           duration: 3000,
         });
-      } else if (
-        typeof payload === "object" &&
-        payload !== null &&
-        payload.target === "all"
-      ) {
+      } else if (payloadObj && payloadObj.target === "all") {
         const hasSwitchedAll =
           t("traySync.switchedAllTitle") !== "traySync.switchedAllTitle";
         toast({

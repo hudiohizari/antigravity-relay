@@ -6,7 +6,11 @@ import { getTrayTexts, type TrayTexts } from "./i18n";
 import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandler";
 import { GoogleAPIService } from "@/modules/cloud-account/services/GoogleAPIService";
 import { CloudAccountSettingsStore } from "@/modules/cloud-account/persistence/cloud-account-settings-store";
-import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
+import {
+  cloudAccountEvents,
+  type CloudAccountSwitchReason,
+  type CloudAccountSwitchSource,
+} from "@/modules/cloud-account/services/cloud-account-events";
 import { configureTrayIcon, resolveTrayIconPath } from "./icon";
 import { isWeeklyQuotaBucket } from "@/modules/cloud-account/utils/quota-groups";
 import { AutoSwitchService } from "@/modules/cloud-account/services/AutoSwitchService";
@@ -40,6 +44,10 @@ export interface TrayAccountActions {
   switchAccount?: (
     accountId: string,
     target?: AntigravityAppTarget | "all",
+    options?: {
+      source?: CloudAccountSwitchSource;
+      reason?: CloudAccountSwitchReason;
+    },
   ) => Promise<void>;
   refreshQuota?: (accountId: string) => Promise<CloudAccount | null>;
 }
@@ -327,6 +335,10 @@ async function resolveAccountSwitcher(): Promise<
   | ((
       accountId: string,
       target?: AntigravityAppTarget | "all",
+      options?: {
+        source?: CloudAccountSwitchSource;
+        reason?: CloudAccountSwitchReason;
+      },
     ) => Promise<void>)
   | null
 > {
@@ -336,8 +348,15 @@ async function resolveAccountSwitcher(): Promise<
   try {
     const { switchCloudAccount } =
       await import("@/modules/cloud-account/ipc/handler");
-    return async (accountId: string, target?: AntigravityAppTarget | "all") => {
-      await switchCloudAccount(accountId, target);
+    return async (
+      accountId: string,
+      target?: AntigravityAppTarget | "all",
+      options?: {
+        source?: CloudAccountSwitchSource;
+        reason?: CloudAccountSwitchReason;
+      },
+    ) => {
+      await switchCloudAccount(accountId, target, options);
     };
   } catch {
     return null;
@@ -530,7 +549,10 @@ export function updateTrayMenu(
 
         const switchAccount = await resolveAccountSwitcher();
         if (switchAccount) {
-          await switchAccount(next.id, target);
+          await switchAccount(next.id, target, {
+            source: "tray",
+            reason: "user_action",
+          });
         } else {
           if (target === "all") {
             if (isAntigravityTargetInstalled("classic")) {
@@ -554,6 +576,8 @@ export function updateTrayMenu(
           globalMainWindow.webContents.send("tray://account-switched", {
             accountId: next.id,
             target,
+            source: "tray",
+            reason: "user_action",
           });
         }
       } catch (e) {
@@ -577,7 +601,10 @@ export function updateTrayMenu(
       try {
         const switchAccount = await resolveAccountSwitcher();
         if (switchAccount) {
-          await switchAccount(accountId, target);
+          await switchAccount(accountId, target, {
+            source: "tray",
+            reason: "user_action",
+          });
         } else {
           CloudAccountRepo.setActive(accountId, target);
         }
@@ -591,6 +618,8 @@ export function updateTrayMenu(
           globalMainWindow.webContents.send("tray://account-switched", {
             accountId,
             target,
+            source: "tray",
+            reason: "user_action",
           });
         }
       } catch (e) {

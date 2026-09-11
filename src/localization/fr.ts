@@ -327,6 +327,18 @@ const fr = {
     switchedTargetDescription:
       "L environnement {{target}} a ete bascule vers {{email}} via la zone de notification.",
   },
+  autoSwitch: {
+    toastTitle: "Basculement auto : Limite de débit",
+    toastTargetTitle: "Basculement auto : {{target}}",
+    toastAllDescription:
+      "Tous les environnements ont été basculés vers {{email}} en raison de la limite de débit.",
+    toastTargetDescription:
+      "L'environnement {{target}} a été basculé vers {{email}} en raison de la limite de débit.",
+    toastQuotaDescription:
+      "Tous les environnements ont été basculés vers {{email}} en raison de l'épuisement du quota.",
+    toastGenericDescription:
+      "Tous les environnements ont été automatiquement basculés vers {{email}}.",
+  },
   account: {
     current: "Actuel",
     lastUsed: "Derniere utilisation {{time}}",

@@ -320,6 +320,18 @@ const id = {
     switchedTargetDescription:
       "Beralih {{target}} ke {{email}} melalui baki sistem.",
   },
+  autoSwitch: {
+    toastTitle: "Pengalihan Otomatis: Batas Laju",
+    toastTargetTitle: "Pengalihan Otomatis: {{target}}",
+    toastAllDescription:
+      "Beralih semua lingkungan ke {{email}} karena batas laju.",
+    toastTargetDescription:
+      "Beralih {{target}} ke {{email}} karena batas laju.",
+    toastQuotaDescription:
+      "Beralih semua lingkungan ke {{email}} karena kuota habis.",
+    toastGenericDescription:
+      "Beralih semua lingkungan ke {{email}} secara otomatis.",
+  },
   account: {
     current: "Saat ini",
     lastUsed: "Terakhir digunakan {{time}}",

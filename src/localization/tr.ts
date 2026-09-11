@@ -314,6 +314,18 @@ const tr = {
     switchedTargetDescription:
       "Sistem tepsisi üzerinden {{target}} ortamı {{email}} hesabına geçirildi.",
   },
+  autoSwitch: {
+    toastTitle: "Otomatik Değiştir: Hız Sınırı",
+    toastTargetTitle: "Otomatik Değiştir: {{target}}",
+    toastAllDescription:
+      "Hız sınırı nedeniyle tüm ortamlar {{email}} hesabına geçirildi.",
+    toastTargetDescription:
+      "Hız sınırı nedeniyle {{target}} ortamı {{email}} hesabına geçirildi.",
+    toastQuotaDescription:
+      "Kota tükenmesi nedeniyle tüm ortamlar {{email}} hesabına geçirildi.",
+    toastGenericDescription:
+      "Tüm ortamlar otomatik olarak {{email}} hesabına geçirildi.",
+  },
   account: {
     current: "Mevcut",
     lastUsed: "Son kullanım: {{time}}",

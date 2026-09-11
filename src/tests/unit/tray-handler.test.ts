@@ -342,10 +342,18 @@ describe("Tray Handler Functionality", () => {
         undefined as any,
       );
 
-      expect(switchSpy).toHaveBeenCalledWith("acc-2", "all");
+      expect(switchSpy).toHaveBeenCalledWith("acc-2", "all", {
+        source: "tray",
+        reason: "user_action",
+      });
       expect(win.webContents.send).toHaveBeenCalledWith(
         "tray://account-switched",
-        { accountId: "acc-2", target: "all" },
+        {
+          accountId: "acc-2",
+          target: "all",
+          source: "tray",
+          reason: "user_action",
+        },
       );
     });
 
@@ -378,7 +386,12 @@ describe("Tray Handler Functionality", () => {
       expect(mocks.setActive).toHaveBeenCalledWith("acc-2", "classic");
       expect(win.webContents.send).toHaveBeenCalledWith(
         "tray://account-switched",
-        { accountId: "acc-2", target: "all" },
+        {
+          accountId: "acc-2",
+          target: "all",
+          source: "tray",
+          reason: "user_action",
+        },
       );
     });
 
@@ -645,7 +658,10 @@ describe("Tray Handler Functionality", () => {
       );
 
       // Beta has 85% remaining 5h quota, so it must be chosen over Alpha (20%) and Gamma (50%)
-      expect(switchSpy).toHaveBeenCalledWith("acc-beta", "all");
+      expect(switchSpy).toHaveBeenCalledWith("acc-beta", "all", {
+        source: "tray",
+        reason: "user_action",
+      });
     });
 
     it("serializes concurrent rapid clicks via runWithSwitchGuard", async () => {
@@ -1210,10 +1226,18 @@ describe("Tray Handler Functionality", () => {
         undefined as any,
       );
 
-      expect(switchSpy).toHaveBeenCalledWith("acc-2", "classic");
+      expect(switchSpy).toHaveBeenCalledWith("acc-2", "classic", {
+        source: "tray",
+        reason: "user_action",
+      });
       expect(win.webContents.send).toHaveBeenCalledWith(
         "tray://account-switched",
-        { accountId: "acc-2", target: "classic" },
+        {
+          accountId: "acc-2",
+          target: "classic",
+          source: "tray",
+          reason: "user_action",
+        },
       );
 
       // Test direct account switch from IDE submenu
@@ -1230,10 +1254,18 @@ describe("Tray Handler Functionality", () => {
         undefined as any,
       );
 
-      expect(switchSpy).toHaveBeenCalledWith("acc-1", "ide");
+      expect(switchSpy).toHaveBeenCalledWith("acc-1", "ide", {
+        source: "tray",
+        reason: "user_action",
+      });
       expect(win.webContents.send).toHaveBeenCalledWith(
         "tray://account-switched",
-        { accountId: "acc-1", target: "ide" },
+        {
+          accountId: "acc-1",
+          target: "ide",
+          source: "tray",
+          reason: "user_action",
+        },
       );
     });
 

@@ -26,7 +26,11 @@ import {
   syncTrayWithActiveAccount,
   updateTrayMenu,
 } from "@/modules/app-shell/ipc/tray/handler";
-import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
+import {
+  cloudAccountEvents,
+  type CloudAccountSwitchReason,
+  type CloudAccountSwitchSource,
+} from "@/modules/cloud-account/services/cloud-account-events";
 import {
   ensureGlobalOriginalFromCurrentStorage,
   generateDeviceProfile,
@@ -895,9 +899,15 @@ async function executeSingleTargetSwitch(
   });
 }
 
+export interface SwitchCloudAccountOptions {
+  source?: CloudAccountSwitchSource;
+  reason?: CloudAccountSwitchReason;
+}
+
 export async function switchCloudAccount(
   accountId: string,
   appTarget?: AntigravityAppTarget | "all",
+  options?: SwitchCloudAccountOptions,
 ): Promise<SwitchCloudAccountResult> {
   return await runWithSwitchGuard("cloud-account-switch", async () => {
     try {
@@ -1035,6 +1045,8 @@ export async function switchCloudAccount(
             accountId: account.id,
             target: "all",
             account,
+            source: options?.source ?? "manual",
+            reason: options?.reason,
           });
           notifyTrayUpdate(account);
         }
@@ -1068,6 +1080,8 @@ export async function switchCloudAccount(
         accountId: account.id,
         target: singleTarget,
         account,
+        source: options?.source ?? "manual",
+        reason: options?.reason,
       });
       notifyTrayUpdate(account);
 
@@ -1220,7 +1234,10 @@ export async function resyncAllEnvironments(
   }
 
   // Execute lockstep alignment across all installed targets
-  const switchResult = await switchCloudAccount(resolvedAccountId, "all");
+  const switchResult = await switchCloudAccount(resolvedAccountId, "all", {
+    source: "resync",
+    reason: "user_action",
+  });
   CloudAccountSettingsStore.setUnifiedMode(true);
 
   logger.info(

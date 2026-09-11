@@ -147,7 +147,10 @@ describe("AutoSwitchService Concurrency Mutex & Singleflight Lifecycle", () => {
 
     // Only one rotation was executed
     expect(switchCloudAccount).toHaveBeenCalledTimes(1);
-    expect(switchCloudAccount).toHaveBeenCalledWith("acc-healthy", "all");
+    expect(switchCloudAccount).toHaveBeenCalledWith("acc-healthy", "all", {
+      source: "auto_switch",
+      reason: "rate_limit",
+    });
 
     // Both callers receive successful resolution
     expect(result1.switched).toBe(true);

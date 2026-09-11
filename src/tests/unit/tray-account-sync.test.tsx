@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useTrayAccountSync,
@@ -23,10 +23,28 @@ vi.mock("react-i18next", () => ({
       if (key === "traySync.switchedDescription") {
         return `Active account switched to ${params?.email} via system tray.`;
       }
+      if (key === "traySync.switchedAllTitle")
+        return "All Environments Switched";
+      if (key === "traySync.switchedAllDescription") {
+        return `Switched all environments to ${params?.email} via system tray.`;
+      }
       if (key === "traySync.switchedTargetTitle") return "Account Switched";
       if (key === "traySync.switchedTargetDescription") {
         return `Switched ${params?.target} to ${params?.email} via system tray.`;
       }
+      if (key === "autoSwitch.toastTitle") return "Auto-Switch: Rate Limit";
+      if (key === "autoSwitch.toastTargetTitle") {
+        return `Auto-Switch: ${params?.target}`;
+      }
+      if (key === "autoSwitch.toastAllDescription") {
+        return `Switched all environments to ${params?.email} due to rate limit.`;
+      }
+      if (key === "autoSwitch.toastTargetDescription") {
+        return `Switched ${params?.target} to ${params?.email} due to rate limit.`;
+      }
+      if (key === "cloud.target.app") return "Antigravity";
+      if (key === "cloud.target.ide") return "Antigravity IDE";
+      if (key === "cloud.target.cli") return "Antigravity CLI";
       return key;
     },
   }),
@@ -405,5 +423,269 @@ describe("useTrayAccountSync", () => {
     expect(acc2?.is_active_app).toBe(true);
     expect(acc2?.is_active_classic).toBe(true);
     expect(acc2?.is_active).toBe(true);
+  });
+
+  describe("Source Attribution & Feedback Routing", () => {
+    it("renders amber toast with Zap icon, 4500ms duration, and autoSwitch copy when source is auto_switch for all targets", () => {
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        switchedCallback!({
+          accountId: "acc-2",
+          target: "all",
+          source: "auto_switch",
+          reason: "rate_limit",
+        });
+      });
+
+      const cached = queryClient.getQueryData<CloudAccount[]>(
+        QUERY_KEYS.cloudAccounts,
+      );
+      expect(cached!.find((a) => a.id === "acc-2")?.is_active).toBe(true);
+
+      expect(toastModule.toast).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(toastModule.toast).mock.calls[0][0];
+
+      expect(call.duration).toBe(4500);
+      expect(call.className).toContain("border-amber-500/30");
+      expect(call.className).toContain("bg-amber-500/10");
+      expect(call.className).toContain("dark:border-amber-500/35");
+      expect(call.className).toContain("dark:bg-amber-500/15");
+
+      const { container: titleContainer } = render(
+        call.title as React.ReactElement,
+      );
+      expect(titleContainer.textContent).toContain("Auto-Switch: Rate Limit");
+      const icon = titleContainer.querySelector("svg");
+      expect(icon).not.toBeNull();
+      expect(icon?.getAttribute("aria-hidden")).toBe("true");
+      expect(icon?.getAttribute("class")).toContain("text-amber-700");
+
+      const { container: descContainer } = render(
+        call.description as React.ReactElement,
+      );
+      expect(descContainer.textContent).toContain(
+        "Switched all environments to beta@example.com due to rate limit.",
+      );
+      expect(descContainer.textContent).not.toContain("via system tray");
+      const descElement = descContainer.firstChild as HTMLElement;
+      expect(descElement?.className).toContain("break-words");
+      expect(descElement?.className).toContain("[overflow-wrap:anywhere]");
+
+      expect(invalidateSpy).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(150);
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: QUERY_KEYS.cloudAccounts,
+        refetchType: "active",
+      });
+    });
+
+    it("renders amber toast with target-specific title and description when source is auto_switch for a single target", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        switchedCallback!({
+          accountId: "acc-2",
+          target: "ide",
+          source: "auto_switch",
+          reason: "rate_limit",
+        });
+      });
+
+      expect(toastModule.toast).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(toastModule.toast).mock.calls[0][0];
+      expect(call.duration).toBe(4500);
+
+      const { container: titleContainer } = render(
+        call.title as React.ReactElement,
+      );
+      expect(titleContainer.textContent).toContain(
+        "Auto-Switch: Antigravity IDE",
+      );
+
+      const { container: descContainer } = render(
+        call.description as React.ReactElement,
+      );
+      expect(descContainer.textContent).toContain(
+        "Switched Antigravity IDE to beta@example.com due to rate limit.",
+      );
+      expect(descContainer.textContent).not.toContain("via system tray");
+    });
+
+    it("handles legacy aliases classic and agy for auto_switch target normalization", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        switchedCallback!({
+          accountId: "acc-2",
+          target: "classic",
+          source: "auto_switch",
+        });
+      });
+
+      const callClassic = vi.mocked(toastModule.toast).mock.calls[0][0];
+      const { container: descClassic } = render(
+        callClassic.description as React.ReactElement,
+      );
+      expect(descClassic.textContent).toContain(
+        "Switched Antigravity to beta@example.com due to rate limit.",
+      );
+
+      vi.mocked(toastModule.toast).mockClear();
+
+      act(() => {
+        switchedCallback!({
+          accountId: "acc-2",
+          target: "agy",
+          source: "auto_switch",
+        });
+      });
+
+      const callAgy = vi.mocked(toastModule.toast).mock.calls[0][0];
+      const { container: descAgy } = render(
+        callAgy.description as React.ReactElement,
+      );
+      expect(descAgy.textContent).toContain(
+        "Switched Antigravity CLI to beta@example.com due to rate limit.",
+      );
+    });
+
+    it("strictly suppresses toast when source is manual while executing cache updates and invalidation", () => {
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        switchedCallback!({
+          accountId: "acc-2",
+          target: "all",
+          source: "manual",
+          reason: "user_action",
+        });
+      });
+
+      const cached = queryClient.getQueryData<CloudAccount[]>(
+        QUERY_KEYS.cloudAccounts,
+      );
+      expect(cached!.find((a) => a.id === "acc-2")?.is_active).toBe(true);
+
+      expect(toastModule.toast).not.toHaveBeenCalled();
+
+      expect(invalidateSpy).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(150);
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: QUERY_KEYS.cloudAccounts,
+        refetchType: "active",
+      });
+    });
+
+    it("strictly suppresses toast when source is resync while executing cache updates and invalidation", () => {
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        switchedCallback!({
+          accountId: "acc-2",
+          target: "all",
+          source: "resync",
+          reason: "user_action",
+        });
+      });
+
+      const cached = queryClient.getQueryData<CloudAccount[]>(
+        QUERY_KEYS.cloudAccounts,
+      );
+      expect(cached!.find((a) => a.id === "acc-2")?.is_active).toBe(true);
+
+      expect(toastModule.toast).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(150);
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: QUERY_KEYS.cloudAccounts,
+        refetchType: "active",
+      });
+    });
+
+    it("renders standard tray toast with 3000ms duration when source is explicitly tray", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        switchedCallback!({
+          accountId: "acc-2",
+          target: "all",
+          source: "tray",
+          reason: "user_action",
+        });
+      });
+
+      expect(toastModule.toast).toHaveBeenCalledWith({
+        title: "All Environments Switched",
+        description:
+          "Switched all environments to beta@example.com via system tray.",
+        duration: 3000,
+      });
+    });
+
+    it("renders target-specific tray toast when source is tray and target is single", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        switchedCallback!({
+          accountId: "acc-2",
+          target: "ide",
+          source: "tray",
+        });
+      });
+
+      expect(toastModule.toast).toHaveBeenCalledWith({
+        title: "Account Switched",
+        description:
+          "Switched Antigravity IDE to beta@example.com via system tray.",
+        duration: 3000,
+      });
+    });
+
+    it("gracefully falls back to tray toast when payload has no source property (legacy object)", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        switchedCallback!({
+          accountId: "acc-2",
+          target: "all",
+        });
+      });
+
+      expect(toastModule.toast).toHaveBeenCalledWith({
+        title: "All Environments Switched",
+        description:
+          "Switched all environments to beta@example.com via system tray.",
+        duration: 3000,
+      });
+    });
   });
 });

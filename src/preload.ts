@@ -1,5 +1,9 @@
 import { ipcRenderer, contextBridge, type IpcRendererEvent } from "electron";
 import type { RendererPerformanceSnapshot } from "./modules/app-shell/performance-recorder/types";
+import type {
+  CloudAccountSwitchReason,
+  CloudAccountSwitchSource,
+} from "./modules/cloud-account/services/cloud-account-events";
 import { IPC_CHANNELS } from "./shared/constants";
 
 window.addEventListener("message", (event) => {
@@ -33,6 +37,8 @@ const electronBridge = {
         | {
             accountId: string;
             target?: "app" | "classic" | "ide" | "agy" | "cli" | "all";
+            source?: CloudAccountSwitchSource;
+            reason?: CloudAccountSwitchReason;
           },
     ) => void,
   ) => {
@@ -43,6 +49,8 @@ const electronBridge = {
         | {
             accountId: string;
             target?: "app" | "classic" | "ide" | "agy" | "cli" | "all";
+            source?: CloudAccountSwitchSource;
+            reason?: CloudAccountSwitchReason;
           },
     ) => callback(payload);
     ipcRenderer.on("tray://account-switched", handler);

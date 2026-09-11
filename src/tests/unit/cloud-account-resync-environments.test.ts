@@ -430,4 +430,46 @@ describe("resyncAllEnvironments Master Resolution Rule Suite", () => {
     expect(result.succeededTargets).toContain("app");
     expect(result.failedTargets.some((f) => f.target === "cli")).toBe(true);
   });
+
+  it("emits account:switched with source: 'resync' and reason: 'user_action' when aligning environments", async () => {
+    const { resyncAllEnvironments } =
+      await import("@/modules/cloud-account/ipc/handler");
+    const { AutoSwitchService } =
+      await import("@/modules/cloud-account/services/AutoSwitchService");
+    const { cloudAccountEvents } =
+      await import("@/modules/cloud-account/services/cloud-account-events");
+
+    const appAccount: CloudAccount = {
+      id: "acc-resync",
+      email: "resync@example.com",
+      provider: "google",
+      token: defaultToken,
+      status: "active",
+      created_at: 1000,
+      last_used: 1000,
+    };
+
+    mocks.accounts.push(appAccount);
+    mocks.settings["active_cloud_account.app"] = "acc-resync";
+    vi.mocked(AutoSwitchService.isAccountDepleted).mockReturnValue(false);
+
+    const switchedEvents: any[] = [];
+    const listener = (event: any) => switchedEvents.push(event);
+    cloudAccountEvents.on("account:switched", listener);
+
+    try {
+      const result = await resyncAllEnvironments();
+      expect(result.success).toBe(true);
+      expect(switchedEvents.length).toBeGreaterThanOrEqual(1);
+      expect(switchedEvents[0]).toEqual(
+        expect.objectContaining({
+          accountId: "acc-resync",
+          source: "resync",
+          reason: "user_action",
+        }),
+      );
+    } finally {
+      cloudAccountEvents.off("account:switched", listener);
+    }
+  });
 });

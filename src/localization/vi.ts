@@ -316,6 +316,18 @@ const vi = {
     switchedTargetDescription:
       "Đã chuyển {{target}} sang {{email}} qua khay hệ thống.",
   },
+  autoSwitch: {
+    toastTitle: "Tự động chuyển: Giới hạn tốc độ",
+    toastTargetTitle: "Tự động chuyển: {{target}}",
+    toastAllDescription:
+      "Đã chuyển tất cả môi trường sang {{email}} do giới hạn tốc độ.",
+    toastTargetDescription:
+      "Đã chuyển {{target}} sang {{email}} do giới hạn tốc độ.",
+    toastQuotaDescription:
+      "Đã chuyển tất cả môi trường sang {{email}} do hết hạn ngạch.",
+    toastGenericDescription:
+      "Đã tự động chuyển tất cả môi trường sang {{email}}.",
+  },
   account: {
     current: "Hiện tại",
     lastUsed: "Đã dùng {{time}}",

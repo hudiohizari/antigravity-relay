@@ -3,6 +3,7 @@ import type {
   CloudAccount,
   CloudQuotaData,
 } from "@/modules/cloud-account/types";
+import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
 
 vi.mock("@/modules/cloud-account/persistence/cloudHandler", () => ({
   CloudAccountRepo: {
@@ -591,7 +592,10 @@ describe("AutoSwitchService", () => {
         "rate_limited",
         expect.stringContaining("429"),
       );
-      expect(switchCloudAccount).toHaveBeenCalledWith("cand-80", undefined);
+      expect(switchCloudAccount).toHaveBeenCalledWith("cand-80", undefined, {
+        source: "auto_switch",
+        reason: "rate_limit",
+      });
       expect(result.switched).toBe(true);
       expect(result.nextAccount?.id).toBe("cand-80");
     });
@@ -758,6 +762,109 @@ describe("AutoSwitchService", () => {
         error: new Error("HTTP 429"),
       });
       expect(mockNotificationShow).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("Attribution & Single-Emission Integrity (Track B1)", () => {
+    it("passes source: 'auto_switch' and reason: 'rate_limit' without secondary cloudAccountEvents emission in triggerRateLimitSwitch", async () => {
+      const { CloudAccountRepo } =
+        await import("@/modules/cloud-account/persistence/cloudHandler");
+      const { CloudAccountSettingsStore } =
+        await import("@/modules/cloud-account/persistence/cloud-account-settings-store");
+      const { switchCloudAccount } =
+        await import("@/modules/cloud-account/ipc/handler");
+      const { AutoSwitchService } =
+        await import("@/modules/cloud-account/services/AutoSwitchService");
+
+      vi.mocked(CloudAccountSettingsStore.getSetting).mockReturnValue(true);
+      vi.mocked(
+        CloudAccountSettingsStore.getActiveAccountIdForTarget,
+      ).mockReturnValue("active-current");
+
+      const current = createAccount(
+        "active-current",
+        quotaWithClaudeGroup(10, 0.05),
+        { is_active: true },
+      );
+      const healthyCandidate = createAccount(
+        "healthy-cand",
+        quotaWithClaudeGroup(90, 0.9),
+      );
+
+      vi.mocked(CloudAccountRepo.getAccounts).mockResolvedValue([
+        current,
+        healthyCandidate,
+      ]);
+
+      const emitSpy = vi.spyOn(cloudAccountEvents, "emit");
+      emitSpy.mockClear();
+
+      const result = await AutoSwitchService.triggerRateLimitSwitch({
+        error: new Error("HTTP 429: Rate limited"),
+        source: "relay",
+        appTarget: "ide",
+      });
+
+      expect(result.switched).toBe(true);
+      expect(switchCloudAccount).toHaveBeenCalledWith("healthy-cand", "ide", {
+        source: "auto_switch",
+        reason: "rate_limit",
+      });
+
+      // Assert that AutoSwitchService did NOT emit secondary redundant account:switched
+      const switchedEmissions = emitSpy.mock.calls.filter(
+        (call) =>
+          call[0] === "account:switched" || call[0] === "account-switched",
+      );
+      expect(switchedEmissions).toHaveLength(0);
+    });
+
+    it("passes source: 'auto_switch' and reason: 'quota_exhausted' without secondary cloudAccountEvents emission in checkAndSwitchIfNeeded", async () => {
+      const { CloudAccountRepo } =
+        await import("@/modules/cloud-account/persistence/cloudHandler");
+      const { CloudAccountSettingsStore } =
+        await import("@/modules/cloud-account/persistence/cloud-account-settings-store");
+      const { switchCloudAccount } =
+        await import("@/modules/cloud-account/ipc/handler");
+      const { AutoSwitchService } =
+        await import("@/modules/cloud-account/services/AutoSwitchService");
+
+      vi.mocked(CloudAccountSettingsStore.getSetting).mockReturnValue(true);
+      vi.mocked(CloudAccountSettingsStore.isUnifiedMode).mockReturnValue(true);
+
+      const depletedCurrent = createAccount(
+        "depleted-current",
+        quotaWithClaudeGroup(0, 0),
+        { is_active: true },
+      );
+      const healthyCandidate = createAccount(
+        "healthy-cand",
+        quotaWithClaudeGroup(85, 0.85),
+      );
+
+      vi.mocked(CloudAccountRepo.getAccounts).mockResolvedValue([
+        depletedCurrent,
+        healthyCandidate,
+      ]);
+
+      const emitSpy = vi.spyOn(cloudAccountEvents, "emit");
+      emitSpy.mockClear();
+
+      const switched = await AutoSwitchService.checkAndSwitchIfNeeded();
+
+      expect(switched).toBe(true);
+      // Under unified mode, effective target is "all"
+      expect(switchCloudAccount).toHaveBeenCalledWith("healthy-cand", "all", {
+        source: "auto_switch",
+        reason: "quota_exhausted",
+      });
+
+      // Assert that AutoSwitchService did NOT emit secondary redundant account:switched
+      const switchedEmissions = emitSpy.mock.calls.filter(
+        (call) =>
+          call[0] === "account:switched" || call[0] === "account-switched",
+      );
+      expect(switchedEmissions).toHaveLength(0);
     });
   });
 });

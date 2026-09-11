@@ -5,10 +5,18 @@ import type {
 } from "@/modules/cloud-account/types";
 import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 
+export type CloudAccountSwitchSource =
+  "auto_switch" | "tray" | "manual" | "resync";
+
+export type CloudAccountSwitchReason =
+  "rate_limit" | "quota_exhausted" | "user_action";
+
 export interface AccountSwitchedEvent {
   accountId: string;
   target?: AntigravityAppTarget | "all";
   account?: CloudAccount | null;
+  source?: CloudAccountSwitchSource;
+  reason?: CloudAccountSwitchReason;
 }
 
 export interface AccountQuotaUpdatedEvent {

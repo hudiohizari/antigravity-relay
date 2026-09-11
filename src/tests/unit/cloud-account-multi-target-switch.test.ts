@@ -339,4 +339,85 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
     expect(accounts[0].is_active_cli).toBe(true);
     expect(accounts[0].is_active_agy).toBe(true);
   });
+
+  it("threads source and reason into account:switched event emission on batch switch", async () => {
+    const { cloudAccountEvents } =
+      await import("@/modules/cloud-account/services/cloud-account-events");
+
+    const events: any[] = [];
+    const listener = (payload: any) => events.push(payload);
+    cloudAccountEvents.on("account:switched", listener);
+
+    try {
+      await switchCloudAccount("acc-1", "all", {
+        source: "auto_switch",
+        reason: "rate_limit",
+      });
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual(
+        expect.objectContaining({
+          accountId: "acc-1",
+          target: "all",
+          source: "auto_switch",
+          reason: "rate_limit",
+        }),
+      );
+    } finally {
+      cloudAccountEvents.off("account:switched", listener);
+    }
+  });
+
+  it("defaults source to 'manual' when switch options are omitted", async () => {
+    const { cloudAccountEvents } =
+      await import("@/modules/cloud-account/services/cloud-account-events");
+
+    const events: any[] = [];
+    const listener = (payload: any) => events.push(payload);
+    cloudAccountEvents.on("account:switched", listener);
+
+    try {
+      await switchCloudAccount("acc-1", "all");
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual(
+        expect.objectContaining({
+          accountId: "acc-1",
+          target: "all",
+          source: "manual",
+          reason: undefined,
+        }),
+      );
+    } finally {
+      cloudAccountEvents.off("account:switched", listener);
+    }
+  });
+
+  it("threads source: 'tray' and reason: 'user_action' on single target switch", async () => {
+    const { cloudAccountEvents } =
+      await import("@/modules/cloud-account/services/cloud-account-events");
+
+    const events: any[] = [];
+    const listener = (payload: any) => events.push(payload);
+    cloudAccountEvents.on("account:switched", listener);
+
+    try {
+      await switchCloudAccount("acc-1", "ide", {
+        source: "tray",
+        reason: "user_action",
+      });
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual(
+        expect.objectContaining({
+          accountId: "acc-1",
+          target: "ide",
+          source: "tray",
+          reason: "user_action",
+        }),
+      );
+    } finally {
+      cloudAccountEvents.off("account:switched", listener);
+    }
+  });
 });

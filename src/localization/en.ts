@@ -314,6 +314,18 @@ const en = {
     switchedTargetDescription:
       "Switched {{target}} to {{email}} via system tray.",
   },
+  autoSwitch: {
+    toastTitle: "Auto-Switch: Rate Limit",
+    toastTargetTitle: "Auto-Switch: {{target}}",
+    toastAllDescription:
+      "Switched all environments to {{email}} due to rate limit.",
+    toastTargetDescription:
+      "Switched {{target}} to {{email}} due to rate limit.",
+    toastQuotaDescription:
+      "Switched all environments to {{email}} due to quota exhaustion.",
+    toastGenericDescription:
+      "Switched all environments to {{email}} automatically.",
+  },
   account: {
     current: "Current",
     lastUsed: "Last used {{time}}",

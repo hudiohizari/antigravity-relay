@@ -32,6 +32,56 @@ describe("CloudAccountEvents Lifecycle Event Bus", () => {
     expect(kebabListener).toHaveBeenCalledWith(payload);
   });
 
+  it("emits account:switched with explicit source and reason attribution", () => {
+    const listener = vi.fn();
+    emitter.on("account:switched", listener);
+
+    const payload = {
+      accountId: "acc-123",
+      target: "all" as const,
+      account: { id: "acc-123", email: "dev@example.com" } as any,
+      source: "auto_switch" as const,
+      reason: "rate_limit" as const,
+    };
+
+    emitter.emit("account:switched", payload);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: "acc-123",
+        source: "auto_switch",
+        reason: "rate_limit",
+      }),
+    );
+  });
+
+  it("preserves source and reason across all supported enum variants", () => {
+    const listener = vi.fn();
+    emitter.on("account-switched", listener);
+
+    const sources = ["auto_switch", "tray", "manual", "resync"] as const;
+    const reasons = ["rate_limit", "quota_exhausted", "user_action"] as const;
+
+    for (const source of sources) {
+      for (const reason of reasons) {
+        emitter.emit("account:switched", {
+          accountId: "acc-1",
+          source,
+          reason,
+        });
+      }
+    }
+
+    expect(listener).toHaveBeenCalledTimes(sources.length * reasons.length);
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        source: "resync",
+        reason: "user_action",
+      }),
+    );
+  });
+
   it("emits account:quota_updated and triggers both colon and kebab-case listeners", () => {
     const colonListener = vi.fn();
     const kebabListener = vi.fn();

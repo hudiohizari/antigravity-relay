@@ -259,7 +259,10 @@ export const cloudRouter = os.router({
       }),
     )
     .handler(async ({ input }) => {
-      return await switchCloudAccount(input.accountId, input.appTarget);
+      return await switchCloudAccount(input.accountId, input.appTarget, {
+        source: "manual",
+        reason: "user_action",
+      });
     }),
 
   resyncAllEnvironments: os
