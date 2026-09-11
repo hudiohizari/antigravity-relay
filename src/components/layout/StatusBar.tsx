@@ -328,7 +328,6 @@ function ServiceRow({ service }: { service: ManagedService }) {
                   ? `${t(service.labelKey)}: ${tooltipMessage}`
                   : undefined
               }
-              title={tooltipMessage}
             >
               <Button
                 variant="ghost"
@@ -360,7 +359,11 @@ function ServiceRow({ service }: { service: ManagedService }) {
             </span>
           </TooltipTrigger>
           {tooltipMessage && (
-            <TooltipContent side="top" className="max-w-[240px] text-xs">
+            <TooltipContent
+              side="top"
+              align="end"
+              className="max-w-[240px] text-xs"
+            >
               {tooltipMessage}
             </TooltipContent>
           )}

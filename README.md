@@ -1,18 +1,24 @@
 # Antigravity Relay
 
-Desktop account management, quota orchestration, and mobile PWA remote relay for Google Antigravity 2.0.
+Desktop account management, quota orchestration, and mobile PWA remote relay for Google Antigravity (**Antigravity App**, **Antigravity IDE**, and **Antigravity CLI**).
 
 ![Antigravity Relay Accounts Dashboard](images/app-preview.png)
 
-> **Attribution**: Forked and adapted from [Antigravity Manager](https://github.com/Draculabo/AntigravityManager) by Draculabo. Antigravity Relay focuses exclusively on Antigravity 2.0, strips third-party telemetry, and isolates local storage to `~/.antigravity-relay/`.
+> **Attribution**: Forked and adapted from [Antigravity Manager](https://github.com/Draculabo/AntigravityManager) by Draculabo. Antigravity Relay focuses on the Google Antigravity ecosystem, strips third-party telemetry, and isolates local storage to `~/.antigravity-relay/`.
 
 ---
 
 ## Highlights
 
-### 1. Multi-Account Pool & Quota Orchestration
+### 1. Multi-Target Credential Pooling & Quota Orchestration
 
-Connect multiple Google accounts via OAuth 2.0 loopback authentication. Monitor real-time quota fraction, 5-hour rolling pool limits, and individual model quotas (`gemini-3.8-flash`, `gemini-3.1-pro`, `claude-opus-4-6`, `claude-sonnet-4-6`) with live reset countdown timers and intelligent automatic failover.
+Connect multiple Google accounts via OAuth 2.0 loopback authentication. Seamlessly synchronize credentials across all three Google Antigravity environments:
+
+- **Antigravity App**: The standalone desktop agent command center.
+- **Antigravity IDE**: The AI-first code editor.
+- **Antigravity CLI**: Terminal command-line interface (`agy <command>`).
+
+Monitor real-time quota fraction, 5-hour rolling pool limits, and individual model quotas (`gemini-3.8-flash`, `gemini-3.1-pro`, `claude-opus-4-6`, `claude-sonnet-4-6`) with live reset countdown timers and intelligent automatic failover.
 
 ### 2. Remote Mobile Tethering & Web UI Mirror
 
@@ -39,7 +45,7 @@ Resident in your macOS Menu Bar / Windows System Tray for instant background man
 
 ## Features
 
-- **Antigravity 2.0 Focused**: Dedicated integration and account switching tailored exclusively for Google Antigravity 2.0.
+- **Unified Multi-Target Architecture**: Seamlessly coordinates credentials across **Antigravity App**, **Antigravity IDE**, and **Antigravity CLI** (`agy`) with 1-click global sync and independent target switching.
 - **Multi-Account Pool & Auto-Switch**: Connect and manage multiple Google accounts via OAuth 2.0 loopback authentication with automatic quota-depletion failover.
 - **Local Account Discovery & Sync**: One-click discovery, verification, and import of local signed-in accounts across System Credential Stores (macOS Keychain, Windows Credential Manager, Linux Secret Service), Antigravity CLI session files, IDE databases, and legacy Antigravity Manager databases (`~/.antigravity-agent/cloud_accounts.db`) with proactive token refresh.
 - **Live Quota Monitoring**: Real-time per-model quota tracking, background polling, and reset countdown timers for current Antigravity models (`gemini-3.8-flash`, `gemini-3.1-pro`, `claude-opus-4-6`, `claude-sonnet-4-6`).
