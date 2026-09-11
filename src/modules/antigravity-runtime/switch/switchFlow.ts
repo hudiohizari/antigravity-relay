@@ -1,7 +1,11 @@
 import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 import type { DeviceProfile } from "@/modules/identity-profile/types";
 import { logger } from "@/shared/logging/logger";
-import { refreshAntigravityProcessCache } from "@/shared/platform/paths";
+import {
+  getAntigravityExecutablePath,
+  refreshAntigravityProcessCache,
+  rememberRunningExecutablePath,
+} from "@/shared/platform/paths";
 import {
   closeAntigravity,
   isProcessRunning,
@@ -185,6 +189,12 @@ export async function executeSwitchFlow(
         );
         const wasRunning = Boolean(isRunning);
         if (wasRunning) {
+          const preResolvedExecutablePath =
+            getAntigravityExecutablePath(appTarget);
+          if (preResolvedExecutablePath) {
+            rememberRunningExecutablePath(appTarget, preResolvedExecutablePath);
+          }
+
           await trace.phase("closeMs", async () => {
             await closeAntigravity(appTarget);
           });

@@ -1078,6 +1078,124 @@ describe("Path Utilities", () => {
     );
     expect(paths.getAntigravityExecutablePath("classic")).toBe(executablePath);
   });
+
+  it("should remember, retrieve, and clear last known executable paths across process termination", async () => {
+    vi.resetModules();
+    const paths = await import("../../shared/platform/paths");
+
+    paths.rememberRunningExecutablePath(
+      "app",
+      "C:\\Custom\\Antigravity\\Antigravity.exe",
+    );
+    paths.rememberRunningExecutablePath(
+      "ide",
+      "C:\\Custom\\Antigravity IDE\\Antigravity IDE.exe",
+    );
+
+    expect(paths.getLastKnownAntigravityExecutablePath("app")).toBe(
+      "C:\\Custom\\Antigravity\\Antigravity.exe",
+    );
+    expect(paths.getLastKnownAntigravityExecutablePath("ide")).toBe(
+      "C:\\Custom\\Antigravity IDE\\Antigravity IDE.exe",
+    );
+
+    paths.clearLastKnownAntigravityExecutablePaths();
+
+    expect(paths.getLastKnownAntigravityExecutablePath("app")).toBeNull();
+    expect(paths.getLastKnownAntigravityExecutablePath("ide")).toBeNull();
+  });
+
+  it("should prioritize remembered executable path over static search when target process is stopped", async () => {
+    vi.resetModules();
+    setPlatform("win32");
+    process.env.LOCALAPPDATA = "C:\\Users\\Alice\\AppData\\Local";
+    const rememberedPath = "D:\\Special\\Antigravity\\Antigravity.exe";
+
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (candidate) => String(candidate) === rememberedPath,
+    );
+
+    const paths = await import("../../shared/platform/paths");
+    paths.rememberRunningExecutablePath("classic", rememberedPath);
+
+    expect(paths.getAntigravityExecutablePath("classic")).toBe(rememberedPath);
+  });
+
+  it("should discover executables in Google subdirectories and Squirrel root layouts on Windows", async () => {
+    vi.resetModules();
+    setPlatform("win32");
+    process.env.LOCALAPPDATA = "C:\\Users\\Alice\\AppData\\Local";
+    process.env.ProgramFiles = "C:\\Program Files";
+
+    const googleLocalPath =
+      "C:\\Users\\Alice\\AppData\\Local\\Google\\Antigravity\\Antigravity.exe";
+    const squirrelRootPath =
+      "C:\\Users\\Alice\\AppData\\Local\\Antigravity\\Antigravity.exe";
+    const googleIdePath =
+      "C:\\Program Files\\Google\\Antigravity IDE\\Antigravity IDE.exe";
+
+    const paths = await import("../../shared/platform/paths");
+
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (candidate) => String(candidate) === googleLocalPath,
+    );
+    expect(paths.getAntigravityExecutablePath("classic")).toBe(googleLocalPath);
+
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (candidate) => String(candidate) === squirrelRootPath,
+    );
+    expect(paths.getAntigravityExecutablePath("classic")).toBe(
+      squirrelRootPath,
+    );
+
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (candidate) => String(candidate) === googleIdePath,
+    );
+    expect(paths.getAntigravityExecutablePath("ide")).toBe(googleIdePath);
+  });
+
+  it("should discover hyphenated IDE installations and search system PATH on Windows", async () => {
+    vi.resetModules();
+    setPlatform("win32");
+    process.env.LOCALAPPDATA = "C:\\Users\\Alice\\AppData\\Local";
+    process.env.PATH =
+      "C:\\Windows\\System32;D:\\Toolchains\\bin;C:\\CustomPath";
+
+    const hyphenatedIdePath =
+      "C:\\Users\\Alice\\AppData\\Local\\Programs\\antigravity-ide\\antigravity-ide.exe";
+    const pathIdeCandidate = "D:\\Toolchains\\bin\\antigravity-ide.exe";
+
+    const paths = await import("../../shared/platform/paths");
+
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (candidate) => String(candidate) === hyphenatedIdePath,
+    );
+    expect(paths.getAntigravityExecutablePath("ide")).toBe(hyphenatedIdePath);
+
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (candidate) => String(candidate) === pathIdeCandidate,
+    );
+    expect(paths.getAntigravityExecutablePath("ide")).toBe(pathIdeCandidate);
+  });
+
+  it("should discover Google installations under WSL host interop", async () => {
+    vi.resetModules();
+    childProcessMock.execSync.mockReturnValue("alice\r\n");
+    const googleWslPath =
+      "/mnt/c/Users/alice/AppData/Local/Google/Antigravity/Antigravity.exe";
+
+    vi.spyOn(fs, "existsSync").mockImplementation(
+      (candidate) => String(candidate) === googleWslPath,
+    );
+
+    const paths = await import("../../shared/platform/paths");
+    expect(
+      paths.getAntigravityExecutablePath("classic", {
+        platform: "linux",
+        isWsl: true,
+      }),
+    ).toBe(googleWslPath);
+  });
 });
 
 describe("getAgyCliTokenPaths", () => {

@@ -1,4 +1,5 @@
 import { exec, execSync, spawn } from "child_process";
+import fs from "fs";
 import path from "path";
 import { promisify } from "util";
 import findProcess, { ProcessInfo } from "find-process";
@@ -12,11 +13,13 @@ import {
   isTargetAntigravityExecutableProcessCandidate,
   isTargetAntigravityProcessCandidate,
   isWsl,
+  rememberRunningExecutablePath,
 } from "@/shared/platform/paths";
 import { logger } from "@/shared/logging/logger";
 import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 import { resolveAntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 import {
+  getRunningWindowsImageProcesses,
   isSafeWindowsImageName,
   isWindowsImageRunning,
   killWindowsImageTree,
@@ -93,12 +96,27 @@ async function isAnyWindowsTargetImageRunning(
 ): Promise<boolean | null> {
   let sawCommandFailure = false;
   for (const imageName of getWindowsTargetImageNames(target)) {
-    const isRunning = await isWindowsImageRunning(imageName);
-    if (isRunning === true) {
-      return true;
-    }
-    if (isRunning === null) {
+    const processes = await getRunningWindowsImageProcesses(imageName);
+    if (processes === null) {
       sawCommandFailure = true;
+      continue;
+    }
+    if (processes.length > 0) {
+      for (const p of processes) {
+        if (p.cmd) {
+          const candidate = parseCommandLineArguments(p.cmd)[0];
+          if (
+            candidate &&
+            (candidate.toLowerCase().endsWith(".exe") ||
+              candidate.toLowerCase().endsWith(".cmd")) &&
+            (path.win32.isAbsolute(candidate) || candidate.includes("\\"))
+          ) {
+            rememberRunningExecutablePath(target, candidate);
+            break;
+          }
+        }
+      }
+      return true;
     }
   }
 
@@ -130,18 +148,40 @@ async function findWindowsAntigravityProcesses(
     }
 
     for (const processItem of processes) {
-      const executablePath =
-        targetExecutablePath &&
-        path.win32.basename(targetExecutablePath).toLowerCase() ===
-          processItem.name.toLowerCase()
-          ? targetExecutablePath
-          : "";
+      let executablePath = "";
+      if (processItem.cmd) {
+        const candidate = parseCommandLineArguments(processItem.cmd)[0];
+        if (
+          candidate &&
+          (candidate.toLowerCase().endsWith(".exe") ||
+            candidate.toLowerCase().endsWith(".cmd")) &&
+          (path.win32.isAbsolute(candidate) || candidate.includes("\\"))
+        ) {
+          executablePath = candidate;
+          rememberRunningExecutablePath(target, executablePath);
+        }
+      }
+
+      if (!executablePath) {
+        executablePath =
+          targetExecutablePath &&
+          path.win32.basename(targetExecutablePath).toLowerCase() ===
+            processItem.name.toLowerCase()
+            ? targetExecutablePath
+            : "";
+        if (executablePath) {
+          rememberRunningExecutablePath(target, executablePath);
+        }
+      }
+
       processMap.set(processItem.pid, {
         pid: processItem.pid,
         ppid: processItem.ppid,
         name: processItem.name,
         bin: executablePath,
-        cmd: executablePath ? `"${executablePath}"` : processItem.name,
+        cmd:
+          processItem.cmd ||
+          (executablePath ? `"${executablePath}"` : processItem.name),
       });
     }
   }

@@ -84,6 +84,10 @@ vi.mock("../../shared/platform/paths", () => ({
   },
   getCloudAccountsDbPath: () => "mock-cloud-db",
   refreshAntigravityProcessCache: () => Promise.resolve(),
+  getAntigravityExecutablePath: () => "/mock/path/antigravity",
+  rememberRunningExecutablePath: vi.fn(),
+  getLastKnownAntigravityExecutablePath: vi.fn(),
+  clearLastKnownAntigravityExecutablePaths: vi.fn(),
 }));
 
 vi.mock("../../shared/logging/logger", () => ({
@@ -1524,6 +1528,10 @@ describe("cloud switch fail-fast path", () => {
       getAntigravityDbPaths: () => [],
       refreshAntigravityProcessCache: refreshAntigravityProcessCacheMock,
       isAntigravityTargetInstalled: () => true,
+      getAntigravityExecutablePath: () => "/mock/path/antigravity",
+      rememberRunningExecutablePath: vi.fn(),
+      getLastKnownAntigravityExecutablePath: vi.fn(),
+      clearLastKnownAntigravityExecutablePaths: vi.fn(),
     }));
 
     vi.doMock("../../shared/logging/logger", () => ({

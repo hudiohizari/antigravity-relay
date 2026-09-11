@@ -30,6 +30,9 @@ vi.mock("../../shared/platform/paths", async () => {
     getBackupsDir: vi.fn(() => path.join(agentDir, "backups")),
     getAntigravityDbPath: vi.fn(() => path.join(agentDir, "state.vscdb")),
     getAntigravityExecutablePath: vi.fn(() => "mock_exec_path"),
+    rememberRunningExecutablePath: vi.fn(),
+    getLastKnownAntigravityExecutablePath: vi.fn(),
+    clearLastKnownAntigravityExecutablePaths: vi.fn(),
     refreshAntigravityProcessCache: vi.fn(() => Promise.resolve()),
   };
 });

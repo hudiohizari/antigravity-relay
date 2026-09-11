@@ -1088,6 +1088,239 @@ export function getAntigravityDbPath(
   return paths.length > 0 ? paths[0] : "";
 }
 
+const lastKnownExecutablePathByTarget = new Map<AntigravityAppTarget, string>();
+
+export function rememberRunningExecutablePath(
+  target?: AntigravityAppTarget | null,
+  executablePath?: string | null,
+): void {
+  if (!executablePath || typeof executablePath !== "string") {
+    return;
+  }
+  const trimmed = executablePath.trim();
+  if (!trimmed) {
+    return;
+  }
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  lastKnownExecutablePathByTarget.set(resolvedTarget, trimmed);
+}
+
+export function getLastKnownAntigravityExecutablePath(
+  target?: AntigravityAppTarget | null,
+): string | null {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  return lastKnownExecutablePathByTarget.get(resolvedTarget) ?? null;
+}
+
+export function clearLastKnownAntigravityExecutablePaths(): void {
+  lastKnownExecutablePathByTarget.clear();
+}
+
+function getWindowsPossibleExecutablePaths(
+  target: AntigravityAppTarget,
+): string[] {
+  const executableName = getAntigravityAppFolderName(target);
+  const localAppData = process.env.LOCALAPPDATA || "";
+  const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+  const programFilesX86 =
+    process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+
+  const possiblePaths: string[] = [];
+
+  if (localAppData) {
+    possiblePaths.push(
+      path.win32.join(
+        localAppData,
+        "Programs",
+        executableName,
+        `${executableName}.exe`,
+      ),
+      path.win32.join(
+        localAppData,
+        "Programs",
+        "Google",
+        executableName,
+        `${executableName}.exe`,
+      ),
+      path.win32.join(
+        localAppData,
+        "Google",
+        executableName,
+        `${executableName}.exe`,
+      ),
+      path.win32.join(localAppData, executableName, `${executableName}.exe`),
+    );
+
+    if (target === "ide") {
+      possiblePaths.push(
+        path.win32.join(
+          localAppData,
+          "Programs",
+          "antigravity-ide",
+          "antigravity-ide.exe",
+        ),
+        path.win32.join(
+          localAppData,
+          "Programs",
+          "antigravity-ide",
+          "Antigravity IDE.exe",
+        ),
+        path.win32.join(
+          localAppData,
+          "Programs",
+          "Google",
+          "antigravity-ide",
+          "antigravity-ide.exe",
+        ),
+        path.win32.join(
+          localAppData,
+          "Google",
+          "antigravity-ide",
+          "antigravity-ide.exe",
+        ),
+        path.win32.join(localAppData, "antigravity-ide", "antigravity-ide.exe"),
+      );
+    } else {
+      possiblePaths.push(
+        path.win32.join(
+          localAppData,
+          "Programs",
+          "antigravity",
+          "antigravity.exe",
+        ),
+        path.win32.join(
+          localAppData,
+          "Programs",
+          "Google",
+          "antigravity",
+          "antigravity.exe",
+        ),
+        path.win32.join(
+          localAppData,
+          "Google",
+          "antigravity",
+          "antigravity.exe",
+        ),
+        path.win32.join(localAppData, "antigravity", "antigravity.exe"),
+      );
+    }
+  }
+
+  for (const pfRoot of [programFiles, programFilesX86]) {
+    if (!pfRoot) continue;
+    possiblePaths.push(
+      path.win32.join(pfRoot, executableName, `${executableName}.exe`),
+      path.win32.join(
+        pfRoot,
+        "Google",
+        executableName,
+        `${executableName}.exe`,
+      ),
+    );
+    if (target === "ide") {
+      possiblePaths.push(
+        path.win32.join(pfRoot, "antigravity-ide", "antigravity-ide.exe"),
+        path.win32.join(pfRoot, "antigravity-ide", "Antigravity IDE.exe"),
+        path.win32.join(
+          pfRoot,
+          "Google",
+          "antigravity-ide",
+          "antigravity-ide.exe",
+        ),
+      );
+    } else {
+      possiblePaths.push(
+        path.win32.join(pfRoot, "antigravity", "antigravity.exe"),
+        path.win32.join(pfRoot, "Google", "antigravity", "antigravity.exe"),
+      );
+    }
+  }
+
+  return possiblePaths;
+}
+
+function getWindowsPathEnvironmentExecutable(
+  target: AntigravityAppTarget,
+): string | null {
+  const pathValue = process.env.PATH;
+  if (!pathValue) {
+    return null;
+  }
+
+  const binaryNames =
+    target === "ide"
+      ? ["Antigravity IDE.exe", "antigravity-ide.exe", "antigravity-ide.cmd"]
+      : ["Antigravity.exe", "antigravity.exe"];
+
+  const pathDirs = pathValue.split(";");
+  for (const dir of pathDirs) {
+    const trimmedDir = dir.trim();
+    if (!trimmedDir) {
+      continue;
+    }
+    for (const binaryName of binaryNames) {
+      const candidate = path.win32.join(trimmedDir, binaryName);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getWslPossibleExecutablePaths(
+  winUser: string,
+  target: AntigravityAppTarget,
+): string[] {
+  const executableName = getAntigravityAppFolderName(target);
+  const userBase = `/mnt/c/Users/${winUser}/AppData/Local`;
+  const candidates: string[] = [
+    `${userBase}/Programs/${executableName}/${executableName}.exe`,
+    `${userBase}/Programs/Google/${executableName}/${executableName}.exe`,
+    `${userBase}/Google/${executableName}/${executableName}.exe`,
+    `${userBase}/${executableName}/${executableName}.exe`,
+  ];
+
+  if (target === "ide") {
+    candidates.push(
+      `${userBase}/Programs/antigravity-ide/antigravity-ide.exe`,
+      `${userBase}/Programs/antigravity-ide/Antigravity IDE.exe`,
+      `${userBase}/Programs/Google/antigravity-ide/antigravity-ide.exe`,
+      `${userBase}/Google/antigravity-ide/antigravity-ide.exe`,
+      `${userBase}/antigravity-ide/antigravity-ide.exe`,
+    );
+  } else {
+    candidates.push(
+      `${userBase}/Programs/antigravity/antigravity.exe`,
+      `${userBase}/Programs/Google/antigravity/antigravity.exe`,
+      `${userBase}/Google/antigravity/antigravity.exe`,
+      `${userBase}/antigravity/antigravity.exe`,
+    );
+  }
+
+  for (const pfRoot of ["/mnt/c/Program Files", "/mnt/c/Program Files (x86)"]) {
+    candidates.push(
+      `${pfRoot}/${executableName}/${executableName}.exe`,
+      `${pfRoot}/Google/${executableName}/${executableName}.exe`,
+    );
+    if (target === "ide") {
+      candidates.push(
+        `${pfRoot}/antigravity-ide/antigravity-ide.exe`,
+        `${pfRoot}/antigravity-ide/Antigravity IDE.exe`,
+        `${pfRoot}/Google/antigravity-ide/antigravity-ide.exe`,
+      );
+    } else {
+      candidates.push(
+        `${pfRoot}/antigravity/antigravity.exe`,
+        `${pfRoot}/Google/antigravity/antigravity.exe`,
+      );
+    }
+  }
+
+  return candidates;
+}
+
 export function getAntigravityExecutablePath(
   target?: AntigravityAppTarget | null,
   options?: PathResolutionOptions,
@@ -1104,6 +1337,7 @@ export function getAntigravityExecutablePath(
   const runningExecutablePath = getExecutablePathFromRunningProcess(target);
 
   if (runningExecutablePath) {
+    rememberRunningExecutablePath(resolvedTarget, runningExecutablePath);
     return runningExecutablePath;
   }
 
@@ -1116,8 +1350,23 @@ export function getAntigravityExecutablePath(
     return configuredExecutablePath;
   }
 
+  const lastKnownExecutablePath =
+    getLastKnownAntigravityExecutablePath(resolvedTarget);
+  if (lastKnownExecutablePath && fs.existsSync(lastKnownExecutablePath)) {
+    return lastKnownExecutablePath;
+  }
+
   if (resolveIsWsl(options)) {
     const winUser = getWindowsUser();
+    const wslCandidates = getWslPossibleExecutablePaths(
+      winUser,
+      resolvedTarget,
+    );
+    for (const candidate of wslCandidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
     return `/mnt/c/Users/${winUser}/AppData/Local/Programs/${executableName}/${executableName}.exe`;
   }
 
@@ -1125,30 +1374,16 @@ export function getAntigravityExecutablePath(
     case "darwin":
       return `/Applications/${executableName}.app/Contents/MacOS/${executableName}`;
     case "win32": {
-      const localAppData = process.env.LOCALAPPDATA || "";
-      const programFiles = process.env.ProgramFiles || "C:\\Program Files";
-      const programFilesX86 =
-        process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-
-      const possiblePaths = [
-        path.win32.join(
-          localAppData,
-          "Programs",
-          executableName,
-          `${executableName}.exe`,
-        ),
-        path.win32.join(programFiles, executableName, `${executableName}.exe`),
-        path.win32.join(
-          programFilesX86,
-          executableName,
-          `${executableName}.exe`,
-        ),
-      ];
-
+      const possiblePaths = getWindowsPossibleExecutablePaths(resolvedTarget);
       for (const possiblePath of possiblePaths) {
         if (fs.existsSync(possiblePath)) {
           return possiblePath;
         }
+      }
+
+      const fromPath = getWindowsPathEnvironmentExecutable(resolvedTarget);
+      if (fromPath) {
+        return fromPath;
       }
 
       // No known path found; return empty string (caller must handle missing binary)

@@ -42,6 +42,9 @@ vi.mock("@/shared/logging/logger", () => ({
 vi.mock("@/shared/platform/paths", () => ({
   getAntigravityExecutablePath: vi.fn(() => "/path/to/antigravity"),
   getConfiguredAntigravityArgs: vi.fn(() => []),
+  rememberRunningExecutablePath: vi.fn(),
+  getLastKnownAntigravityExecutablePath: vi.fn(),
+  clearLastKnownAntigravityExecutablePaths: vi.fn(),
   isConfiguredTargetExecutableProcessCandidate: vi.fn((processItem, target) => {
     const normalizedTarget = target === "ide" ? "ide" : "classic";
     return (
@@ -114,6 +117,7 @@ import findProcess from "find-process";
 import {
   getAntigravityExecutablePath,
   isTargetAntigravityProcessCandidate,
+  rememberRunningExecutablePath,
 } from "@/shared/platform/paths";
 import { logger } from "@/shared/logging/logger";
 import {
@@ -211,12 +215,34 @@ describe("Windows process utilities", () => {
         name: "Antigravity.exe",
         pid: 12345,
         ppid: 1000,
+        cmd: "Antigravity.exe",
       },
     ]);
     expect(findProcess).toHaveBeenCalledWith("name", "Antigravity.exe", {
       strict: true,
     });
     expect(psListMock).not.toHaveBeenCalled();
+  });
+
+  it("should preserve cmd from ps-list when querying Windows processes by image name", async () => {
+    psListMock.mockResolvedValue([
+      {
+        name: "Antigravity.exe",
+        pid: 12345,
+        ppid: 1000,
+        cmd: '"C:\\Users\\Alice\\AppData\\Local\\Programs\\Google\\Antigravity\\Antigravity.exe" --flag',
+      },
+    ]);
+
+    const result = await queryWindowsProcessesByImageName("Antigravity.exe");
+    expect(result).toEqual([
+      {
+        name: "Antigravity.exe",
+        pid: 12345,
+        ppid: 1000,
+        cmd: '"C:\\Users\\Alice\\AppData\\Local\\Programs\\Google\\Antigravity\\Antigravity.exe" --flag',
+      },
+    ]);
   });
 
   it("should reject invalid Windows image names before starting taskkill", async () => {
@@ -326,6 +352,33 @@ describe("Process Handler", () => {
         false,
         false,
       ]);
+    });
+
+    it("should extract and remember executable path from process command line on Windows", async () => {
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+        configurable: true,
+      });
+      Object.defineProperty(process, "pid", {
+        value: 1000,
+        configurable: true,
+      });
+      psListMock.mockResolvedValue([
+        {
+          name: "Antigravity.exe",
+          pid: 12345,
+          ppid: 1000,
+          cmd: '"C:\\Users\\Alice\\AppData\\Local\\Programs\\Google\\Antigravity\\Antigravity.exe" --flag',
+        },
+      ]);
+
+      const result = await isProcessRunning("classic");
+
+      expect(result).toBe(true);
+      expect(rememberRunningExecutablePath).toHaveBeenCalledWith(
+        "classic",
+        "C:\\Users\\Alice\\AppData\\Local\\Programs\\Google\\Antigravity\\Antigravity.exe",
+      );
     });
 
     it("should return true when Antigravity main process is found on macOS", async () => {
