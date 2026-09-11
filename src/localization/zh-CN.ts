@@ -28,6 +28,19 @@ const zhCn = {
     tunnel_not_installed_tooltip: "此计算机上未安装 cloudflared CLI",
     wifi_network: "Wi-Fi",
     local_network: "本地",
+    service_relay: "中继服务器",
+    service_tunnel: "Cloudflare 隧道",
+    service_app: "Antigravity 2.0 (应用)",
+    service_ide: "Antigravity IDE",
+    service_cli: "Antigravity CLI (agy)",
+    tooltips: {
+      appNotInstalled: "系统未检测到 Antigravity 2.0 桌面应用程序",
+      ideNotInstalled: "系统未检测到 Antigravity IDE",
+      cliNotInstalled:
+        "在 PATH 或标准目录中未找到 Antigravity CLI (agy) 可执行文件",
+      tunnelNotInstalled: "此计算机上未安装 cloudflared CLI",
+      cliIdleGuidance: "请直接在终端中运行 'agy <命令>'",
+    },
   },
   action: {
     stop: "停止",
@@ -136,6 +149,13 @@ const zhCn = {
     upstreamOffline: "离线",
     startFailed: "启动中继服务器失败: {{error}}",
     stopFailed: "停止中继服务器失败: {{error}}",
+    mirrorBoundary: {
+      title: "远程镜像范围提示",
+      badge: "仅限桌面应用与 IDE",
+      description:
+        "移动远程镜像仅用于投射 Antigravity IDE 和 Antigravity 2.0 桌面应用会话。Antigravity CLI (agy) 仅在终端运行，无法镜像到移动配套设备。",
+      callout: "终端 CLI (agy) 直接在当前主机上运行，不会镜像到移动设备。",
+    },
   },
   tunnel: {
     title: "Cloudflare 快速隧道",
@@ -200,6 +220,8 @@ const zhCn = {
     autoRegeneratedNotice: "设备连接后配对密钥已自动重新生成",
     keyConsumedError: "此配对密钥已被其他设备使用。请从桌面主机获取新密钥。",
     keyInvalidError: "无效的配对密钥。请在桌面仪表板上验证当前有效密钥。",
+    platformScopeNotice:
+      "移动配套应用仅镜像 Antigravity IDE 与桌面应用会话。不支持终端 CLI (agy)。",
   },
   sessions: {
     title: "已连接的手机会话",
@@ -264,6 +286,10 @@ const zhCn = {
   traySync: {
     switchedTitle: "账号已切换",
     switchedDescription: "活动账号已通过系统托盘切换到 {{email}}。",
+    switchedAllTitle: "所有环境已切换",
+    switchedAllDescription: "已通过系统托盘将所有环境切换到 {{email}}。",
+    switchedTargetTitle: "账号已切换",
+    switchedTargetDescription: "已通过系统托盘将 {{target}} 切换到 {{email}}。",
   },
   editionSelection: {
     title: "选择您的 Antigravity 版本",
@@ -623,6 +649,52 @@ const zhCn = {
         "confirmation-failed": "无法完成本地账号导入。",
         "internal-error": "本地账号导入请求失败。",
       },
+    },
+    target: {
+      classic: "Antigravity 应用",
+      classicShort: "应用",
+      ide: "Antigravity IDE",
+      ideShort: "IDE",
+      cli: "Antigravity CLI",
+      cliShort: "CLI",
+      agy: "Antigravity CLI",
+      agyShort: "CLI",
+    },
+    switch: {
+      targetAll: "一键切换所有环境",
+      targetAllDesc: "一键同步凭据到应用、IDE 与 CLI",
+      targetAllShort: "全部切换",
+      activeAll: "已在全部生效",
+      activeAllAria: "在所有环境中均处于活动状态: 应用、IDE 与 CLI",
+      trigger: "切换",
+      triggerAria: "切换 {{email}} 的活动账号",
+      menuTitle: "选择目标环境",
+      switchToTarget: "切换到 {{target}}",
+      activeBadge: "活动",
+      currentlyActiveAria: "{{target}} 当前处于活动状态",
+      switching: "切换中...",
+      targetNotInstalled: "系统尚未安装 {{target}}",
+      successAllToast: {
+        title: "所有环境已切换",
+        description: "已将所有环境切换到 {{email}}。",
+      },
+      partialFailureToast: {
+        title: "部分环境切换完成",
+        description:
+          "已将 {{totalCount}} 个环境中的 {{successCount}} 个切换到 {{email}}。以下环境失败 {{failedTargets}}: {{error}}",
+      },
+      failureAllToast: {
+        title: "切换失败",
+        description: "切换环境失败: {{error}}",
+      },
+      noticeRestarted: "凭据已应用，已重启 {{target}}。",
+      noticeInjectedOnDisk:
+        "已更新 {{target}} 的磁盘凭据，将在下次启动时生效。",
+      noticeCliUpdated: "CLI 凭据已更新，可直接执行下一个终端命令。",
+      noticeBatchAllRestarted: "凭据已应用，正在运行的环境已完成重启。",
+      noticeBatchAllInjected: "所有环境的磁盘凭据已更新，将在下次启动时生效。",
+      noticeBatchMixed:
+        "凭据已更新: 已重启 {{restartedTargets}}，已更新磁盘凭据 {{injectedTargets}}。",
     },
     card: {
       active: "活跃",

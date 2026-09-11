@@ -5,6 +5,13 @@ import { toast } from "@/components/ui/use-toast";
 import { QUERY_KEYS } from "@/modules/cloud-account/hooks/useCloudAccounts";
 import type { CloudAccount } from "@/modules/cloud-account/types";
 
+export type TraySwitchedPayload =
+  | string
+  | {
+      accountId: string;
+      target?: "all" | "classic" | "ide" | "agy" | "cli";
+    };
+
 export function useTrayAccountSync(): void {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
@@ -23,36 +30,123 @@ export function useTrayAccountSync(): void {
         queryKey: ["currentAccount"],
         refetchType: "active",
       });
+      queryClient.invalidateQueries({
+        queryKey: ["process", "status"],
+        refetchType: "active",
+      });
       debounceTimerRef.current = null;
     }, 150);
   }, [queryClient]);
 
   const handleAccountSwitched = useCallback(
-    (accountId: string) => {
+    (payload: TraySwitchedPayload) => {
+      if (!payload) return;
+      const accountId =
+        typeof payload === "string" ? payload : payload.accountId;
+      if (!accountId) return;
+
+      const rawTarget =
+        typeof payload === "string" ? "all" : (payload.target ?? "all");
+      const target = rawTarget === "cli" ? "agy" : rawTarget;
       let switchedEmail: string | undefined;
 
       queryClient.setQueryData<CloudAccount[]>(
         QUERY_KEYS.cloudAccounts,
         (oldData) => {
           if (!oldData) return oldData;
-          const target = oldData.find((acc) => acc.id === accountId);
-          if (target) {
-            switchedEmail = target.email;
+          const matched = oldData.find((acc) => acc.id === accountId);
+          if (matched) {
+            switchedEmail = matched.email;
           }
-          return oldData.map((acc) => ({
-            ...acc,
-            is_active: acc.id === accountId,
-          }));
+          return oldData.map((acc) => {
+            const isMatch = acc.id === accountId;
+            if (target === "all") {
+              return {
+                ...acc,
+                is_active: isMatch,
+                is_active_classic: isMatch,
+                is_active_ide: isMatch,
+                is_active_agy: isMatch,
+              };
+            }
+            if (target === "classic") {
+              return {
+                ...acc,
+                is_active_classic: isMatch,
+                is_active:
+                  isMatch || Boolean(acc.is_active_ide || acc.is_active_agy),
+              };
+            }
+            if (target === "ide") {
+              return {
+                ...acc,
+                is_active_ide: isMatch,
+                is_active:
+                  isMatch ||
+                  Boolean(acc.is_active_classic || acc.is_active_agy),
+              };
+            }
+            if (target === "agy") {
+              return {
+                ...acc,
+                is_active_agy: isMatch,
+                is_active:
+                  isMatch ||
+                  Boolean(acc.is_active_classic || acc.is_active_ide),
+              };
+            }
+            return {
+              ...acc,
+              is_active: isMatch,
+            };
+          });
         },
       );
 
       const email = switchedEmail ?? accountId;
 
-      toast({
-        title: t("traySync.switchedTitle"),
-        description: t("traySync.switchedDescription", { email }),
-        duration: 3000,
-      });
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        payload.target &&
+        payload.target !== "all"
+      ) {
+        const targetKey = payload.target === "cli" ? "agy" : payload.target;
+        const targetName =
+          t(`cloud.target.${targetKey}`) ||
+          t(`cloud.target.${payload.target}`) ||
+          payload.target;
+        toast({
+          title: t("traySync.switchedTargetTitle"),
+          description: t("traySync.switchedTargetDescription", {
+            target: targetName,
+            email,
+          }),
+          duration: 3000,
+        });
+      } else if (
+        typeof payload === "object" &&
+        payload !== null &&
+        payload.target === "all"
+      ) {
+        const hasSwitchedAll =
+          t("traySync.switchedAllTitle") !== "traySync.switchedAllTitle";
+        toast({
+          title: hasSwitchedAll
+            ? t("traySync.switchedAllTitle")
+            : t("traySync.switchedTitle"),
+          description: hasSwitchedAll
+            ? t("traySync.switchedAllDescription", { email })
+            : t("traySync.switchedDescription", { email }),
+          duration: 3000,
+        });
+      } else {
+        toast({
+          title: t("traySync.switchedTitle"),
+          description: t("traySync.switchedDescription", { email }),
+          duration: 3000,
+        });
+      }
 
       scheduleInvalidate();
     },

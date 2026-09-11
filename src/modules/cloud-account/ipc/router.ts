@@ -222,12 +222,33 @@ export const cloudRouter = os.router({
     .input(
       z.object({
         accountId: z.string(),
-        appTarget: AntigravityAppTargetSchema.optional(),
+        appTarget: z
+          .union([AntigravityAppTargetSchema, z.literal("all")])
+          .optional(),
       }),
     )
-    .output(z.void())
+    .output(
+      z.object({
+        overall: z.enum(["success", "partial", "failed"]),
+        accountId: z.string(),
+        succeededTargets: z.array(AntigravityAppTargetSchema),
+        failedTargets: z.array(
+          z.object({
+            target: AntigravityAppTargetSchema,
+            error: z.string(),
+          }),
+        ),
+        results: z
+          .record(
+            z.string(),
+            z.object({ success: z.boolean(), error: z.string().optional() }),
+          )
+          .optional(),
+        switchedAt: z.number(),
+      }),
+    )
     .handler(async ({ input }) => {
-      await switchCloudAccount(input.accountId, input.appTarget);
+      return await switchCloudAccount(input.accountId, input.appTarget);
     }),
 
   getAutoSwitchEnabled: os.output(z.boolean()).handler(async () => {

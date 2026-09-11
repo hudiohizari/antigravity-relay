@@ -29,6 +29,20 @@ const en = {
       "cloudflared CLI is not installed on this computer",
     wifi_network: "Wi-Fi",
     local_network: "Local",
+    service_relay: "Relay Server",
+    service_tunnel: "Cloudflare Tunnel",
+    service_app: "Antigravity 2.0 (App)",
+    service_ide: "Antigravity IDE",
+    service_cli: "Antigravity CLI (agy)",
+    tooltips: {
+      appNotInstalled:
+        "Antigravity 2.0 desktop application is not detected on this system",
+      ideNotInstalled: "Antigravity IDE is not detected on this system",
+      cliNotInstalled:
+        "Antigravity CLI (agy) executable is not found in PATH or standard directories",
+      tunnelNotInstalled: "cloudflared CLI is not installed on this computer",
+      cliIdleGuidance: "Run directly from terminal via 'agy <command>'",
+    },
   },
   action: {
     stop: "Stop",
@@ -139,6 +153,14 @@ const en = {
     upstreamOffline: "Offline",
     startFailed: "Failed to start relay server: {{error}}",
     stopFailed: "Failed to stop relay server: {{error}}",
+    mirrorBoundary: {
+      title: "Remote Mirror Scope Notice",
+      badge: "Desktop & IDE Only",
+      description:
+        "The Mobile Remote Mirror streams Antigravity IDE and Antigravity 2.0 Desktop App sessions only. Antigravity CLI (agy) runs exclusively in your terminal and cannot be mirrored to mobile companion devices.",
+      callout:
+        "Terminal CLI (agy) operates directly on this host and is not mirrored to mobile devices.",
+    },
   },
   tunnel: {
     title: "Cloudflare Quick Tunnel",
@@ -212,6 +234,8 @@ const en = {
       "This pairing key has already been consumed by another device. Please get a fresh key from the desktop host.",
     keyInvalidError:
       "Invalid pairing key. Please verify the active key on your desktop dashboard.",
+    platformScopeNotice:
+      "Mobile companion mirrors Antigravity IDE and Desktop App sessions. Terminal CLI (agy) is not supported.",
   },
   sessions: {
     title: "Connected Phone Sessions",
@@ -283,6 +307,12 @@ const en = {
     switchedTitle: "Account Switched",
     switchedDescription:
       "Active account switched to {{email}} via system tray.",
+    switchedAllTitle: "All Environments Switched",
+    switchedAllDescription:
+      "Switched all environments to {{email}} via system tray.",
+    switchedTargetTitle: "Account Switched",
+    switchedTargetDescription:
+      "Switched {{target}} to {{email}} via system tray.",
   },
   editionSelection: {
     title: "Choose Your Antigravity Edition",
@@ -661,6 +691,56 @@ const en = {
           "The local account import could not be completed.",
         "internal-error": "The local account import request failed.",
       },
+    },
+    target: {
+      classic: "Antigravity App",
+      classicShort: "App",
+      ide: "Antigravity IDE",
+      ideShort: "IDE",
+      cli: "Antigravity CLI",
+      cliShort: "CLI",
+      agy: "Antigravity CLI",
+      agyShort: "CLI",
+    },
+    switch: {
+      targetAll: "Switch for All Environments",
+      targetAllDesc:
+        "Synchronize credentials across App, IDE, and CLI in one click",
+      targetAllShort: "Switch All",
+      activeAll: "Active on All",
+      activeAllAria: "Active across all environments: App, IDE, and CLI",
+      trigger: "Switch",
+      triggerAria: "Switch active account for {{email}}",
+      menuTitle: "Select Target Environment",
+      switchToTarget: "Switch for {{target}}",
+      activeBadge: "Active",
+      currentlyActiveAria: "{{target}} is currently active",
+      switching: "Switching...",
+      targetNotInstalled: "{{target}} is not installed on this system",
+      successAllToast: {
+        title: "All Environments Switched",
+        description: "Switched all environments to {{email}}.",
+      },
+      partialFailureToast: {
+        title: "Partial Switch Completed",
+        description:
+          "Switched {{successCount}} of {{totalCount}} environments to {{email}}. Failed for {{failedTargets}}: {{error}}",
+      },
+      failureAllToast: {
+        title: "Switch Failed",
+        description: "Failed to switch environments: {{error}}",
+      },
+      noticeRestarted: "Credentials applied. Restarted {{target}}.",
+      noticeInjectedOnDisk:
+        "Credentials updated on disk for {{target}}. Changes take effect on next launch.",
+      noticeCliUpdated:
+        "CLI credentials updated. Ready for your next terminal command.",
+      noticeBatchAllRestarted:
+        "Credentials applied. Running environments have been restarted.",
+      noticeBatchAllInjected:
+        "Credentials updated on disk for all environments. Changes take effect on next launch.",
+      noticeBatchMixed:
+        "Credentials updated: restarted {{restartedTargets}}, updated on disk for {{injectedTargets}}.",
     },
     card: {
       active: "Active",

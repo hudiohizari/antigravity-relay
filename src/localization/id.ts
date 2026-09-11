@@ -29,6 +29,21 @@ const id = {
       "CLI cloudflared belum terpasang di komputer ini",
     wifi_network: "Wi-Fi",
     local_network: "Lokal",
+    service_relay: "Server Relay",
+    service_tunnel: "Tunnel Cloudflare",
+    service_app: "Antigravity 2.0 (App)",
+    service_ide: "Antigravity IDE",
+    service_cli: "Antigravity CLI (agy)",
+    tooltips: {
+      appNotInstalled:
+        "Aplikasi desktop Antigravity 2.0 tidak terdeteksi di sistem ini",
+      ideNotInstalled: "Antigravity IDE tidak terdeteksi di sistem ini",
+      cliNotInstalled:
+        "Eksekusi Antigravity CLI (agy) tidak ditemukan di PATH atau direktori standar",
+      tunnelNotInstalled: "CLI cloudflared belum terpasang di komputer ini",
+      cliIdleGuidance:
+        "Jalankan langsung dari terminal melalui 'agy <perintah>'",
+    },
   },
   action: {
     stop: "Berhenti",
@@ -142,6 +157,14 @@ const id = {
     upstreamOffline: "Terputus",
     startFailed: "Gagal memulai server relay: {{error}}",
     stopFailed: "Gagal menghentikan server relay: {{error}}",
+    mirrorBoundary: {
+      title: "Pemberitahuan Cakupan Remote Mirror",
+      badge: "Hanya Desktop & IDE",
+      description:
+        "Mobile Remote Mirror hanya menayangkan sesi Antigravity IDE dan Aplikasi Desktop Antigravity 2.0. Antigravity CLI (agy) berjalan secara eksklusif di terminal Anda dan tidak dapat ditautkan ke perangkat seluler pendamping.",
+      callout:
+        "Terminal CLI (agy) berjalan langsung di host ini dan tidak ditayangkan ke perangkat seluler.",
+    },
   },
   tunnel: {
     title: "Tunnel Cepat Cloudflare",
@@ -217,6 +240,8 @@ const id = {
       "Kunci pairing ini sudah digunakan oleh perangkat lain. Silakan minta kunci baru dari host desktop.",
     keyInvalidError:
       "Kunci pairing tidak valid. Silakan periksa kunci aktif di dashboard desktop Anda.",
+    platformScopeNotice:
+      "Pendamping seluler hanya menayangkan sesi Antigravity IDE dan Aplikasi Desktop. Terminal CLI (agy) tidak didukung.",
   },
   sessions: {
     title: "Sesi Ponsel Terhubung",
@@ -288,6 +313,12 @@ const id = {
     switchedTitle: "Akun Dialihkan",
     switchedDescription:
       "Akun aktif dialihkan ke {{email}} melalui baki sistem.",
+    switchedAllTitle: "Semua Lingkungan Dialihkan",
+    switchedAllDescription:
+      "Beralih semua lingkungan ke {{email}} melalui baki sistem.",
+    switchedTargetTitle: "Akun Dialihkan",
+    switchedTargetDescription:
+      "Beralih {{target}} ke {{email}} melalui baki sistem.",
   },
   editionSelection: {
     title: "Pilih Edisi Antigravity Anda",
@@ -666,6 +697,56 @@ const id = {
         "confirmation-failed": "Impor akun lokal tidak dapat diselesaikan.",
         "internal-error": "Permintaan impor akun lokal gagal.",
       },
+    },
+    target: {
+      classic: "Aplikasi Antigravity",
+      classicShort: "App",
+      ide: "Antigravity IDE",
+      ideShort: "IDE",
+      cli: "Antigravity CLI",
+      cliShort: "CLI",
+      agy: "Antigravity CLI",
+      agyShort: "CLI",
+    },
+    switch: {
+      targetAll: "Beralih untuk Semua Lingkungan",
+      targetAllDesc:
+        "Sinkronkan kredensial di seluruh App, IDE, dan CLI dalam satu klik",
+      targetAllShort: "Beralih Semua",
+      activeAll: "Aktif di Semua",
+      activeAllAria: "Aktif di semua lingkungan: App, IDE, dan CLI",
+      trigger: "Beralih",
+      triggerAria: "Beralih akun aktif untuk {{email}}",
+      menuTitle: "Pilih Lingkungan Target",
+      switchToTarget: "Beralih untuk {{target}}",
+      activeBadge: "Aktif",
+      currentlyActiveAria: "{{target}} sedang aktif",
+      switching: "Beralih...",
+      targetNotInstalled: "{{target}} belum terpasang di sistem ini",
+      successAllToast: {
+        title: "Semua Lingkungan Dialihkan",
+        description: "Berhasil beralih semua lingkungan ke {{email}}.",
+      },
+      partialFailureToast: {
+        title: "Pengalihan Sebagian Selesai",
+        description:
+          "Beralih {{successCount}} dari {{totalCount}} lingkungan ke {{email}}. Gagal untuk {{failedTargets}}: {{error}}",
+      },
+      failureAllToast: {
+        title: "Gagal Beralih",
+        description: "Gagal beralih lingkungan: {{error}}",
+      },
+      noticeRestarted: "Kredensial diterapkan. Memulai ulang {{target}}.",
+      noticeInjectedOnDisk:
+        "Kredensial diperbarui pada disk untuk {{target}}. Perubahan berlaku pada peluncuran berikutnya.",
+      noticeCliUpdated:
+        "Kredensial CLI diperbarui. Siap untuk perintah terminal Anda berikutnya.",
+      noticeBatchAllRestarted:
+        "Kredensial diterapkan. Lingkungan yang berjalan telah dimulai ulang.",
+      noticeBatchAllInjected:
+        "Kredensial diperbarui pada disk untuk semua lingkungan. Perubahan berlaku pada peluncuran berikutnya.",
+      noticeBatchMixed:
+        "Kredensial diperbarui: memulai ulang {{restartedTargets}}, diperbarui pada disk untuk {{injectedTargets}}.",
     },
     card: {
       active: "Aktif",

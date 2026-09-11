@@ -20,6 +20,8 @@ import { isEncryptedPayloadCandidate } from "@/shared/security/crypto";
 import { AppError, getAppErrorData } from "@/shared/errors/appError";
 import { accounts } from "@/shared/persistence/database/schema";
 import { type DrizzleExecutor, getCloudDb } from "./cloud-account-db";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import { CloudAccountSettingsStore } from "./cloud-account-settings-store";
 import {
   parseDeviceHistoryColumn,
   parseDeviceProfileColumn,
@@ -737,22 +739,38 @@ export class CloudAccountRepo {
     }
   }
 
-  static setActive(id: string): void {
+  static syncActiveFlags(): void {
     const { raw, orm } = getCloudDb();
-
     try {
+      const activeTargets: AntigravityAppTarget[] = ["classic", "ide", "agy"];
+      const activeAccountIds = new Set<string>();
+      for (const target of activeTargets) {
+        const id =
+          CloudAccountSettingsStore.getActiveAccountIdForTarget(target);
+        if (id) {
+          activeAccountIds.add(id);
+        }
+      }
+
       orm.transaction((transaction) => {
         transaction.update(accounts).set({ isActive: 0 }).run();
-        transaction
-          .update(accounts)
-          .set({ isActive: 1 })
-          .where(eq(accounts.id, id))
-          .run();
+        for (const activeId of activeAccountIds) {
+          transaction
+            .update(accounts)
+            .set({ isActive: 1 })
+            .where(eq(accounts.id, activeId))
+            .run();
+        }
       });
-      logger.info(`Set account ${id} as active`);
     } finally {
       raw.close();
     }
+  }
+
+  static setActive(id: string, target?: AntigravityAppTarget): void {
+    CloudAccountSettingsStore.setActiveForTarget(target, id);
+    this.syncActiveFlags();
+    logger.info(`Set account ${id} as active (target=${target || "classic"})`);
   }
 
   static setAccountProxy(id: string, proxyUrl: string | null): void {

@@ -1,8 +1,12 @@
-import { ipc } from '@/ipc/manager';
-import type { AntigravityAppTarget } from '@/shared/platform/antigravityAppTarget';
+import { ipc } from "@/ipc/manager";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 
 export function isProcessRunning(target?: AntigravityAppTarget) {
   return ipc.client.proc.isProcessRunning({ target });
+}
+
+export function getProcessStatus(target?: AntigravityAppTarget) {
+  return ipc.client.proc.getProcessStatus({ target });
 }
 
 export function closeAntigravity(target?: AntigravityAppTarget) {

@@ -22,7 +22,10 @@ import { normalizeTrustedGoogleValidationUrl } from "@/modules/cloud-account/uti
 import { shell } from "electron";
 import fs from "fs";
 import { isEmpty, isString } from "lodash-es";
-import { updateTrayMenu } from "@/modules/app-shell/ipc/tray/handler";
+import {
+  syncTrayWithActiveAccount,
+  updateTrayMenu,
+} from "@/modules/app-shell/ipc/tray/handler";
 import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
 import {
   ensureGlobalOriginalFromCurrentStorage,
@@ -35,6 +38,7 @@ import {
 } from "@/modules/identity-profile/ipc/handler";
 import {
   getAntigravityDbPaths,
+  isAntigravityTargetInstalled,
   refreshAntigravityProcessCache,
 } from "@/shared/platform/paths";
 import { runWithSwitchGuard } from "@/modules/antigravity-runtime/switch/switchGuard";
@@ -74,6 +78,7 @@ function notifyTrayUpdate(account: CloudAccount) {
       z.string(),
     );
     updateTrayMenu(account, lang);
+    void syncTrayWithActiveAccount();
   } catch (error) {
     logger.warn("Failed to update tray after cloud account update", error);
   }
@@ -485,6 +490,11 @@ export async function addGoogleAccount(
 }
 
 export async function listCloudAccounts(): Promise<CloudAccount[]> {
+  const evicted = CloudAccountSettingsStore.evictAllMissingTargets() || [];
+  if (evicted.length > 0) {
+    CloudAccountRepo.syncActiveFlags();
+  }
+
   let accounts = await CloudAccountRepo.getAccounts();
   const backfilled =
     await backfillMissingOAuthClientKeyForLegacyAccounts(accounts);
@@ -552,6 +562,14 @@ export async function listCloudAccounts(): Promise<CloudAccount[]> {
 }
 
 export async function deleteCloudAccount(accountId: string): Promise<void> {
+  for (const target of ["classic", "ide", "agy"] as const) {
+    if (
+      CloudAccountSettingsStore.getActiveAccountIdForTarget(target) ===
+      accountId
+    ) {
+      CloudAccountSettingsStore.clearActiveForTarget(target);
+    }
+  }
   await CloudAccountRepo.removeAccount(accountId);
   cloudAccountEvents.emit("account:deleted", { accountId });
 }
@@ -749,11 +767,107 @@ export async function refreshAccountQuota(
   }
 }
 
+export interface FailedTargetReport {
+  target: AntigravityAppTarget;
+  error: string;
+}
+
+export interface SwitchCloudAccountResult {
+  overall: "success" | "partial" | "failed";
+  accountId: string;
+  succeededTargets: AntigravityAppTarget[];
+  failedTargets: FailedTargetReport[];
+  results?: Partial<
+    Record<AntigravityAppTarget, { success: boolean; error?: string }>
+  >;
+  switchedAt: number;
+}
+
+async function executeSingleTargetSwitch(
+  account: CloudAccount,
+  appTarget: AntigravityAppTarget,
+): Promise<void> {
+  const usesCredentialStore =
+    CredentialStoreInjectionAdapter.shouldInjectTokenIntoCredentialStore(
+      appTarget,
+    );
+  await withTimingTrace(
+    "switch.cloud.prepare",
+    {
+      accountId: account.id,
+      appTarget,
+    },
+    async (trace) => {
+      await trace.phase("refreshProcessCacheMs", async () => {
+        await refreshAntigravityProcessCache(appTarget);
+      });
+
+      trace.phaseSync("deviceProfileSetupMs", () => {
+        if (appTarget !== "agy") {
+          ensureGlobalOriginalFromCurrentStorage(appTarget);
+        }
+
+        if (!account.device_profile) {
+          const generated = generateDeviceProfile();
+          CloudAccountDeviceBindingStore.setDeviceBinding(
+            account.id,
+            generated,
+            "auto_generated",
+          );
+          saveGlobalOriginalProfile(generated);
+          account.device_profile = generated;
+        }
+      });
+    },
+  );
+
+  await executeSwitchFlow({
+    scope: "cloud",
+    appTarget,
+    targetProfile: account.device_profile || null,
+    applyFingerprint: isIdentityProfileApplyEnabled(),
+    useCredentialStore: usesCredentialStore,
+    processExitTimeoutMs: 10000,
+    skipRefreshProcessCache: true,
+    performSwitch: async () => {
+      const injectionMode = usesCredentialStore ? "credential-store" : "sqlite";
+
+      if (injectionMode === "sqlite") {
+        const dbPaths = getAntigravityDbPaths(appTarget);
+        for (const dbPath of dbPaths) {
+          try {
+            const backupPath = `${dbPath}.backup`;
+            await fs.promises.copyFile(dbPath, backupPath);
+            logger.info(`Backed up database to ${backupPath}`);
+            break;
+          } catch (error) {
+            if (hasErrorCode(error, "ENOENT")) {
+              continue;
+            }
+            logger.error(`Failed to backup database at ${dbPath}`, error);
+          }
+        }
+      }
+
+      CredentialStoreInjectionAdapter.injectCloudTokenWithStorageStrategy(
+        account,
+        appTarget,
+      );
+    },
+    afterSwitchSuccess: async () => {
+      CloudAccountSettingsStore.setActiveForTarget(appTarget, account.id);
+      logger.info(
+        `Successfully switched target ${appTarget} to cloud account: ${account.email}`,
+      );
+    },
+  });
+}
+
 export async function switchCloudAccount(
   accountId: string,
-  appTarget?: AntigravityAppTarget,
-): Promise<void> {
-  await runWithSwitchGuard("cloud-account-switch", async () => {
+  appTarget?: AntigravityAppTarget | "all",
+): Promise<SwitchCloudAccountResult> {
+  return await runWithSwitchGuard("cloud-account-switch", async () => {
     try {
       const account = await CloudAccountRepo.getAccount(accountId);
       if (!account) {
@@ -761,40 +875,15 @@ export async function switchCloudAccount(
       }
 
       logger.info(
-        `Switching to cloud account: ${account.email} (${account.id})`,
+        `Switching to cloud account: ${account.email} (${account.id}) [target=${appTarget || "classic"}]`,
       );
-      const usesCredentialStore =
-        CredentialStoreInjectionAdapter.shouldInjectTokenIntoCredentialStore(
-          appTarget,
-        );
+
       await withTimingTrace(
-        "switch.cloud.prepare",
+        "switch.cloud.prepareAccount",
         {
           accountId: account.id,
-          appTarget: appTarget || "classic",
         },
         async (trace) => {
-          await trace.phase("refreshProcessCacheMs", async () => {
-            await refreshAntigravityProcessCache(appTarget);
-          });
-
-          trace.phaseSync("deviceProfileSetupMs", () => {
-            if (appTarget !== "agy") {
-              ensureGlobalOriginalFromCurrentStorage(appTarget);
-            }
-
-            if (!account.device_profile) {
-              const generated = generateDeviceProfile();
-              CloudAccountDeviceBindingStore.setDeviceBinding(
-                account.id,
-                generated,
-                "auto_generated",
-              );
-              saveGlobalOriginalProfile(generated);
-              account.device_profile = generated;
-            }
-          });
-
           const tokenRefreshPromise = (async () => {
             const now = Math.floor(Date.now() / 1000);
             if (
@@ -802,13 +891,13 @@ export async function switchCloudAccount(
               isEmpty(account.token.refresh_token.trim())
             ) {
               logger.warn(
-                `Token for ${account.email} has no refresh token; switched IDE session may expire without recovery.`,
+                `Token for ${account.email} has no refresh token; switched session may expire without recovery.`,
               );
               return;
             }
 
             logger.info(
-              `Refreshing token for ${account.email} before IDE injection...`,
+              `Refreshing token for ${account.email} before switch...`,
             );
             try {
               const refreshedToken =
@@ -826,10 +915,7 @@ export async function switchCloudAccount(
               account.token = updatedToken;
               logger.info(`Token refreshed for ${account.email}`);
             } catch (error) {
-              logger.warn(
-                "Failed to refresh token before IDE injection",
-                error,
-              );
+              logger.warn("Failed to refresh token before switch", error);
               await markAccountStatusFromError(account, error);
               throw new Error(formatSwitchRefreshError(error));
             }
@@ -845,56 +931,98 @@ export async function switchCloudAccount(
         },
       );
 
-      await executeSwitchFlow({
-        scope: "cloud",
-        appTarget,
-        targetProfile: account.device_profile || null,
-        applyFingerprint: isIdentityProfileApplyEnabled(),
-        useCredentialStore: usesCredentialStore,
-        processExitTimeoutMs: 10000,
-        skipRefreshProcessCache: true,
-        performSwitch: async () => {
-          const injectionMode = usesCredentialStore
-            ? "credential-store"
-            : "sqlite";
+      if (appTarget === "all") {
+        const candidateTargets: AntigravityAppTarget[] = [
+          "classic",
+          "ide",
+          "agy",
+        ];
+        const installedTargets = candidateTargets.filter((t) =>
+          isAntigravityTargetInstalled(t),
+        );
+        const targetsToSwitch =
+          installedTargets.length > 0
+            ? installedTargets
+            : (["classic"] as AntigravityAppTarget[]);
 
-          if (injectionMode === "sqlite") {
-            // 3. Backup Database (Optimized to avoid race conditions)
-            const dbPaths = getAntigravityDbPaths(appTarget);
-            for (const dbPath of dbPaths) {
-              try {
-                const backupPath = `${dbPath}.backup`;
-                await fs.promises.copyFile(dbPath, backupPath);
-                logger.info(`Backed up database to ${backupPath}`);
-                break; // Success, stop trying other paths
-              } catch (error) {
-                // If file not found, just try the next path
-                if (hasErrorCode(error, "ENOENT")) {
-                  continue;
-                }
-                logger.error(`Failed to backup database at ${dbPath}`, error);
-              }
-            }
+        const succeededTargets: AntigravityAppTarget[] = [];
+        const failedTargets: FailedTargetReport[] = [];
+        const results: Partial<
+          Record<AntigravityAppTarget, { success: boolean; error?: string }>
+        > = {};
+
+        for (const target of targetsToSwitch) {
+          try {
+            await executeSingleTargetSwitch(account, target);
+            succeededTargets.push(target);
+            results[target] = { success: true };
+          } catch (error) {
+            const errorMsg =
+              error instanceof Error ? error.message : "Unknown error";
+            failedTargets.push({ target, error: errorMsg });
+            results[target] = { success: false, error: errorMsg };
+            logger.warn(
+              `Failed to switch target ${target} in 'all' batch: ${errorMsg}`,
+            );
           }
+        }
 
-          // 4. Inject Token
-          CredentialStoreInjectionAdapter.injectCloudTokenWithStorageStrategy(
-            account,
-            appTarget,
-          );
-        },
-        afterSwitchSuccess: async () => {
+        const overall: "success" | "partial" | "failed" =
+          succeededTargets.length === targetsToSwitch.length
+            ? "success"
+            : succeededTargets.length > 0
+              ? "partial"
+              : "failed";
+
+        if (overall !== "failed") {
           CloudAccountRepo.updateLastUsed(account.id);
-          CloudAccountRepo.setActive(account.id);
-          CloudAccountSettingsStore.setActiveForTarget(appTarget, account.id);
+          CloudAccountRepo.syncActiveFlags();
           await clearAccountStatus(account);
-
-          logger.info(
-            `Successfully switched to cloud account: ${account.email}`,
-          );
+          cloudAccountEvents.emit("account:switched", {
+            accountId: account.id,
+            target: "all",
+            account,
+          });
           notifyTrayUpdate(account);
-        },
+        }
+
+        return {
+          overall,
+          accountId: account.id,
+          succeededTargets,
+          failedTargets,
+          results,
+          switchedAt: Date.now(),
+        };
+      }
+
+      const singleTarget: AntigravityAppTarget = appTarget || "classic";
+      if (!isAntigravityTargetInstalled(singleTarget)) {
+        throw new Error(
+          `TARGET_NOT_INSTALLED: Target '${singleTarget}' is not installed on this system.`,
+        );
+      }
+
+      await executeSingleTargetSwitch(account, singleTarget);
+
+      CloudAccountRepo.updateLastUsed(account.id);
+      CloudAccountRepo.syncActiveFlags();
+      await clearAccountStatus(account);
+      cloudAccountEvents.emit("account:switched", {
+        accountId: account.id,
+        target: singleTarget,
+        account,
       });
+      notifyTrayUpdate(account);
+
+      return {
+        overall: "success",
+        accountId: account.id,
+        succeededTargets: [singleTarget],
+        failedTargets: [],
+        results: { [singleTarget]: { success: true } },
+        switchedAt: Date.now(),
+      };
     } catch (error) {
       logger.error("Failed to switch cloud account", error);
       const errorMessage =

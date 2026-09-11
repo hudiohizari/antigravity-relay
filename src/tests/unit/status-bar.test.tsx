@@ -19,6 +19,7 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/modules/antigravity-runtime/actions/process", () => ({
   isProcessRunning: vi.fn(),
+  getProcessStatus: vi.fn(),
   startAntigravity: vi.fn(),
   closeAntigravity: vi.fn(),
 }));
@@ -46,6 +47,14 @@ describe("StatusBar Component", () => {
     });
 
     vi.mocked(processActions.isProcessRunning).mockResolvedValue(false);
+    vi.mocked(processActions.getProcessStatus).mockImplementation(
+      async (target) => ({
+        target: target || "classic",
+        isRunning: false,
+        isBinaryInstalled: true,
+        executablePath: `/bin/${target || "classic"}`,
+      }),
+    );
     vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
       isRunning: false,
       port: 4040,
@@ -73,19 +82,21 @@ describe("StatusBar Component", () => {
     });
   });
 
-  it("renders all 3 services in dropdown menu when open", async () => {
+  it("renders all 5 services in strict order in dropdown menu when open", async () => {
     render(
       <QueryClientProvider client={queryClient}>
         <StatusBar defaultOpen={true} />
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("status.antigravity")).toBeDefined();
-    expect(screen.getByText("status.relay")).toBeDefined();
-    expect(screen.getByText("status.tunnel")).toBeDefined();
+    expect(await screen.findByText("status.service_relay")).toBeDefined();
+    expect(screen.getByText("status.service_tunnel")).toBeDefined();
+    expect(screen.getByText("status.service_app")).toBeDefined();
+    expect(screen.getByText("status.service_ide")).toBeDefined();
+    expect(screen.getByText("status.service_cli")).toBeDefined();
   });
 
-  it("opens menu and renders all 3 services when DropdownMenuTrigger is clicked", async () => {
+  it("opens menu and renders all 5 services when DropdownMenuTrigger is clicked", async () => {
     render(
       <QueryClientProvider client={queryClient}>
         <StatusBar />
@@ -96,12 +107,14 @@ describe("StatusBar Component", () => {
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
     fireEvent.click(trigger);
 
-    expect(await screen.findByText("status.antigravity")).toBeDefined();
-    expect(screen.getByText("status.relay")).toBeDefined();
-    expect(screen.getByText("status.tunnel")).toBeDefined();
+    expect(await screen.findByText("status.service_relay")).toBeDefined();
+    expect(screen.getByText("status.service_tunnel")).toBeDefined();
+    expect(screen.getByText("status.service_app")).toBeDefined();
+    expect(screen.getByText("status.service_ide")).toBeDefined();
+    expect(screen.getByText("status.service_cli")).toBeDefined();
   });
 
-  it("calculates aggregate summary as all stopped when 0/3 services running", async () => {
+  it("calculates aggregate summary as all stopped when 0/5 services running", async () => {
     render(
       <QueryClientProvider client={queryClient}>
         <StatusBar />
@@ -112,8 +125,15 @@ describe("StatusBar Component", () => {
     expect(summaries.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("calculates aggregate summary as 1/3 when only classic is running", async () => {
-    vi.mocked(processActions.isProcessRunning).mockResolvedValue(true);
+  it("calculates aggregate summary as 1/5 when only classic is running", async () => {
+    vi.mocked(processActions.getProcessStatus).mockImplementation(
+      async (target) => ({
+        target: target || "classic",
+        isRunning: target === "classic",
+        isBinaryInstalled: true,
+        executablePath: `/bin/${target || "classic"}`,
+      }),
+    );
 
     render(
       <QueryClientProvider client={queryClient}>
@@ -121,12 +141,19 @@ describe("StatusBar Component", () => {
       </QueryClientProvider>,
     );
 
-    const summaries = await screen.findAllByText("1/3 services running");
+    const summaries = await screen.findAllByText("1/5 services running");
     expect(summaries.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("calculates aggregate summary as 2/3 when classic and relay are running", async () => {
-    vi.mocked(processActions.isProcessRunning).mockResolvedValue(true);
+  it("calculates aggregate summary as 2/5 when classic and relay are running", async () => {
+    vi.mocked(processActions.getProcessStatus).mockImplementation(
+      async (target) => ({
+        target: target || "classic",
+        isRunning: target === "classic",
+        isBinaryInstalled: true,
+        executablePath: `/bin/${target || "classic"}`,
+      }),
+    );
     vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
       isRunning: true,
       port: 4040,
@@ -149,12 +176,19 @@ describe("StatusBar Component", () => {
       </QueryClientProvider>,
     );
 
-    const summaries = await screen.findAllByText("2/3 services running");
+    const summaries = await screen.findAllByText("2/5 services running");
     expect(summaries.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("calculates aggregate summary as all running when 3/3 services running", async () => {
-    vi.mocked(processActions.isProcessRunning).mockResolvedValue(true);
+  it("calculates aggregate summary as all running when 5/5 services running", async () => {
+    vi.mocked(processActions.getProcessStatus).mockImplementation(
+      async (target) => ({
+        target: target || "classic",
+        isRunning: true,
+        isBinaryInstalled: true,
+        executablePath: `/bin/${target || "classic"}`,
+      }),
+    );
     vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
       isRunning: true,
       port: 4040,
@@ -191,7 +225,7 @@ describe("StatusBar Component", () => {
     expect(summaries.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("triggers startAntigravity when toggling stopped classic service", async () => {
+  it("triggers startRelay when toggling stopped relay service (index 0)", async () => {
     render(
       <QueryClientProvider client={queryClient}>
         <StatusBar defaultOpen={true} />
@@ -208,51 +242,11 @@ describe("StatusBar Component", () => {
     fireEvent.click(startButtons[0]);
 
     await waitFor(() => {
-      expect(processActions.startAntigravity).toHaveBeenCalledWith("classic");
-    });
-  });
-
-  it("triggers closeAntigravity when toggling running classic service", async () => {
-    vi.mocked(processActions.isProcessRunning).mockResolvedValue(true);
-
-    render(
-      <QueryClientProvider client={queryClient}>
-        <StatusBar defaultOpen={true} />
-      </QueryClientProvider>,
-    );
-
-    const stopButton = await screen.findByRole("button", {
-      name: "action.stop",
-    });
-    fireEvent.click(stopButton);
-
-    await waitFor(() => {
-      expect(processActions.closeAntigravity).toHaveBeenCalledWith("classic");
-    });
-  });
-
-  it("triggers startRelay when toggling stopped relay service", async () => {
-    render(
-      <QueryClientProvider client={queryClient}>
-        <StatusBar defaultOpen={true} />
-      </QueryClientProvider>,
-    );
-
-    await waitFor(() => {
-      const btns = screen.getAllByRole("button", { name: "action.start" });
-      expect(btns[1].hasAttribute("disabled")).toBe(false);
-    });
-    const startButtons = screen.getAllByRole("button", {
-      name: "action.start",
-    });
-    fireEvent.click(startButtons[1]);
-
-    await waitFor(() => {
       expect(relayActions.startRelay).toHaveBeenCalled();
     });
   });
 
-  it("triggers stopRelay when toggling running relay service", async () => {
+  it("triggers stopRelay when toggling running relay service (index 0)", async () => {
     vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
       isRunning: true,
       port: 4040,
@@ -285,7 +279,7 @@ describe("StatusBar Component", () => {
     });
   });
 
-  it("triggers startTunnel when toggling stopped tunnel service", async () => {
+  it("triggers startTunnel when toggling stopped tunnel service (index 1)", async () => {
     render(
       <QueryClientProvider client={queryClient}>
         <StatusBar defaultOpen={true} />
@@ -294,12 +288,12 @@ describe("StatusBar Component", () => {
 
     await waitFor(() => {
       const btns = screen.getAllByRole("button", { name: "action.start" });
-      expect(btns[2].hasAttribute("disabled")).toBe(false);
+      expect(btns[1].hasAttribute("disabled")).toBe(false);
     });
     const startButtons = screen.getAllByRole("button", {
       name: "action.start",
     });
-    fireEvent.click(startButtons[2]);
+    fireEvent.click(startButtons[1]);
 
     await waitFor(() => {
       expect(relayActions.startTunnel).toHaveBeenCalledWith({
@@ -308,7 +302,7 @@ describe("StatusBar Component", () => {
     });
   });
 
-  it("triggers stopTunnel when toggling running tunnel service", async () => {
+  it("triggers stopTunnel when toggling running tunnel service (index 1)", async () => {
     vi.mocked(relayActions.getTunnelStatus).mockResolvedValue({
       state: "connected",
       pid: 12345,
@@ -333,6 +327,125 @@ describe("StatusBar Component", () => {
 
     await waitFor(() => {
       expect(relayActions.stopTunnel).toHaveBeenCalled();
+    });
+  });
+
+  it("triggers startAntigravity when toggling stopped classic service (index 2)", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <StatusBar defaultOpen={true} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      const btns = screen.getAllByRole("button", { name: "action.start" });
+      expect(btns[2].hasAttribute("disabled")).toBe(false);
+    });
+    const startButtons = screen.getAllByRole("button", {
+      name: "action.start",
+    });
+    fireEvent.click(startButtons[2]);
+
+    await waitFor(() => {
+      expect(processActions.startAntigravity).toHaveBeenCalledWith("classic");
+    });
+  });
+
+  it("triggers closeAntigravity when toggling running classic service (index 2)", async () => {
+    vi.mocked(processActions.getProcessStatus).mockImplementation(
+      async (target) => ({
+        target: target || "classic",
+        isRunning: target === "classic",
+        isBinaryInstalled: true,
+        executablePath: `/bin/${target || "classic"}`,
+      }),
+    );
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <StatusBar defaultOpen={true} />
+      </QueryClientProvider>,
+    );
+
+    const stopButton = await screen.findByRole("button", {
+      name: "action.stop",
+    });
+    fireEvent.click(stopButton);
+
+    await waitFor(() => {
+      expect(processActions.closeAntigravity).toHaveBeenCalledWith("classic");
+    });
+  });
+
+  it("triggers startAntigravity when toggling stopped ide service (index 3)", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <StatusBar defaultOpen={true} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      const btns = screen.getAllByRole("button", { name: "action.start" });
+      expect(btns[3].hasAttribute("disabled")).toBe(false);
+    });
+    const startButtons = screen.getAllByRole("button", {
+      name: "action.start",
+    });
+    fireEvent.click(startButtons[3]);
+
+    await waitFor(() => {
+      expect(processActions.startAntigravity).toHaveBeenCalledWith("ide");
+    });
+  });
+
+  it("disables start button for stopped CLI service (index 4) with guidance tooltip", async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <StatusBar defaultOpen={true} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      const btns = screen.getAllByRole("button", { name: "action.start" });
+      expect(btns[4]).toBeDefined();
+    });
+    const startButtons = screen.getAllByRole("button", {
+      name: "action.start",
+    });
+    const cliStartButton = startButtons[4];
+    expect(cliStartButton.hasAttribute("disabled")).toBe(true);
+    expect(cliStartButton.getAttribute("aria-disabled")).toBe("true");
+    expect(cliStartButton.getAttribute("title")).toBe(
+      "status.tooltips.cliIdleGuidance",
+    );
+
+    fireEvent.click(cliStartButton);
+    expect(processActions.startAntigravity).not.toHaveBeenCalledWith("agy");
+  });
+
+  it("allows stopping running CLI service (index 4)", async () => {
+    vi.mocked(processActions.getProcessStatus).mockImplementation(
+      async (target) => ({
+        target: target || "classic",
+        isRunning: target === "agy",
+        isBinaryInstalled: true,
+        executablePath: `/bin/${target || "classic"}`,
+      }),
+    );
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <StatusBar defaultOpen={true} />
+      </QueryClientProvider>,
+    );
+
+    const stopButton = await screen.findByRole("button", {
+      name: "action.stop",
+    });
+    fireEvent.click(stopButton);
+
+    await waitFor(() => {
+      expect(processActions.closeAntigravity).toHaveBeenCalledWith("agy");
     });
   });
 
@@ -481,7 +594,7 @@ describe("StatusBar Component", () => {
     expect(toggleButton?.hasAttribute("disabled")).toBe(true);
     expect(toggleButton?.getAttribute("aria-disabled")).toBe("true");
     expect(toggleButton?.getAttribute("title")).toBe(
-      "tunnel.binaryNotInstalledTooltip",
+      "status.tooltips.tunnelNotInstalled",
     );
 
     // Clicking disabled button must not call startTunnel or stopTunnel

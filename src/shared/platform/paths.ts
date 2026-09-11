@@ -6,6 +6,7 @@ import findProcess, { type ProcessInfo } from "find-process";
 import { z } from "zod";
 import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 import { resolveAntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import { detectAgyCliExecutablePath } from "@/modules/antigravity-runtime/binary-patch/agyCliPathDetection";
 
 type PathApi = Pick<typeof path, "dirname" | "join" | "normalize" | "resolve">;
 
@@ -256,6 +257,7 @@ export function isTargetAntigravityProcessCandidate(
   );
   const commandExecutablePath =
     parseCommandLineArguments(processItem.commandLine)[0] || "";
+  const commandBase = path.basename(commandExecutablePath).toLowerCase();
   const processExecutablePath = processItem.executablePath ?? "";
   const executableIdentity = `${processItem.executablePath || ""} ${commandExecutablePath}`;
   const hasAntigravityProcessIdentity =
@@ -284,6 +286,28 @@ export function isTargetAntigravityProcessCandidate(
     matchesIdePath;
 
   if (isAntigravityHelperProcess(nameLower, cmdLower)) {
+    return false;
+  }
+
+  if (
+    nameLower.includes("relay") ||
+    cmdLower.includes("relay") ||
+    cmdLower.includes("antigravity-relay")
+  ) {
+    return false;
+  }
+
+  const isAgyBinary =
+    nameLower === "agy" ||
+    nameLower === "agy.exe" ||
+    commandBase === "agy" ||
+    commandBase === "agy.exe";
+
+  if (normalizedTarget === "agy") {
+    return isAgyBinary;
+  }
+
+  if (isAgyBinary) {
     return false;
   }
 
@@ -1034,6 +1058,15 @@ export function hasAntigravityStorage(
   target?: AntigravityAppTarget | null,
   options?: PathResolutionOptions,
 ): boolean {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  if (resolvedTarget === "agy") {
+    const home = os.homedir();
+    const pathApi = getCurrentPlatformPathApi(options);
+    const sessionDir = pathApi.join(home, ".gemini", "antigravity-cli");
+    const tokenFile = pathApi.join(sessionDir, "antigravity-oauth-token");
+    return fs.existsSync(tokenFile) || fs.existsSync(sessionDir);
+  }
+
   if (
     getAntigravityStoragePaths(target, options).some((candidate) =>
       fs.existsSync(candidate),
@@ -1060,6 +1093,13 @@ export function getAntigravityExecutablePath(
   options?: PathResolutionOptions,
 ): string {
   const resolvedTarget = resolveAntigravityAppTarget(target);
+  if (resolvedTarget === "agy") {
+    return (
+      detectAgyCliExecutablePath({
+        platform: getCurrentPlatform(options),
+      }) ?? ""
+    );
+  }
   const executableName = getAntigravityAppFolderName(target);
   const runningExecutablePath = getExecutablePathFromRunningProcess(target);
 
@@ -1167,4 +1207,55 @@ export function getAntigravityExecutablePath(
     default:
       return "";
   }
+}
+
+const INSTALLATION_CACHE_TTL_MS = 30_000;
+
+export interface InstallationStatusResult {
+  target: AntigravityAppTarget;
+  isInstalled: boolean;
+  executablePath: string | null;
+  checkedAt: number;
+}
+
+const binaryInstallationCache = new Map<string, InstallationStatusResult>();
+
+export function clearBinaryInstallationCache(): void {
+  binaryInstallationCache.clear();
+}
+
+export function getAntigravityTargetInstallationStatus(
+  target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
+): InstallationStatusResult {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  const cacheKey = `${resolvedTarget}:${getCurrentPlatform(options)}`;
+  const now = Date.now();
+  const cached = binaryInstallationCache.get(cacheKey);
+  if (cached && now - cached.checkedAt < INSTALLATION_CACHE_TTL_MS) {
+    return cached;
+  }
+
+  const executablePath =
+    getAntigravityExecutablePath(resolvedTarget, options) || null;
+  const hasStorage = hasAntigravityStorage(resolvedTarget, options);
+  const isBinaryInstalled = Boolean(
+    (executablePath && fs.existsSync(executablePath)) || hasStorage,
+  );
+
+  const result: InstallationStatusResult = {
+    target: resolvedTarget,
+    isInstalled: isBinaryInstalled,
+    executablePath,
+    checkedAt: now,
+  };
+  binaryInstallationCache.set(cacheKey, result);
+  return result;
+}
+
+export function isAntigravityTargetInstalled(
+  target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
+): boolean {
+  return getAntigravityTargetInstallationStatus(target, options).isInstalled;
 }

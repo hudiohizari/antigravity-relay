@@ -308,15 +308,89 @@ export function CloudAccountList() {
     );
   };
 
-  const handleSwitch = (id: string, appTarget?: AntigravityAppTarget) => {
+  const handleSwitch = (
+    id: string,
+    appTarget?: AntigravityAppTarget | "all",
+  ) => {
+    if (switchMutation.isPending) {
+      return;
+    }
+
     switchMutation.mutate(
       { accountId: id, appTarget },
       {
-        onSuccess: () =>
-          toast({
-            title: t("cloud.toast.switched.title"),
-            description: t("cloud.toast.switched.description"),
-          }),
+        onSuccess: (result: any) => {
+          const targetAccount = accounts?.find((acc) => acc.id === id);
+          const email = targetAccount?.email ?? id;
+
+          if (appTarget === "all") {
+            if (result?.overall === "success") {
+              toast({
+                title: t("cloud.switch.successAllToast.title"),
+                description: t("cloud.switch.successAllToast.description", {
+                  email,
+                }),
+              });
+            } else if (result?.overall === "partial") {
+              const failedTargetsList = (result?.failedTargets || [])
+                .map((f: any) => t(`cloud.target.${f.target}`))
+                .join(", ");
+              const firstError = result?.failedTargets?.[0]?.error ?? "";
+              toast({
+                title: t("cloud.switch.partialFailureToast.title"),
+                description: t("cloud.switch.partialFailureToast.description", {
+                  successCount: result?.succeededTargets?.length ?? 0,
+                  totalCount:
+                    (result?.succeededTargets?.length ?? 0) +
+                    (result?.failedTargets?.length ?? 0),
+                  email,
+                  failedTargets: failedTargetsList,
+                  error: firstError,
+                }),
+                variant: "destructive",
+              });
+            } else if (result?.overall === "failed") {
+              const firstError = result?.failedTargets?.[0]?.error ?? "";
+              toast({
+                title: t("cloud.switch.failureAllToast.title"),
+                description: t("cloud.switch.failureAllToast.description", {
+                  error: firstError,
+                }),
+                variant: "destructive",
+              });
+            } else {
+              toast({
+                title: t("cloud.switch.successAllToast.title"),
+                description: t("cloud.switch.successAllToast.description", {
+                  email,
+                }),
+              });
+            }
+          } else {
+            const targetName = appTarget
+              ? t(`cloud.target.${appTarget}`)
+              : t("cloud.target.classic");
+            if (result?.overall === "failed") {
+              const firstError = result?.failedTargets?.[0]?.error ?? "";
+              toast({
+                title: t("cloud.toast.switchFailed"),
+                description:
+                  firstError ||
+                  t("cloud.switch.failureAllToast.description", {
+                    error: "Unknown error",
+                  }),
+                variant: "destructive",
+              });
+            } else {
+              toast({
+                title: t("cloud.toast.switched.title"),
+                description: t("cloud.switch.noticeRestarted", {
+                  target: targetName,
+                }),
+              });
+            }
+          }
+        },
         onError: (err) =>
           toast({
             title: t("cloud.toast.switchFailed"),

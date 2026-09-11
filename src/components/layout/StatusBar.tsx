@@ -1,7 +1,7 @@
 import React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  isProcessRunning,
+  getProcessStatus,
   startAntigravity,
   closeAntigravity,
 } from "@/modules/antigravity-runtime/actions/process";
@@ -19,12 +19,14 @@ import {
   Activity,
   ChevronUp,
   Cloud,
+  Code,
   ExternalLink,
   Loader2,
   Play,
   Power,
   Server,
   Square,
+  Terminal,
   Workflow,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -33,6 +35,13 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 
 interface StatusBarProps {
   isCollapsed?: boolean;
@@ -40,7 +49,7 @@ interface StatusBarProps {
 }
 
 interface ManagedService {
-  id: "classic" | "relay" | "tunnel";
+  id: "relay" | "tunnel" | "classic" | "ide" | "agy";
   labelKey: string;
   icon: React.ElementType;
   isRunning: boolean;
@@ -50,48 +59,59 @@ interface ManagedService {
   url?: string | null;
   networkUrl?: string | null;
   isBinaryInstalled?: boolean;
+  uninstalledTooltipKey?: string;
+  idleTooltipKey?: string;
+  canStart?: boolean;
 }
 
-function useClassicService() {
+function useTargetProcessService(target: AntigravityAppTarget) {
   const queryClient = useQueryClient();
 
-  const { data: isRunning, isLoading } = useQuery({
-    queryKey: ["process", "status", "classic"],
-    queryFn: () => isProcessRunning("classic"),
+  const { data: status, isLoading } = useQuery({
+    queryKey: ["process", "status", target],
+    queryFn: () => getProcessStatus(target),
     refetchInterval: 10000,
+    staleTime: 10000,
   });
 
   const startMutation = useMutation({
-    mutationFn: () => startAntigravity("classic"),
+    mutationFn: () => startAntigravity(target),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["process", "status", "classic"],
+        queryKey: ["process", "status", target],
       });
     },
   });
 
   const stopMutation = useMutation({
-    mutationFn: () => closeAntigravity("classic"),
+    mutationFn: () => closeAntigravity(target),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["process", "status", "classic"],
+        queryKey: ["process", "status", target],
       });
     },
   });
 
+  const isRunning = Boolean(status?.isRunning);
+  const isBinaryInstalled = status?.isBinaryInstalled ?? true;
+
   const toggle = () => {
+    if (!isBinaryInstalled) {
+      return;
+    }
     if (isRunning) {
       stopMutation.mutate();
-    } else {
+    } else if (target !== "agy") {
       startMutation.mutate();
     }
   };
 
   return {
-    isRunning: Boolean(isRunning),
+    isRunning,
     isLoading,
     isPending: startMutation.isPending || stopMutation.isPending,
     toggle,
+    isBinaryInstalled,
   };
 }
 
@@ -102,6 +122,7 @@ function useRelayService() {
     queryKey: ["relay", "status"],
     queryFn: getRelayStatus,
     refetchInterval: 3000,
+    staleTime: 3000,
   });
 
   const startMutation = useMutation({
@@ -153,6 +174,7 @@ function useTunnelService() {
     queryKey: ["tunnel", "status"],
     queryFn: getTunnelStatus,
     refetchInterval: 3000,
+    staleTime: 3000,
   });
 
   const startMutation = useMutation({
@@ -203,7 +225,19 @@ function ServiceRow({ service }: { service: ManagedService }) {
   const { t } = useTranslation();
   const Icon = service.icon;
   const isMissingBinary = service.isBinaryInstalled === false;
-  const isBusy = service.isLoading || service.isPending || isMissingBinary;
+  const isStartDisabled =
+    !service.isRunning && (isMissingBinary || service.canStart === false);
+  const isBusy = service.isLoading || service.isPending || isStartDisabled;
+
+  const tooltipMessage = isMissingBinary
+    ? service.uninstalledTooltipKey
+      ? t(service.uninstalledTooltipKey)
+      : t("status.tooltips.appNotInstalled")
+    : !service.isRunning && service.canStart === false
+      ? service.idleTooltipKey
+        ? t(service.idleTooltipKey)
+        : t("status.tooltips.cliIdleGuidance")
+      : undefined;
 
   return (
     <div className="flex min-h-[48px] items-center justify-between gap-2.5 rounded-md px-2.5 py-2 hover:bg-accent/60 transition-colors">
@@ -271,35 +305,50 @@ function ServiceRow({ service }: { service: ManagedService }) {
           )}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={service.toggle}
-        disabled={isBusy}
-        aria-disabled={isMissingBinary ? "true" : undefined}
-        title={
-          isMissingBinary ? t("tunnel.binaryNotInstalledTooltip") : undefined
-        }
-        className={cn(
-          "h-8 shrink-0 rounded-md border px-2.5 text-xs font-semibold min-w-[68px]",
-          isMissingBinary
-            ? "border-border text-muted-foreground opacity-50 cursor-not-allowed"
-            : service.isRunning
-              ? "border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
-              : "border-emerald-200 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-900/60 dark:text-emerald-400 dark:hover:bg-emerald-950/40",
-        )}
-      >
-        {service.isPending ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : service.isRunning ? (
-          <Square className="h-3.5 w-3.5 fill-current" />
-        ) : (
-          <Play className="h-3.5 w-3.5 fill-current" />
-        )}
-        <span className="ml-1.5">
-          {service.isRunning ? t("action.stop") : t("action.start")}
-        </span>
-      </Button>
+      <TooltipProvider delayDuration={150}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="inline-flex shrink-0"
+              tabIndex={isStartDisabled ? 0 : undefined}
+              title={tooltipMessage}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={service.toggle}
+                disabled={isBusy}
+                aria-disabled={isBusy ? "true" : undefined}
+                title={tooltipMessage}
+                className={cn(
+                  "h-8 shrink-0 rounded-md border px-2.5 text-xs font-semibold min-w-[68px]",
+                  isStartDisabled
+                    ? "border-border text-muted-foreground opacity-50 cursor-not-allowed pointer-events-none"
+                    : service.isRunning
+                      ? "border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+                      : "border-emerald-200 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-900/60 dark:text-emerald-400 dark:hover:bg-emerald-950/40",
+                )}
+              >
+                {service.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : service.isRunning ? (
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                ) : (
+                  <Play className="h-3.5 w-3.5 fill-current" />
+                )}
+                <span className="ml-1.5">
+                  {service.isRunning ? t("action.stop") : t("action.start")}
+                </span>
+              </Button>
+            </span>
+          </TooltipTrigger>
+          {tooltipMessage && (
+            <TooltipContent side="top" className="max-w-[240px] text-xs">
+              {tooltipMessage}
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </TooltipProvider>
     </div>
   );
 }
@@ -309,28 +358,52 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   defaultOpen = false,
 }) => {
   const { t } = useTranslation();
-  const classic = useClassicService();
   const relay = useRelayService();
   const tunnel = useTunnelService();
+  const classic = useTargetProcessService("classic");
+  const ide = useTargetProcessService("ide");
+  const agy = useTargetProcessService("agy");
 
   const services: ManagedService[] = [
     {
-      id: "classic",
-      labelKey: "status.antigravity",
-      icon: Workflow,
-      ...classic,
-    },
-    {
       id: "relay",
-      labelKey: "status.relay",
+      labelKey: "status.service_relay",
       icon: Server,
       ...relay,
+      canStart: true,
     },
     {
       id: "tunnel",
-      labelKey: "status.tunnel",
+      labelKey: "status.service_tunnel",
       icon: Cloud,
       ...tunnel,
+      uninstalledTooltipKey: "status.tooltips.tunnelNotInstalled",
+      canStart: tunnel.isBinaryInstalled !== false,
+    },
+    {
+      id: "classic",
+      labelKey: "status.service_app",
+      icon: Workflow,
+      ...classic,
+      uninstalledTooltipKey: "status.tooltips.appNotInstalled",
+      canStart: classic.isBinaryInstalled !== false,
+    },
+    {
+      id: "ide",
+      labelKey: "status.service_ide",
+      icon: Code,
+      ...ide,
+      uninstalledTooltipKey: "status.tooltips.ideNotInstalled",
+      canStart: ide.isBinaryInstalled !== false,
+    },
+    {
+      id: "agy",
+      labelKey: "status.service_cli",
+      icon: Terminal,
+      ...agy,
+      uninstalledTooltipKey: "status.tooltips.cliNotInstalled",
+      idleTooltipKey: "status.tooltips.cliIdleGuidance",
+      canStart: false,
     },
   ];
 
@@ -409,7 +482,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         side="top"
         align="start"
         sideOffset={8}
-        className="w-84 p-2.5 rounded-lg border shadow-lg"
+        className="w-96 p-2.5 rounded-lg border shadow-lg max-h-[min(460px,85vh)] overflow-y-auto"
       >
         <div className="px-2 pb-2">
           <div className="text-sm font-semibold text-foreground">

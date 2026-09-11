@@ -26,9 +26,25 @@ const electronBridge = {
     ipcRenderer.send(IPC_CHANNELS.MANUAL_UPDATE_RENDERER_READY);
     return () => ipcRenderer.off(IPC_CHANNELS.MANUAL_UPDATE_AVAILABLE, handler);
   },
-  onAccountSwitched: (callback: (accountId: string) => void) => {
-    const handler = (_event: IpcRendererEvent, accountId: string) =>
-      callback(accountId);
+  onAccountSwitched: (
+    callback: (
+      payload:
+        | string
+        | {
+            accountId: string;
+            target?: "classic" | "ide" | "agy" | "cli" | "all";
+          },
+    ) => void,
+  ) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload:
+        | string
+        | {
+            accountId: string;
+            target?: "classic" | "ide" | "agy" | "cli" | "all";
+          },
+    ) => callback(payload);
     ipcRenderer.on("tray://account-switched", handler);
     ipcRenderer.on("account-switched", handler);
     return () => {

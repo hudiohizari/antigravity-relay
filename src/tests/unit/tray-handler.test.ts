@@ -37,6 +37,16 @@ const mocks = vi.hoisted(() => {
         "gemini-2.5-pro": { percentage: 95, resetTime: "2026-09-09T20:00:00Z" },
       },
     })),
+    isAntigravityTargetInstalled: vi.fn((_target?: string) => true),
+  };
+});
+
+vi.mock("@/shared/platform/paths", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/shared/platform/paths")>();
+  return {
+    ...actual,
+    isAntigravityTargetInstalled: mocks.isAntigravityTargetInstalled,
   };
 });
 
@@ -261,21 +271,23 @@ describe("Tray Handler Functionality", () => {
       let tpl = mocks.traySetContextMenu.mock.calls.at(
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
-      expect(tpl[0].label).toBe("Current: user1@example.com");
+      expect(tpl[0].label).toBe("Current: user1@example.com [All]");
 
       const rateLimitedAccount = createMockAccount({ status: "rate_limited" });
       handlerModule.updateTrayMenu(rateLimitedAccount, "en");
       tpl = mocks.traySetContextMenu.mock.calls.at(
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
-      expect(tpl[0].label).toBe("Current: user1@example.com [Rate Limited]");
+      expect(tpl[0].label).toBe(
+        "Current: user1@example.com [All] [Rate Limited]",
+      );
 
       const expiredAccount = createMockAccount({ status: "expired" });
       handlerModule.updateTrayMenu(expiredAccount, "en");
       tpl = mocks.traySetContextMenu.mock.calls.at(
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
-      expect(tpl[0].label).toBe("Current: user1@example.com [Expired]");
+      expect(tpl[0].label).toBe("Current: user1@example.com [All] [Expired]");
     });
 
     it("updates tooltip with current account email", () => {
@@ -320,7 +332,7 @@ describe("Tray Handler Functionality", () => {
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
       const switchItem = tpl.find(
-        (item) => item.label === "Switch to Next Account",
+        (item) => item.label === "Switch to Next Account (All)",
       );
       expect(switchItem).toBeDefined();
 
@@ -330,10 +342,10 @@ describe("Tray Handler Functionality", () => {
         undefined as any,
       );
 
-      expect(switchSpy).toHaveBeenCalledWith("acc-2");
+      expect(switchSpy).toHaveBeenCalledWith("acc-2", "all");
       expect(win.webContents.send).toHaveBeenCalledWith(
         "tray://account-switched",
-        "acc-2",
+        { accountId: "acc-2", target: "all" },
       );
     });
 
@@ -354,7 +366,7 @@ describe("Tray Handler Functionality", () => {
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
       const switchItem = tpl.find(
-        (item) => item.label === "Switch to Next Account",
+        (item) => item.label === "Switch to Next Account (All)",
       );
 
       await switchItem!.click!(
@@ -363,10 +375,10 @@ describe("Tray Handler Functionality", () => {
         undefined as any,
       );
 
-      expect(mocks.setActive).toHaveBeenCalledWith("acc-2");
+      expect(mocks.setActive).toHaveBeenCalledWith("acc-2", "classic");
       expect(win.webContents.send).toHaveBeenCalledWith(
         "tray://account-switched",
-        "acc-2",
+        { accountId: "acc-2", target: "all" },
       );
     });
 
@@ -528,7 +540,7 @@ describe("Tray Handler Functionality", () => {
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
       const switchItem = tpl.find(
-        (item) => item.label === "Switch to Next Account",
+        (item) => item.label === "Switch to Next Account (All)",
       );
 
       await switchItem!.click!(
@@ -557,7 +569,7 @@ describe("Tray Handler Functionality", () => {
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
       const switchItem = tpl.find(
-        (item) => item.label === "Switch to Next Account",
+        (item) => item.label === "Switch to Next Account (All)",
       );
 
       await expect(
@@ -613,8 +625,8 @@ describe("Tray Handler Functionality", () => {
           },
         },
       });
-
       mocks.accounts = [accCurrent, accAlpha, accBeta, accGamma];
+
       const switchSpy = vi.fn();
       handlerModule.registerTrayAccountHandlers({ switchAccount: switchSpy });
 
@@ -623,7 +635,7 @@ describe("Tray Handler Functionality", () => {
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
       const switchItem = tpl.find(
-        (item) => item.label === "Switch to Next Account",
+        (item) => item.label === "Switch to Next Account (All)",
       );
 
       await switchItem!.click!(
@@ -633,10 +645,10 @@ describe("Tray Handler Functionality", () => {
       );
 
       // Beta has 85% remaining 5h quota, so it must be chosen over Alpha (20%) and Gamma (50%)
-      expect(switchSpy).toHaveBeenCalledWith("acc-beta");
+      expect(switchSpy).toHaveBeenCalledWith("acc-beta", "all");
     });
 
-    it("drops concurrent rapid clicks via isSwitchingAccount async mutex", async () => {
+    it("serializes concurrent rapid clicks via runWithSwitchGuard", async () => {
       const win = createMockWindow();
       handlerModule.initTray(win);
 
@@ -644,19 +656,23 @@ describe("Tray Handler Functionality", () => {
       const acc2 = createMockAccount({ id: "acc-2", is_active: false });
       mocks.accounts = [acc1, acc2];
 
+      let switchCallCount = 0;
       let resolveFirstSwitch!: () => void;
       let switchStartedResolve!: () => void;
       const switchStarted = new Promise<void>((res) => {
         switchStartedResolve = res;
       });
 
-      const switchSpy = vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
+      const switchSpy = vi.fn(() => {
+        switchCallCount++;
+        if (switchCallCount === 1) {
+          return new Promise<void>((resolve) => {
             resolveFirstSwitch = resolve;
             switchStartedResolve();
-          }),
-      );
+          });
+        }
+        return Promise.resolve();
+      });
       handlerModule.registerTrayAccountHandlers({ switchAccount: switchSpy });
 
       handlerModule.updateTrayMenu(acc1, "en");
@@ -664,7 +680,7 @@ describe("Tray Handler Functionality", () => {
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
       const switchItem = tpl.find(
-        (item) => item.label === "Switch to Next Account",
+        (item) => item.label === "Switch to Next Account (All)",
       );
 
       // Trigger first click (in-flight)
@@ -678,7 +694,7 @@ describe("Tray Handler Functionality", () => {
       await switchStarted;
 
       // Trigger second click while first is still running
-      await switchItem!.click!(
+      const secondClick = switchItem!.click!(
         undefined as any,
         undefined as any,
         undefined as any,
@@ -686,9 +702,10 @@ describe("Tray Handler Functionality", () => {
 
       resolveFirstSwitch();
       await firstClick;
+      await secondClick;
 
-      // Only the first click should have invoked switchAccount; second was dropped by mutex
-      expect(switchSpy).toHaveBeenCalledTimes(1);
+      // Both clicks are serialized and executed safely under the switch guard
+      expect(switchSpy).toHaveBeenCalledTimes(2);
     });
 
     it("safely handles refresh_current when no active account exists", async () => {
@@ -843,7 +860,7 @@ describe("Tray Handler Functionality", () => {
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
 
-      expect(tpl[0].label).toBe("Current: active.developer@example.com");
+      expect(tpl[0].label).toBe("Current: active.deve...xample.com [All]");
       expect(tpl.some((item) => item.label?.includes("Gemini High: 92%"))).toBe(
         true,
       );
@@ -912,7 +929,7 @@ describe("Tray Handler Functionality", () => {
       const tpl = mocks.traySetContextMenu.mock.calls.at(
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
-      expect(tpl[0].label).toBe("Current: dedup@example.com");
+      expect(tpl[0].label).toBe("Current: dedup@example.com [All]");
     });
 
     it("drops concurrent rapid clicks on refresh_current via isRefreshingQuota async mutex", async () => {
@@ -990,7 +1007,7 @@ describe("Tray Handler Functionality", () => {
       let tpl = mocks.traySetContextMenu.mock.calls.at(
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
-      expect(tpl[0].label).toBe("Current: first@example.com");
+      expect(tpl[0].label).toBe("Current: first@example.com [All]");
 
       // Switch active account and emit account:switched
       acc1.is_active = false;
@@ -1006,7 +1023,7 @@ describe("Tray Handler Functionality", () => {
       tpl = mocks.traySetContextMenu.mock.calls.at(
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
-      expect(tpl[0].label).toBe("Current: second@example.com");
+      expect(tpl[0].label).toBe("Current: second@example.com [All]");
 
       // Update quota and emit account:quota_updated
       acc2.quota = {
@@ -1040,7 +1057,7 @@ describe("Tray Handler Functionality", () => {
       tpl = mocks.traySetContextMenu.mock.calls.at(
         -1,
       )![0] as Electron.MenuItemConstructorOptions[];
-      expect(tpl[0].label).toBe("Current: first@example.com");
+      expect(tpl[0].label).toBe("Current: first@example.com [All]");
     });
 
     it("unsubscribes from cloudAccountEvents when destroyTray is called", async () => {
@@ -1054,6 +1071,219 @@ describe("Tray Handler Functionality", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(mocks.traySetContextMenu).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Multi-Target System Tray & Granular Submenus (AC-07)", () => {
+    describe("middleTruncate", () => {
+      it("preserves strings that fit within maxLength", () => {
+        expect(handlerModule.middleTruncate("short@example.com", 24)).toBe(
+          "short@example.com",
+        );
+        expect(
+          handlerModule.middleTruncate("exact24charslong@test.c", 24),
+        ).toBe("exact24charslong@test.c");
+      });
+
+      it("middle-truncates strings exceeding maxLength to exactly maxLength characters", () => {
+        const longEmail = "verylongdeveloperaccount123@domain.com";
+        const truncated = handlerModule.middleTruncate(longEmail, 24);
+        expect(truncated.length).toBe(24);
+        expect(truncated).toContain("...");
+        expect(truncated.startsWith("verylongdev")).toBe(true);
+        expect(truncated.endsWith("domain.com")).toBe(true);
+      });
+
+      it("handles small maxLength cleanly", () => {
+        expect(handlerModule.middleTruncate("abcdef", 3)).toBe("abc");
+      });
+    });
+
+    it("renders split lines when targets have divergent active accounts", () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      const accApp = createMockAccount({
+        id: "acc-app",
+        email: "app.user@example.com",
+      });
+      const accIde = createMockAccount({
+        id: "acc-ide",
+        email: "ide.user@example.com",
+      });
+      const accCli = createMockAccount({
+        id: "acc-cli",
+        email: "cli.user@example.com",
+      });
+
+      handlerModule.updateTrayMenu(accApp, "en", {
+        classic: accApp,
+        ide: accIde,
+        agy: accCli,
+      });
+
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+
+      expect(tpl[0].label).toBe("App: app.user@example.com");
+      expect(tpl[1].label).toBe("IDE: ide.user@example.com");
+      expect(tpl[2].label).toBe("CLI: cli.user@example.com");
+    });
+
+    it("renders Switch to Next Account (All) with Cmd+N/Ctrl+N accelerator", () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      const acc1 = createMockAccount({ id: "acc-1", email: "user@test.com" });
+      handlerModule.updateTrayMenu(acc1, "en");
+
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      const switchAllItem = tpl.find(
+        (item) => item.label === "Switch to Next Account (All)",
+      );
+
+      expect(switchAllItem).toBeDefined();
+      expect(switchAllItem?.accelerator).toBe(
+        process.platform === "darwin" ? "Cmd+N" : "Ctrl+N",
+      );
+    });
+
+    it("provides granular submenus for individual target switching and direct account selection", async () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      const acc1 = createMockAccount({
+        id: "acc-1",
+        email: "first@example.com",
+        is_active: true,
+      });
+      const acc2 = createMockAccount({
+        id: "acc-2",
+        email: "second@example.com",
+        is_active: false,
+      });
+      mocks.accounts = [acc1, acc2];
+
+      const switchSpy = vi.fn(async (_id: string, _target?: string) => {});
+      handlerModule.registerTrayAccountHandlers({ switchAccount: switchSpy });
+
+      handlerModule.updateTrayMenu(acc1, "en", {
+        classic: acc1,
+        ide: acc2,
+        agy: acc1,
+      });
+
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+      const targetSubmenuItem = tpl.find(
+        (item) => item.label === "Switch Specific Target",
+      );
+
+      expect(targetSubmenuItem).toBeDefined();
+      const subItems = targetSubmenuItem!
+        .submenu as Electron.MenuItemConstructorOptions[];
+      expect(subItems).toBeDefined();
+
+      const appItem = subItems.find((item) => item.label === "Antigravity App");
+      const ideItem = subItems.find((item) => item.label === "Antigravity IDE");
+      const cliItem = subItems.find((item) => item.label === "Antigravity CLI");
+
+      expect(appItem).toBeDefined();
+      expect(ideItem).toBeDefined();
+      expect(cliItem).toBeDefined();
+
+      const appSubmenu = appItem!
+        .submenu as Electron.MenuItemConstructorOptions[];
+      const appRotateItem = appSubmenu.find(
+        (item) => item.label === "Switch to Next Account (App)",
+      );
+      expect(appRotateItem).toBeDefined();
+
+      // Test rotating specific target (App)
+      await appRotateItem!.click!(
+        undefined as any,
+        undefined as any,
+        undefined as any,
+      );
+
+      expect(switchSpy).toHaveBeenCalledWith("acc-2", "classic");
+      expect(win.webContents.send).toHaveBeenCalledWith(
+        "tray://account-switched",
+        { accountId: "acc-2", target: "classic" },
+      );
+
+      // Test direct account switch from IDE submenu
+      const ideSubmenu = ideItem!
+        .submenu as Electron.MenuItemConstructorOptions[];
+      const firstAccItem = ideSubmenu.find(
+        (item) => item.label === "first@example.com",
+      );
+      expect(firstAccItem).toBeDefined();
+
+      await firstAccItem!.click!(
+        undefined as any,
+        undefined as any,
+        undefined as any,
+      );
+
+      expect(switchSpy).toHaveBeenCalledWith("acc-1", "ide");
+      expect(win.webContents.send).toHaveBeenCalledWith(
+        "tray://account-switched",
+        { accountId: "acc-1", target: "ide" },
+      );
+    });
+
+    it("disables submenus and prevents switching for uninstalled targets", async () => {
+      const win = createMockWindow();
+      handlerModule.initTray(win);
+
+      // IDE is uninstalled, App and CLI are installed
+      mocks.isAntigravityTargetInstalled.mockImplementation(
+        (target?: string) => target !== "ide",
+      );
+
+      const acc1 = createMockAccount({
+        id: "acc-1",
+        email: "first@example.com",
+      });
+      mocks.accounts = [acc1];
+
+      const switchSpy = vi.fn(async (_id: string, _target?: string) => {});
+      handlerModule.registerTrayAccountHandlers({ switchAccount: switchSpy });
+
+      handlerModule.updateTrayMenu(acc1, "en", {
+        classic: acc1,
+        ide: null,
+        agy: acc1,
+      });
+
+      const tpl = mocks.traySetContextMenu.mock.calls.at(
+        -1,
+      )![0] as Electron.MenuItemConstructorOptions[];
+
+      // In the header, IDE should not appear
+      const headerLabels = tpl.map((item) => item.label);
+      expect(headerLabels.some((label) => label?.startsWith("IDE:"))).toBe(
+        false,
+      );
+
+      const targetSubmenuItem = tpl.find(
+        (item) => item.label === "Switch Specific Target",
+      );
+      const subItems = targetSubmenuItem!
+        .submenu as Electron.MenuItemConstructorOptions[];
+
+      const ideItem = subItems.find((item) =>
+        item.label?.includes("Antigravity IDE"),
+      );
+      expect(ideItem).toBeDefined();
+      expect(ideItem?.enabled).toBe(false);
+      expect(ideItem?.label).toContain("(Not Installed)");
+      expect(ideItem?.submenu).toBeUndefined();
     });
   });
 });

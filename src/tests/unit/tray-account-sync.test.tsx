@@ -3,7 +3,10 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useTrayAccountSync } from "@/modules/cloud-account/hooks/useTrayAccountSync";
+import {
+  useTrayAccountSync,
+  type TraySwitchedPayload,
+} from "@/modules/cloud-account/hooks/useTrayAccountSync";
 import { QUERY_KEYS } from "@/modules/cloud-account/hooks/useCloudAccounts";
 import type { CloudAccount } from "@/modules/cloud-account/types";
 import * as toastModule from "@/components/ui/use-toast";
@@ -15,10 +18,14 @@ vi.mock("@/components/ui/use-toast", () => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, params?: { email?: string }) => {
+    t: (key: string, params?: { email?: string; target?: string }) => {
       if (key === "traySync.switchedTitle") return "Account Switched";
       if (key === "traySync.switchedDescription") {
         return `Active account switched to ${params?.email} via system tray.`;
+      }
+      if (key === "traySync.switchedTargetTitle") return "Account Switched";
+      if (key === "traySync.switchedTargetDescription") {
+        return `Switched ${params?.target} to ${params?.email} via system tray.`;
       }
       return key;
     },
@@ -60,7 +67,7 @@ const mockAccounts: CloudAccount[] = [
 
 describe("useTrayAccountSync", () => {
   let queryClient: QueryClient;
-  let switchedCallback: ((accountId: string) => void) | null = null;
+  let switchedCallback: ((payload: TraySwitchedPayload) => void) | null = null;
   let updatedCallback: (() => void) | null = null;
   const unbindSwitchedMock = vi.fn();
   const unbindUpdatedMock = vi.fn();
@@ -90,7 +97,7 @@ describe("useTrayAccountSync", () => {
       installUpdate: vi.fn(),
       dismissManualUpdate: vi.fn(),
       openExternalUrl: vi.fn(),
-      onAccountSwitched: vi.fn((cb: (id: string) => void) => {
+      onAccountSwitched: vi.fn((cb: (payload: TraySwitchedPayload) => void) => {
         switchedCallback = cb;
         return unbindSwitchedMock;
       }),
@@ -299,5 +306,89 @@ describe("useTrayAccountSync", () => {
     }).not.toThrow();
 
     window.electron = originalElectron;
+  });
+
+  it("handles null, undefined, or empty payload without throwing or corrupting cache", () => {
+    renderHook(() => useTrayAccountSync(), {
+      wrapper: createWrapper(),
+    });
+
+    expect(() => {
+      act(() => {
+        // @ts-expect-error intentionally testing null payload
+        switchedCallback!(null);
+      });
+    }).not.toThrow();
+
+    expect(() => {
+      act(() => {
+        // @ts-expect-error intentionally testing undefined payload
+        switchedCallback!(undefined);
+      });
+    }).not.toThrow();
+
+    expect(() => {
+      act(() => {
+        // @ts-expect-error intentionally testing payload without accountId
+        switchedCallback!({});
+      });
+    }).not.toThrow();
+
+    const cached = queryClient.getQueryData<CloudAccount[]>(
+      QUERY_KEYS.cloudAccounts,
+    );
+    expect(cached!.find((a) => a.id === "acc-1")?.is_active).toBe(true);
+  });
+
+  it("handles multi-target payloads and normalizes cli alias to agy", () => {
+    renderHook(() => useTrayAccountSync(), {
+      wrapper: createWrapper(),
+    });
+
+    act(() => {
+      switchedCallback!({
+        accountId: "acc-2",
+        target: "cli",
+      } as any);
+    });
+
+    const cached = queryClient.getQueryData<CloudAccount[]>(
+      QUERY_KEYS.cloudAccounts,
+    );
+    const acc2 = cached!.find((a) => a.id === "acc-2");
+    expect(acc2?.is_active_agy).toBe(true);
+    expect(acc2?.is_active).toBe(true);
+  });
+
+  it("handles single target ide and classic switch payloads correctly", () => {
+    renderHook(() => useTrayAccountSync(), {
+      wrapper: createWrapper(),
+    });
+
+    act(() => {
+      switchedCallback!({
+        accountId: "acc-2",
+        target: "ide",
+      });
+    });
+
+    let cached = queryClient.getQueryData<CloudAccount[]>(
+      QUERY_KEYS.cloudAccounts,
+    );
+    let acc2 = cached!.find((a) => a.id === "acc-2");
+    expect(acc2?.is_active_ide).toBe(true);
+    expect(acc2?.is_active).toBe(true);
+
+    act(() => {
+      switchedCallback!({
+        accountId: "acc-2",
+        target: "classic",
+      });
+    });
+
+    cached = queryClient.getQueryData<CloudAccount[]>(QUERY_KEYS.cloudAccounts);
+    acc2 = cached!.find((a) => a.id === "acc-2");
+    expect(acc2?.is_active_classic).toBe(true);
+    expect(acc2?.is_active).toBe(true);
   });
 });

@@ -57,7 +57,16 @@ declare global {
       installUpdate: () => Promise<UpdateActionResult>;
       dismissManualUpdate: (version: string) => Promise<void>;
       openExternalUrl: (url: string) => Promise<void>;
-      onAccountSwitched: (callback: (accountId: string) => void) => () => void;
+      onAccountSwitched: (
+        callback: (
+          payload:
+            | string
+            | {
+                accountId: string;
+                target?: "classic" | "ide" | "agy" | "cli" | "all";
+              },
+        ) => void,
+      ) => () => void;
       onAccountsUpdated: (callback: () => void) => () => void;
       startPerformanceRecording?: (
         label: string,

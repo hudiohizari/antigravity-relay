@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { executeSwitchFlow } from '@/modules/antigravity-runtime/switch/switchFlow';
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { executeSwitchFlow } from "@/modules/antigravity-runtime/switch/switchFlow";
 
 const {
   applyDeviceProfile,
@@ -23,32 +23,33 @@ const {
   waitForProcessExit: vi.fn(async () => undefined),
 }));
 
-vi.mock('@/modules/antigravity-runtime/ipc/handler', () => ({
+vi.mock("@/modules/antigravity-runtime/ipc/handler", () => ({
   closeAntigravity,
   isProcessRunning,
   startAntigravity,
   _waitForProcessExit: waitForProcessExit,
 }));
 
-vi.mock('@/shared/platform/paths', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/shared/platform/paths')>();
+vi.mock("@/shared/platform/paths", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/shared/platform/paths")>();
   return {
     ...actual,
     refreshAntigravityProcessCache,
   };
 });
 
-vi.mock('@/modules/identity-profile/ipc/handler', () => ({
+vi.mock("@/modules/identity-profile/ipc/handler", () => ({
   applyDeviceProfile,
   syncTelemetryServiceMachineIdValue,
 }));
 
-vi.mock('@/modules/antigravity-runtime/switch/switchMetrics', () => ({
+vi.mock("@/modules/antigravity-runtime/switch/switchMetrics", () => ({
   recordSwitchSuccess,
   recordSwitchFailure,
 }));
 
-describe('executeSwitchFlow for agy CLI', () => {
+describe("executeSwitchFlow for agy CLI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     applyDeviceProfile.mockImplementation(() => undefined);
@@ -56,12 +57,12 @@ describe('executeSwitchFlow for agy CLI', () => {
     syncTelemetryServiceMachineIdValue.mockImplementation(() => undefined);
   });
 
-  it('only runs the switch operation without process or profile side effects', async () => {
+  it("only runs the switch operation without process or profile side effects", async () => {
     const performSwitch = vi.fn(async () => undefined);
 
     await executeSwitchFlow({
-      scope: 'cloud',
-      appTarget: 'agy' as never,
+      scope: "cloud",
+      appTarget: "agy" as never,
       targetProfile: null,
       applyFingerprint: true,
       useCredentialStore: true,
@@ -76,28 +77,28 @@ describe('executeSwitchFlow for agy CLI', () => {
     expect(applyDeviceProfile).not.toHaveBeenCalled();
     expect(syncTelemetryServiceMachineIdValue).not.toHaveBeenCalled();
     expect(startAntigravity).not.toHaveBeenCalled();
-    expect(recordSwitchSuccess).toHaveBeenCalledWith('cloud');
+    expect(recordSwitchSuccess).toHaveBeenCalledWith("cloud");
     expect(recordSwitchFailure).not.toHaveBeenCalled();
   });
 
-  it('fails when device profile apply fails for credential-store-backed GUI targets', async () => {
+  it("fails when device profile apply fails for credential-store-backed GUI targets", async () => {
     const performSwitch = vi.fn(async () => undefined);
     const afterSwitchSuccess = vi.fn(async () => undefined);
     const targetProfile = {
-      machineId: 'machine-id',
-      macMachineId: 'mac-machine-id',
-      devDeviceId: 'dev-device-id',
-      sqmId: 'sqm-id',
+      machineId: "machine-id",
+      macMachineId: "mac-machine-id",
+      devDeviceId: "dev-device-id",
+      sqmId: "sqm-id",
     };
-    const applyError = new Error('storage_write_failed:parse_failed');
+    const applyError = new Error("storage_write_failed:parse_failed");
     applyDeviceProfile.mockImplementationOnce(() => {
       throw applyError;
     });
 
     await expect(
       executeSwitchFlow({
-        scope: 'cloud',
-        appTarget: 'classic',
+        scope: "cloud",
+        appTarget: "classic",
         targetProfile,
         applyFingerprint: true,
         useCredentialStore: true,
@@ -107,63 +108,63 @@ describe('executeSwitchFlow for agy CLI', () => {
       }),
     ).rejects.toThrow(applyError);
 
-    expect(applyDeviceProfile).toHaveBeenCalledWith(targetProfile, 'classic');
+    expect(applyDeviceProfile).toHaveBeenCalledWith(targetProfile, "classic");
     expect(syncTelemetryServiceMachineIdValue).not.toHaveBeenCalled();
     expect(performSwitch).toHaveBeenCalledTimes(1);
     expect(performSwitch.mock.invocationCallOrder[0]).toBeLessThan(
       applyDeviceProfile.mock.invocationCallOrder[0],
     );
-    expect(closeAntigravity).toHaveBeenCalledWith('classic');
-    expect(waitForProcessExit).toHaveBeenCalledWith(10000, 100, 'classic');
+    expect(closeAntigravity).toHaveBeenCalledWith("classic");
+    expect(waitForProcessExit).toHaveBeenCalledWith(10000, 100, "classic");
     expect(startAntigravity).not.toHaveBeenCalled();
     expect(afterSwitchSuccess).not.toHaveBeenCalled();
     expect(recordSwitchSuccess).not.toHaveBeenCalled();
     expect(recordSwitchFailure).toHaveBeenCalledWith(
-      'cloud',
-      'apply_device_profile_failed',
+      "cloud",
+      "apply_device_profile_failed",
       applyError.message,
     );
   });
 
-  it('fails before starting a credential-store-backed GUI target without an identity profile', async () => {
+  it("fails before starting a credential-store-backed GUI target without an identity profile", async () => {
     const performSwitch = vi.fn(async () => undefined);
 
     await expect(
       executeSwitchFlow({
-        scope: 'cloud',
-        appTarget: 'classic',
+        scope: "cloud",
+        appTarget: "classic",
         targetProfile: null,
         applyFingerprint: true,
         useCredentialStore: true,
         processExitTimeoutMs: 10000,
         performSwitch,
       }),
-    ).rejects.toThrow('Account has no bound identity profile');
+    ).rejects.toThrow("Account has no bound identity profile");
 
     expect(performSwitch).toHaveBeenCalledTimes(1);
     expect(applyDeviceProfile).not.toHaveBeenCalled();
     expect(startAntigravity).not.toHaveBeenCalled();
     expect(recordSwitchSuccess).not.toHaveBeenCalled();
     expect(recordSwitchFailure).toHaveBeenCalledWith(
-      'cloud',
-      'missing_bound_profile',
-      'Account has no bound identity profile',
+      "cloud",
+      "missing_bound_profile",
+      "Account has no bound identity profile",
     );
   });
 
-  it('applies the CLI device profile best-effort after credential-store switching', async () => {
+  it("applies the CLI device profile best-effort after credential-store switching", async () => {
     const performSwitch = vi.fn(async () => undefined);
     const afterSwitchSuccess = vi.fn(async () => undefined);
     const targetProfile = {
-      machineId: 'machine-id',
-      macMachineId: 'mac-machine-id',
-      devDeviceId: 'dev-device-id',
-      sqmId: 'sqm-id',
+      machineId: "machine-id",
+      macMachineId: "mac-machine-id",
+      devDeviceId: "dev-device-id",
+      sqmId: "sqm-id",
     };
 
     await executeSwitchFlow({
-      scope: 'cloud',
-      appTarget: 'agy',
+      scope: "cloud",
+      appTarget: "agy",
       targetProfile,
       applyFingerprint: true,
       useCredentialStore: true,
@@ -173,7 +174,7 @@ describe('executeSwitchFlow for agy CLI', () => {
     });
 
     expect(performSwitch).toHaveBeenCalledTimes(1);
-    expect(applyDeviceProfile).toHaveBeenCalledWith(targetProfile, 'agy');
+    expect(applyDeviceProfile).toHaveBeenCalledWith(targetProfile, "agy");
     expect(syncTelemetryServiceMachineIdValue).not.toHaveBeenCalled();
     expect(performSwitch.mock.invocationCallOrder[0]).toBeLessThan(
       applyDeviceProfile.mock.invocationCallOrder[0],
@@ -185,23 +186,23 @@ describe('executeSwitchFlow for agy CLI', () => {
     expect(closeAntigravity).not.toHaveBeenCalled();
     expect(waitForProcessExit).not.toHaveBeenCalled();
     expect(startAntigravity).not.toHaveBeenCalled();
-    expect(recordSwitchSuccess).toHaveBeenCalledWith('cloud');
+    expect(recordSwitchSuccess).toHaveBeenCalledWith("cloud");
     expect(recordSwitchFailure).not.toHaveBeenCalled();
   });
 
-  it('syncs telemetry serviceMachineId after SQLite token switching', async () => {
+  it("syncs telemetry serviceMachineId after SQLite token switching", async () => {
     const performSwitch = vi.fn(async () => undefined);
     const afterSwitchSuccess = vi.fn(async () => undefined);
     const targetProfile = {
-      machineId: 'machine-id',
-      macMachineId: 'mac-machine-id',
-      devDeviceId: 'dev-device-id',
-      sqmId: 'sqm-id',
+      machineId: "machine-id",
+      macMachineId: "mac-machine-id",
+      devDeviceId: "dev-device-id",
+      sqmId: "sqm-id",
     };
 
     await executeSwitchFlow({
-      scope: 'cloud',
-      appTarget: 'ide',
+      scope: "cloud",
+      appTarget: "ide",
       targetProfile,
       applyFingerprint: true,
       useCredentialStore: false,
@@ -210,12 +211,12 @@ describe('executeSwitchFlow for agy CLI', () => {
       afterSwitchSuccess,
     });
 
-    expect(applyDeviceProfile).toHaveBeenCalledWith(targetProfile, 'ide');
+    expect(applyDeviceProfile).toHaveBeenCalledWith(targetProfile, "ide");
     expect(performSwitch).toHaveBeenCalledTimes(1);
     expect(syncTelemetryServiceMachineIdValue).toHaveBeenCalledWith(
       targetProfile.macMachineId,
       undefined,
-      'ide',
+      "ide",
     );
     expect(applyDeviceProfile.mock.invocationCallOrder[0]).toBeLessThan(
       performSwitch.mock.invocationCallOrder[0],
@@ -223,14 +224,61 @@ describe('executeSwitchFlow for agy CLI', () => {
     expect(performSwitch.mock.invocationCallOrder[0]).toBeLessThan(
       syncTelemetryServiceMachineIdValue.mock.invocationCallOrder[0],
     );
-    expect(startAntigravity).toHaveBeenCalledWith('ide');
-    expect(syncTelemetryServiceMachineIdValue.mock.invocationCallOrder[0]).toBeLessThan(
-      startAntigravity.mock.invocationCallOrder[0],
-    );
+    expect(startAntigravity).toHaveBeenCalledWith("ide");
+    expect(
+      syncTelemetryServiceMachineIdValue.mock.invocationCallOrder[0],
+    ).toBeLessThan(startAntigravity.mock.invocationCallOrder[0]);
     expect(startAntigravity.mock.invocationCallOrder[0]).toBeLessThan(
       afterSwitchSuccess.mock.invocationCallOrder[0],
     );
-    expect(recordSwitchSuccess).toHaveBeenCalledWith('cloud');
+    expect(recordSwitchSuccess).toHaveBeenCalledWith("cloud");
     expect(recordSwitchFailure).not.toHaveBeenCalled();
+  });
+
+  it("selectively restarts GUI processes only when they were running beforehand", async () => {
+    const performSwitch = vi.fn(async () => undefined);
+    isProcessRunning.mockResolvedValue(true);
+
+    const result = await executeSwitchFlow({
+      scope: "cloud",
+      appTarget: "classic",
+      targetProfile: null,
+      applyFingerprint: false,
+      useCredentialStore: true,
+      processExitTimeoutMs: 10000,
+      performSwitch,
+    });
+
+    expect(result).toEqual({
+      target: "classic",
+      wasRunning: true,
+      restarted: true,
+    });
+    expect(closeAntigravity).toHaveBeenCalledWith("classic");
+    expect(startAntigravity).toHaveBeenCalledWith("classic");
+  });
+
+  it("bypasses startAntigravity and performs silent on-disk injection when target was stopped", async () => {
+    const performSwitch = vi.fn(async () => undefined);
+    isProcessRunning.mockResolvedValue(false);
+
+    const result = await executeSwitchFlow({
+      scope: "cloud",
+      appTarget: "classic",
+      targetProfile: null,
+      applyFingerprint: false,
+      useCredentialStore: true,
+      processExitTimeoutMs: 10000,
+      performSwitch,
+    });
+
+    expect(result).toEqual({
+      target: "classic",
+      wasRunning: false,
+      restarted: false,
+    });
+    expect(closeAntigravity).not.toHaveBeenCalled();
+    expect(startAntigravity).not.toHaveBeenCalled();
+    expect(performSwitch).toHaveBeenCalledTimes(1);
   });
 });

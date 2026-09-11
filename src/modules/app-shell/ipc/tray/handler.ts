@@ -10,9 +10,35 @@ import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-accou
 import { configureTrayIcon, resolveTrayIconPath } from "./icon";
 import { isWeeklyQuotaBucket } from "@/modules/cloud-account/utils/quota-groups";
 import { AutoSwitchService } from "@/modules/cloud-account/services/AutoSwitchService";
+import { runWithSwitchGuard } from "@/modules/antigravity-runtime/switch/switchGuard";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import { isAntigravityTargetInstalled } from "@/shared/platform/paths";
+
+export interface TargetAccountsMap {
+  classic: CloudAccount | null;
+  ide: CloudAccount | null;
+  agy: CloudAccount | null;
+}
+
+export function middleTruncate(text: string, maxLength = 24): string {
+  if (!text || text.length <= maxLength) {
+    return text;
+  }
+  if (maxLength <= 3) {
+    return text.slice(0, maxLength);
+  }
+  const ellipsis = "...";
+  const charsToShow = maxLength - ellipsis.length;
+  const frontChars = Math.ceil(charsToShow / 2);
+  const backChars = Math.floor(charsToShow / 2);
+  return `${text.slice(0, frontChars)}${ellipsis}${text.slice(text.length - backChars)}`;
+}
 
 export interface TrayAccountActions {
-  switchAccount?: (accountId: string) => Promise<void>;
+  switchAccount?: (
+    accountId: string,
+    target?: AntigravityAppTarget | "all",
+  ) => Promise<void>;
   refreshQuota?: (accountId: string) => Promise<CloudAccount | null>;
 }
 
@@ -25,9 +51,10 @@ export function registerTrayAccountHandlers(actions: TrayAccountActions): void {
 let tray: Tray | null = null;
 let globalMainWindow: BrowserWindow | null = null;
 let lastAccount: CloudAccount | null = null;
+let lastTargetAccounts: TargetAccountsMap | null = null;
+let lastAccountsList: CloudAccount[] = [];
 let lastLanguage: string = "en";
 let onQuitRequested: (() => void | Promise<void>) | null = null;
-let isSwitchingAccount = false;
 let isRefreshingQuota = false;
 let inFlightSync: Promise<void> | null = null;
 let syncSequenceToken = 0;
@@ -38,10 +65,28 @@ const onCloudAccountEvent = () => {
   void syncTrayWithActiveAccount();
 };
 
+const onCloudAccountQuotaUpdated = (event?: { accountId?: string }) => {
+  if (event?.accountId && lastAccountsList.length > 0) {
+    const isTargetOrActive =
+      event.accountId ===
+        CloudAccountSettingsStore.getActiveAccountIdForTarget("classic") ||
+      event.accountId ===
+        CloudAccountSettingsStore.getActiveAccountIdForTarget("ide") ||
+      event.accountId ===
+        CloudAccountSettingsStore.getActiveAccountIdForTarget("agy") ||
+      lastAccountsList.find((a) => a.id === event.accountId)?.is_active;
+
+    if (!isTargetOrActive) {
+      return;
+    }
+  }
+  void syncTrayWithActiveAccount();
+};
+
 function subscribeCloudAccountEvents(): void {
   if (isSubscribedToCloudEvents) return;
   cloudAccountEvents.on("account:switched", onCloudAccountEvent);
-  cloudAccountEvents.on("account:quota_updated", onCloudAccountEvent);
+  cloudAccountEvents.on("account:quota_updated", onCloudAccountQuotaUpdated);
   cloudAccountEvents.on("account:deleted", onCloudAccountEvent);
   cloudAccountEvents.on("account:sync_requested", onCloudAccountEvent);
   isSubscribedToCloudEvents = true;
@@ -50,7 +95,7 @@ function subscribeCloudAccountEvents(): void {
 function unsubscribeCloudAccountEvents(): void {
   if (!isSubscribedToCloudEvents) return;
   cloudAccountEvents.off("account:switched", onCloudAccountEvent);
-  cloudAccountEvents.off("account:quota_updated", onCloudAccountEvent);
+  cloudAccountEvents.off("account:quota_updated", onCloudAccountQuotaUpdated);
   cloudAccountEvents.off("account:deleted", onCloudAccountEvent);
   cloudAccountEvents.off("account:sync_requested", onCloudAccountEvent);
   isSubscribedToCloudEvents = false;
@@ -88,13 +133,61 @@ export function syncTrayWithActiveAccount(): Promise<void> {
         if (currentToken !== syncSequenceToken) {
           return;
         }
+        lastAccountsList = accounts;
+
+        const classicId =
+          CloudAccountSettingsStore.getActiveAccountIdForTarget("classic");
+        const ideId =
+          CloudAccountSettingsStore.getActiveAccountIdForTarget("ide");
+        const agyId =
+          CloudAccountSettingsStore.getActiveAccountIdForTarget("agy");
+
+        const defaultActive = accounts.find((a) => a.is_active) ?? null;
+        const hasAnyExplicitTarget = Boolean(classicId || ideId || agyId);
+
+        const isClassicInstalled = isAntigravityTargetInstalled("classic");
+        const isIdeInstalled = isAntigravityTargetInstalled("ide");
+        const isAgyInstalled = isAntigravityTargetInstalled("agy");
+
+        const classicAccount = isClassicInstalled
+          ? classicId
+            ? (accounts.find((a) => a.id === classicId) ?? null)
+            : !hasAnyExplicitTarget
+              ? defaultActive
+              : null
+          : null;
+        const ideAccount = isIdeInstalled
+          ? ideId
+            ? (accounts.find((a) => a.id === ideId) ?? null)
+            : !hasAnyExplicitTarget
+              ? defaultActive
+              : null
+          : null;
+        const agyAccount = isAgyInstalled
+          ? agyId
+            ? (accounts.find((a) => a.id === agyId) ?? null)
+            : !hasAnyExplicitTarget
+              ? defaultActive
+              : null
+          : null;
+
+        const targetAccounts: TargetAccountsMap = {
+          classic: classicAccount,
+          ide: ideAccount,
+          agy: agyAccount,
+        };
+
         const activeAccount =
-          accounts.find((a) => a.is_active) ?? accounts[0] ?? null;
-        updateTrayMenu(activeAccount, lang);
+          classicAccount ?? agyAccount ?? ideAccount ?? defaultActive ?? null;
+        updateTrayMenu(activeAccount, lang, targetAccounts);
       } catch (e) {
         logger.warn("Tray: Failed to sync active account", e);
         if (currentToken === syncSequenceToken) {
-          updateTrayMenu(null, lang);
+          updateTrayMenu(null, lang, {
+            classic: null,
+            ide: null,
+            agy: null,
+          });
         }
       }
     } finally {
@@ -229,7 +322,11 @@ export function initTray(
 }
 
 async function resolveAccountSwitcher(): Promise<
-  ((accountId: string) => Promise<void>) | null
+  | ((
+      accountId: string,
+      target?: AntigravityAppTarget | "all",
+    ) => Promise<void>)
+  | null
 > {
   if (registeredActions.switchAccount !== undefined) {
     return registeredActions.switchAccount ?? null;
@@ -237,7 +334,9 @@ async function resolveAccountSwitcher(): Promise<
   try {
     const { switchCloudAccount } =
       await import("@/modules/cloud-account/ipc/handler");
-    return switchCloudAccount;
+    return async (accountId: string, target?: AntigravityAppTarget | "all") => {
+      await switchCloudAccount(accountId, target);
+    };
   } catch {
     return null;
   }
@@ -261,10 +360,14 @@ async function resolveQuotaRefresher(): Promise<
 export function updateTrayMenu(
   account: CloudAccount | null,
   language?: string,
+  targetAccounts?: TargetAccountsMap | null,
 ) {
   lastAccount = account;
   if (language) {
     lastLanguage = language;
+  }
+  if (targetAccounts !== undefined) {
+    lastTargetAccounts = targetAccounts;
   }
 
   if (!tray || !globalMainWindow) return;
@@ -272,90 +375,331 @@ export function updateTrayMenu(
   const texts = getTrayTexts(lastLanguage);
   const quotaLines = getQuotaText(account, texts);
 
-  let currentLabel: string;
-  if (!account) {
-    currentLabel = `${texts.current}: ${texts.no_account}`;
-  } else {
+  const targets: TargetAccountsMap = lastTargetAccounts ?? {
+    classic: account,
+    ide: account,
+    agy: account,
+  };
+
+  const classicId = targets.classic?.id ?? "";
+  const ideId = targets.ide?.id ?? "";
+  const agyId = targets.agy?.id ?? "";
+
+  const installedTargets = (
+    ["classic", "ide", "agy"] as AntigravityAppTarget[]
+  ).filter((t) => isAntigravityTargetInstalled(t));
+
+  const activeIds = installedTargets.map((t) => targets[t]?.id).filter(Boolean);
+
+  const areAllEqual =
+    installedTargets.length > 0
+      ? activeIds.length === installedTargets.length &&
+        activeIds.every((id) => id === activeIds[0])
+      : !targets.classic && !targets.ide && !targets.agy;
+
+  let headerItems: Electron.MenuItemConstructorOptions[] = [];
+
+  if (!account && !targets.classic && !targets.ide && !targets.agy) {
+    headerItems = [
+      {
+        label: `${texts.current}: ${texts.no_account}`,
+        enabled: false,
+      },
+    ];
+  } else if (areAllEqual) {
+    const primaryAccount =
+      targets.classic ?? targets.agy ?? targets.ide ?? account;
     let statusSuffix = "";
-    if (account.quota?.is_forbidden || account.quota?.isForbidden) {
+    if (
+      primaryAccount?.quota?.is_forbidden ||
+      primaryAccount?.quota?.isForbidden
+    ) {
       statusSuffix = ` [${texts.forbidden}]`;
-    } else if (account.status === "rate_limited") {
+    } else if (primaryAccount?.status === "rate_limited") {
       statusSuffix = ` [${texts.rate_limited}]`;
-    } else if (account.status === "expired") {
+    } else if (primaryAccount?.status === "expired") {
       statusSuffix = ` [${texts.expired}]`;
     }
-    currentLabel = `${texts.current}: ${account.email}${statusSuffix}`;
+    const email = primaryAccount?.email ?? texts.no_account;
+    const truncatedEmail = middleTruncate(email, 24);
+    const label = `${texts.current_all.replace("{{email}}", truncatedEmail)}${statusSuffix}`;
+    headerItems = [
+      {
+        label,
+        enabled: false,
+      },
+    ];
+  } else {
+    // Divergent targets
+    const formatTargetItem = (
+      template: string,
+      targetAccount: CloudAccount | null,
+    ): string => {
+      let suffix = "";
+      if (
+        targetAccount?.quota?.is_forbidden ||
+        targetAccount?.quota?.isForbidden
+      ) {
+        suffix = ` [${texts.forbidden}]`;
+      } else if (targetAccount?.status === "rate_limited") {
+        suffix = ` [${texts.rate_limited}]`;
+      } else if (targetAccount?.status === "expired") {
+        suffix = ` [${texts.expired}]`;
+      }
+      const email = targetAccount?.email
+        ? middleTruncate(targetAccount.email, 20)
+        : texts.no_account;
+      return `${template.replace("{{email}}", email)}${suffix}`;
+    };
+
+    headerItems = [];
+    if (isAntigravityTargetInstalled("classic")) {
+      headerItems.push({
+        label: formatTargetItem(texts.target_app, targets.classic),
+        enabled: false,
+      });
+    }
+    if (isAntigravityTargetInstalled("ide")) {
+      headerItems.push({
+        label: formatTargetItem(texts.target_ide, targets.ide),
+        enabled: false,
+      });
+    }
+    if (isAntigravityTargetInstalled("agy")) {
+      headerItems.push({
+        label: formatTargetItem(texts.target_cli, targets.agy),
+        enabled: false,
+      });
+    }
+    if (headerItems.length === 0) {
+      headerItems.push({
+        label: `${texts.current}: ${texts.no_account}`,
+        enabled: false,
+      });
+    }
   }
 
   tray.setToolTip(
     account ? `Antigravity Relay (${account.email})` : "Antigravity Relay",
   );
 
+  const handleTraySwitch = async (target: AntigravityAppTarget | "all") => {
+    if (target !== "all" && !isAntigravityTargetInstalled(target)) {
+      logger.warn(
+        `Tray: Cannot switch target ${target} because it is not installed`,
+      );
+      return;
+    }
+
+    await runWithSwitchGuard("cloud-account-switch", async () => {
+      try {
+        const accounts = await CloudAccountRepo.getAccounts();
+        if (!accounts || accounts.length === 0) return;
+
+        const currentId =
+          target === "all"
+            ? accounts.find((a) => a.is_active)?.id ||
+              CloudAccountSettingsStore.getActiveAccountIdForTarget(
+                "classic",
+              ) ||
+              account?.id
+            : CloudAccountSettingsStore.getActiveAccountIdForTarget(target) ||
+              account?.id;
+
+        // Try to pick next account using AutoSwitchService heuristics
+        let next: CloudAccount | null = null;
+        if (currentId) {
+          next = await AutoSwitchService.findBestAccount(currentId);
+        } else {
+          next = await AutoSwitchService.findBestAccount("");
+        }
+
+        // Fallback to deterministic round robin if all null
+        if (!next) {
+          let nextIndex = 0;
+          if (currentId) {
+            const idx = accounts.findIndex((a) => a.id === currentId);
+            nextIndex = (idx + 1) % accounts.length;
+          }
+          next = accounts[nextIndex];
+        }
+
+        if (!next) return;
+
+        const switchAccount = await resolveAccountSwitcher();
+        if (switchAccount) {
+          await switchAccount(next.id, target);
+        } else {
+          if (target === "all") {
+            if (isAntigravityTargetInstalled("classic")) {
+              CloudAccountRepo.setActive(next.id, "classic");
+            }
+            if (isAntigravityTargetInstalled("ide")) {
+              CloudAccountRepo.setActive(next.id, "ide");
+            }
+            if (isAntigravityTargetInstalled("agy")) {
+              CloudAccountRepo.setActive(next.id, "agy");
+            }
+          } else {
+            CloudAccountRepo.setActive(next.id, target);
+          }
+        }
+        logger.info(`Tray: Switched ${target} to account ${next.email}`);
+
+        await syncTrayWithActiveAccount();
+
+        if (globalMainWindow && !globalMainWindow.isDestroyed()) {
+          globalMainWindow.webContents.send("tray://account-switched", {
+            accountId: next.id,
+            target,
+          });
+        }
+      } catch (e) {
+        logger.error(`Tray: Switch account failed for target ${target}`, e);
+      }
+    });
+  };
+
+  const handleDirectSwitch = async (
+    accountId: string,
+    target: AntigravityAppTarget,
+  ) => {
+    if (!isAntigravityTargetInstalled(target)) {
+      logger.warn(
+        `Tray: Cannot switch target ${target} because it is not installed`,
+      );
+      return;
+    }
+
+    await runWithSwitchGuard("cloud-account-switch", async () => {
+      try {
+        const switchAccount = await resolveAccountSwitcher();
+        if (switchAccount) {
+          await switchAccount(accountId, target);
+        } else {
+          CloudAccountRepo.setActive(accountId, target);
+        }
+        logger.info(
+          `Tray: Directly switched ${target} to account ${accountId}`,
+        );
+
+        await syncTrayWithActiveAccount();
+
+        if (globalMainWindow && !globalMainWindow.isDestroyed()) {
+          globalMainWindow.webContents.send("tray://account-switched", {
+            accountId,
+            target,
+          });
+        }
+      } catch (e) {
+        logger.error(`Tray: Direct switch failed for target ${target}`, e);
+      }
+    });
+  };
+
+  const accountsForSubmenu =
+    lastAccountsList.length > 0 ? lastAccountsList : account ? [account] : [];
+
+  const isClassicInstalled = isAntigravityTargetInstalled("classic");
+  const isIdeInstalled = isAntigravityTargetInstalled("ide");
+  const isAgyInstalled = isAntigravityTargetInstalled("agy");
+
   const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: currentLabel,
-      enabled: false,
-    },
+    ...headerItems,
     ...quotaLines.map((line) => ({ label: line, enabled: false })),
     { type: "separator" },
     {
-      label: texts.switch_next,
+      label: texts.switch_next_all,
+      accelerator: process.platform === "darwin" ? "Cmd+N" : "Ctrl+N",
       click: async () => {
-        if (isSwitchingAccount) {
-          logger.info(
-            "Tray: Switch account dropped (concurrent switch in progress)",
-          );
-          return;
-        }
-        isSwitchingAccount = true;
-        try {
-          const accounts = await CloudAccountRepo.getAccounts();
-          if (accounts.length === 0) return;
-
-          const current = accounts.find((a) => a.is_active);
-          let next: CloudAccount | null = null;
-          if (current) {
-            next = await AutoSwitchService.findBestAccount(current.id);
-          } else {
-            next = await AutoSwitchService.findBestAccount("");
-          }
-
-          // Fallback to deterministic round robin if all null
-          if (!next) {
-            let nextIndex = 0;
-            if (current) {
-              const idx = accounts.findIndex((a) => a.id === current.id);
-              nextIndex = (idx + 1) % accounts.length;
-            }
-            next = accounts[nextIndex];
-          }
-
-          if (!next) return;
-
-          const switchAccount = await resolveAccountSwitcher();
-          if (switchAccount) {
-            await switchAccount(next.id);
-          } else {
-            CloudAccountRepo.setActive(next.id);
-          }
-          logger.info(`Tray: Switched to account ${next.email}`);
-
-          const updatedNext =
-            (await CloudAccountRepo.getAccount(next.id)) ?? next;
-          updateTrayMenu(updatedNext, lastLanguage);
-
-          if (globalMainWindow && !globalMainWindow.isDestroyed()) {
-            globalMainWindow.webContents.send(
-              "tray://account-switched",
-              next.id,
-            );
-          }
-        } catch (e) {
-          logger.error("Tray: Switch account failed", e);
-        } finally {
-          isSwitchingAccount = false;
-        }
+        await handleTraySwitch("all");
       },
+    },
+    {
+      label: texts.switch_target_submenu,
+      submenu: [
+        {
+          label: isClassicInstalled
+            ? "Antigravity App"
+            : `Antigravity App (${texts.not_installed})`,
+          enabled: isClassicInstalled,
+          submenu: isClassicInstalled
+            ? [
+                {
+                  label: texts.switch_next_app,
+                  click: async () => {
+                    await handleTraySwitch("classic");
+                  },
+                },
+                ...(accountsForSubmenu.length > 0
+                  ? [{ type: "separator" as const }]
+                  : []),
+                ...accountsForSubmenu.map((acc) => ({
+                  label: middleTruncate(acc.email, 24),
+                  type: "checkbox" as const,
+                  checked: targets.classic?.id === acc.id,
+                  click: async () => {
+                    await handleDirectSwitch(acc.id, "classic");
+                  },
+                })),
+              ]
+            : undefined,
+        },
+        {
+          label: isIdeInstalled
+            ? "Antigravity IDE"
+            : `Antigravity IDE (${texts.not_installed})`,
+          enabled: isIdeInstalled,
+          submenu: isIdeInstalled
+            ? [
+                {
+                  label: texts.switch_next_ide,
+                  click: async () => {
+                    await handleTraySwitch("ide");
+                  },
+                },
+                ...(accountsForSubmenu.length > 0
+                  ? [{ type: "separator" as const }]
+                  : []),
+                ...accountsForSubmenu.map((acc) => ({
+                  label: middleTruncate(acc.email, 24),
+                  type: "checkbox" as const,
+                  checked: targets.ide?.id === acc.id,
+                  click: async () => {
+                    await handleDirectSwitch(acc.id, "ide");
+                  },
+                })),
+              ]
+            : undefined,
+        },
+        {
+          label: isAgyInstalled
+            ? "Antigravity CLI"
+            : `Antigravity CLI (${texts.not_installed})`,
+          enabled: isAgyInstalled,
+          submenu: isAgyInstalled
+            ? [
+                {
+                  label: texts.switch_next_cli,
+                  click: async () => {
+                    await handleTraySwitch("agy");
+                  },
+                },
+                ...(accountsForSubmenu.length > 0
+                  ? [{ type: "separator" as const }]
+                  : []),
+                ...accountsForSubmenu.map((acc) => ({
+                  label: middleTruncate(acc.email, 24),
+                  type: "checkbox" as const,
+                  checked: targets.agy?.id === acc.id,
+                  click: async () => {
+                    await handleDirectSwitch(acc.id, "agy");
+                  },
+                })),
+              ]
+            : undefined,
+        },
+      ],
     },
     {
       label: texts.refresh_current,
@@ -437,7 +781,8 @@ export function destroyTray() {
   inFlightSync = null;
   hasPendingSync = false;
   isRefreshingQuota = false;
-  isSwitchingAccount = false;
+  lastTargetAccounts = null;
+  lastAccountsList = [];
   registeredActions = {};
   onQuitRequested = null;
   if (tray) {

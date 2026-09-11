@@ -31,6 +31,22 @@ const fr = {
       "Le CLI cloudflared n est pas installe sur cet ordinateur",
     wifi_network: "Wi-Fi",
     local_network: "Local",
+    service_relay: "Serveur Relay",
+    service_tunnel: "Tunnel Cloudflare",
+    service_app: "Antigravity 2.0 (App)",
+    service_ide: "Antigravity IDE",
+    service_cli: "Antigravity CLI (agy)",
+    tooltips: {
+      appNotInstalled:
+        "L application de bureau Antigravity 2.0 n est pas detectee sur ce systeme",
+      ideNotInstalled: "Antigravity IDE n est pas detecte sur ce systeme",
+      cliNotInstalled:
+        "L executable Antigravity CLI (agy) est introuvable dans PATH ou les dossiers standards",
+      tunnelNotInstalled:
+        "Le CLI cloudflared n est pas installe sur cet ordinateur",
+      cliIdleGuidance:
+        "Executez directement depuis le terminal via 'agy <commande>'",
+    },
   },
   action: {
     stop: "Arreter",
@@ -145,6 +161,14 @@ const fr = {
     upstreamOffline: "Hors ligne",
     startFailed: "Échec du démarrage du serveur relais : {{error}}",
     stopFailed: "Échec de l'arrêt du serveur relais : {{error}}",
+    mirrorBoundary: {
+      title: "Avis sur le perimetre de Remote Mirror",
+      badge: "Bureau et IDE uniquement",
+      description:
+        "Mobile Remote Mirror diffuse uniquement les sessions Antigravity IDE et l application de bureau Antigravity 2.0. Antigravity CLI (agy) s execute exclusivement dans votre terminal et ne peut pas etre diffuse sur les appareils mobiles compagnons.",
+      callout:
+        "Le terminal CLI (agy) fonctionne directement sur cet hote et n est pas diffuse sur les appareils mobiles.",
+    },
   },
   tunnel: {
     title: "Tunnel rapide Cloudflare",
@@ -222,6 +246,8 @@ const fr = {
       "Cette clé d'appairage a déjà été utilisée par un autre appareil. Veuillez demander une nouvelle clé au host desktop.",
     keyInvalidError:
       "Clé d'appairage invalide. Veuillez vérifier la clé active sur votre tableau de bord desktop.",
+    platformScopeNotice:
+      "Le compagnon mobile diffuse uniquement les sessions Antigravity IDE et Desktop App. Le terminal CLI (agy) n est pas pris en charge.",
   },
   sessions: {
     title: "Sessions mobiles connectées",
@@ -293,6 +319,12 @@ const fr = {
     switchedTitle: "Compte bascule",
     switchedDescription:
       "Compte actif bascule vers {{email}} via la barre d etat.",
+    switchedAllTitle: "Tous les environnements bascules",
+    switchedAllDescription:
+      "Tous les environnements ont ete bascules vers {{email}} via la zone de notification.",
+    switchedTargetTitle: "Compte bascule",
+    switchedTargetDescription:
+      "L environnement {{target}} a ete bascule vers {{email}} via la zone de notification.",
   },
   editionSelection: {
     title: "Choisissez votre edition Antigravity",
@@ -617,6 +649,56 @@ const fr = {
       verify: "Verifier et ajouter",
     },
     localImport: en.cloud.localImport,
+    target: {
+      classic: "Application Antigravity",
+      classicShort: "App",
+      ide: "Antigravity IDE",
+      ideShort: "IDE",
+      cli: "Antigravity CLI",
+      cliShort: "CLI",
+      agy: "Antigravity CLI",
+      agyShort: "CLI",
+    },
+    switch: {
+      targetAll: "Basculer pour tous les environnements",
+      targetAllDesc:
+        "Synchronisez les identifiants sur App, IDE et CLI en un seul clic",
+      targetAllShort: "Tout basculer",
+      activeAll: "Actif partout",
+      activeAllAria: "Actif sur tous les environnements: App, IDE et CLI",
+      trigger: "Basculer",
+      triggerAria: "Basculer le compte actif pour {{email}}",
+      menuTitle: "Selectionner l environnement cible",
+      switchToTarget: "Basculer pour {{target}}",
+      activeBadge: "Actif",
+      currentlyActiveAria: "{{target}} est actuellement actif",
+      switching: "Bascule en cours...",
+      targetNotInstalled: "{{target}} n est pas installe sur ce systeme",
+      successAllToast: {
+        title: "Tous les environnements bascules",
+        description: "Tous les environnements ont ete bascules vers {{email}}.",
+      },
+      partialFailureToast: {
+        title: "Bascule partielle terminee",
+        description:
+          "{{successCount}} environnements sur {{totalCount}} bascules vers {{email}}. Echec pour {{failedTargets}}: {{error}}",
+      },
+      failureAllToast: {
+        title: "Echec de bascule",
+        description: "Impossible de basculer les environnements: {{error}}",
+      },
+      noticeRestarted: "Identifiants appliques. {{target}} redemarre.",
+      noticeInjectedOnDisk:
+        "Identifiants mis a jour sur le disque pour {{target}}. Les modifications prendront effet au prochain lancement.",
+      noticeCliUpdated:
+        "Identifiants CLI mis a jour. Pret pour votre prochaine commande de terminal.",
+      noticeBatchAllRestarted:
+        "Identifiants appliques. Les environnements en cours d execution ont ete redemarres.",
+      noticeBatchAllInjected:
+        "Identifiants mis a jour sur le disque pour tous les environnements. Les modifications prendront effet au prochain lancement.",
+      noticeBatchMixed:
+        "Identifiants mis a jour: redemarrage de {{restartedTargets}}, mise a jour sur le disque pour {{injectedTargets}}.",
+    },
     card: {
       active: "Actif",
       use: "Utiliser",

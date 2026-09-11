@@ -29,6 +29,20 @@ const ru = {
       "CLI cloudflared не установлен на этом компьютере",
     wifi_network: "Wi-Fi",
     local_network: "Локальный",
+    service_relay: "Сервер Relay",
+    service_tunnel: "Туннель Cloudflare",
+    service_app: "Antigravity 2.0 (Приложение)",
+    service_ide: "Antigravity IDE",
+    service_cli: "Antigravity CLI (agy)",
+    tooltips: {
+      appNotInstalled:
+        "Настольное приложение Antigravity 2.0 не обнаружено в этой системе",
+      ideNotInstalled: "Antigravity IDE не обнаружен в этой системе",
+      cliNotInstalled:
+        "Исполняемый файл Antigravity CLI (agy) не найден в PATH или стандартных каталогах",
+      tunnelNotInstalled: "CLI cloudflared не установлен на этом компьютере",
+      cliIdleGuidance: "Запускайте напрямую из терминала через 'agy <команда>'",
+    },
   },
   action: {
     stop: "Стоп",
@@ -140,6 +154,14 @@ const ru = {
     upstreamOffline: "Офлайн",
     startFailed: "Не удалось запустить relay-сервер: {{error}}",
     stopFailed: "Не удалось остановить relay-сервер: {{error}}",
+    mirrorBoundary: {
+      title: "Уведомление об области действия Remote Mirror",
+      badge: "Только настольное приложение и IDE",
+      description:
+        "Mobile Remote Mirror транслирует только сеансы Antigravity IDE и настольного приложения Antigravity 2.0. Antigravity CLI (agy) работает исключительно в терминале и не может отображаться на мобильных устройствах.",
+      callout:
+        "Терминальный CLI (agy) работает непосредственно на этом хосте и не транслируется на мобильные устройства.",
+    },
   },
   tunnel: {
     title: "Быстрый туннель Cloudflare",
@@ -214,6 +236,8 @@ const ru = {
       "Этот ключ сопряжения уже был использован другим устройством. Получите новый ключ на desktop-хосте.",
     keyInvalidError:
       "Недействительный ключ сопряжения. Проверьте активный ключ на панели управления desktop.",
+    platformScopeNotice:
+      "Мобильный компаньон транслирует только сеансы Antigravity IDE и настольного приложения. Терминальный CLI (agy) не поддерживается.",
   },
   sessions: {
     title: "Подключенные сессии телефонов",
@@ -285,6 +309,12 @@ const ru = {
     switchedTitle: "Аккаунт переключен",
     switchedDescription:
       "Активный аккаунт переключен на {{email}} через системный трей.",
+    switchedAllTitle: "Все среды переключены",
+    switchedAllDescription:
+      "Все среды переключены на {{email}} через системный трей.",
+    switchedTargetTitle: "Аккаунт переключен",
+    switchedTargetDescription:
+      "Среда {{target}} переключена на {{email}} через системный трей.",
   },
   editionSelection: {
     title: "Выберите версию Antigravity",
@@ -662,6 +692,57 @@ const ru = {
           "Не удалось завершить импорт локальных аккаунтов.",
         "internal-error": "Запрос на импорт локальных аккаунтов не удался.",
       },
+    },
+    target: {
+      classic: "Приложение Antigravity",
+      classicShort: "Приложение",
+      ide: "Antigravity IDE",
+      ideShort: "IDE",
+      cli: "Antigravity CLI",
+      cliShort: "CLI",
+      agy: "Antigravity CLI",
+      agyShort: "CLI",
+    },
+    switch: {
+      targetAll: "Переключить для всех сред",
+      targetAllDesc:
+        "Синхронизируйте учетные данные в приложении, IDE и CLI в один клик",
+      targetAllShort: "Переключить все",
+      activeAll: "Активен везде",
+      activeAllAria: "Активен во всех средах: приложении, IDE и CLI",
+      trigger: "Переключить",
+      triggerAria: "Переключить активный аккаунт для {{email}}",
+      menuTitle: "Выберите целевую среду",
+      switchToTarget: "Переключить для {{target}}",
+      activeBadge: "Активен",
+      currentlyActiveAria: "{{target}} в настоящее время активен",
+      switching: "Переключение...",
+      targetNotInstalled: "{{target}} не установлен в этой системе",
+      successAllToast: {
+        title: "Все среды переключены",
+        description: "Все среды успешно переключены на {{email}}.",
+      },
+      partialFailureToast: {
+        title: "Частичное переключение завершено",
+        description:
+          "Переключено {{successCount}} из {{totalCount}} сред на {{email}}. Ошибка для {{failedTargets}}: {{error}}",
+      },
+      failureAllToast: {
+        title: "Ошибка переключения",
+        description: "Не удалось переключить среды: {{error}}",
+      },
+      noticeRestarted:
+        "Учетные данные применены. Среда {{target}} перезапущена.",
+      noticeInjectedOnDisk:
+        "Учетные данные записаны на диск для {{target}}. Изменения вступят в силу при следующем запуске.",
+      noticeCliUpdated:
+        "Учетные данные CLI обновлены. Готово к следующей команде терминала.",
+      noticeBatchAllRestarted:
+        "Учетные данные применены. Запущенные среды перезапущены.",
+      noticeBatchAllInjected:
+        "Учетные данные записаны на диск для всех сред. Изменения вступят в силу при следующем запуске.",
+      noticeBatchMixed:
+        "Учетные данные обновлены: перезапущены {{restartedTargets}}, записаны на диск для {{injectedTargets}}.",
     },
     card: {
       active: "Активен",

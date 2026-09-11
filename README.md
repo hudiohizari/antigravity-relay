@@ -31,8 +31,8 @@ Resident in your macOS Menu Bar / Windows System Tray for instant background man
 
 ![System Tray Quick Switcher](images/tray-preview.png)
 
-- **One-Click Rotation**: Switch to the next available account in the pool (`⌘N` / Tray click) without interrupting your IDE.
-- **At-a-Glance Quota**: View 5h pool bottleneck and per-model quotas instantly.
+- **One-Click Rotation & Multi-Target Support**: Switch all targets at once (`⌘N` / Tray click) or rotate specific targets (App, IDE, CLI) without interrupting your workflow.
+- **At-a-Glance Quota**: View active target label, 5h pool bottleneck, and per-model quotas instantly.
 - **Background Persistence**: Minimizes seamlessly to tray with zero UI overhead.
 
 ---

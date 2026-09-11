@@ -7,7 +7,7 @@ import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarge
 
 export interface AccountSwitchedEvent {
   accountId: string;
-  target?: AntigravityAppTarget;
+  target?: AntigravityAppTarget | "all";
   account?: CloudAccount | null;
 }
 

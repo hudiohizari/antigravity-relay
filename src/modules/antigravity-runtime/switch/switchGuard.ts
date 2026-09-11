@@ -1,6 +1,7 @@
-import { logger } from '@/shared/logging/logger';
+import { AsyncLocalStorage } from "node:async_hooks";
+import { logger } from "@/shared/logging/logger";
 
-type SwitchOwner = 'local-account-switch' | 'cloud-account-switch';
+type SwitchOwner = "local-account-switch" | "cloud-account-switch";
 
 interface SwitchTask {
   owner: SwitchOwner;
@@ -9,6 +10,7 @@ interface SwitchTask {
   reject: (reason?: unknown) => void;
 }
 
+const switchStorage = new AsyncLocalStorage<SwitchOwner>();
 let activeSwitchOwner: SwitchOwner | null = null;
 const pendingQueue: SwitchTask[] = [];
 let processing = false;
@@ -28,7 +30,7 @@ function processQueue(): void {
   logger.info(`Acquired switch guard: ${nextTask.owner}`);
 
   Promise.resolve()
-    .then(nextTask.action)
+    .then(() => switchStorage.run(nextTask.owner, nextTask.action))
     .then((result) => {
       nextTask.resolve(result);
     })
@@ -47,6 +49,16 @@ export async function runWithSwitchGuard<T>(
   owner: SwitchOwner,
   action: () => Promise<T>,
 ): Promise<T> {
+  const currentOwner = switchStorage.getStore();
+  if (currentOwner === owner) {
+    return await action();
+  }
+  if (currentOwner && currentOwner !== owner) {
+    throw new Error(
+      `Cross-owner switch lock conflict: active switch '${currentOwner}' cannot nest switch '${owner}'`,
+    );
+  }
+
   return await new Promise<T>((resolve, reject) => {
     pendingQueue.push({
       owner,
@@ -57,7 +69,7 @@ export async function runWithSwitchGuard<T>(
       reject,
     });
     logger.info(
-      `Queued switch request: ${owner} (active=${activeSwitchOwner || 'none'}, pending=${pendingQueue.length})`,
+      `Queued switch request: ${owner} (active=${activeSwitchOwner || "none"}, pending=${pendingQueue.length})`,
     );
     processQueue();
   });

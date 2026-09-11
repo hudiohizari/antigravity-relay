@@ -28,6 +28,20 @@ const tr = {
     tunnel_not_installed_tooltip: "cloudflared CLI bu bilgisayarda yüklü değil",
     wifi_network: "Wi-Fi",
     local_network: "Yerel",
+    service_relay: "Relay Sunucusu",
+    service_tunnel: "Cloudflare Tüneli",
+    service_app: "Antigravity 2.0 (Uygulama)",
+    service_ide: "Antigravity IDE",
+    service_cli: "Antigravity CLI (agy)",
+    tooltips: {
+      appNotInstalled:
+        "Antigravity 2.0 masaüstü uygulaması bu sistemde algılanmadı",
+      ideNotInstalled: "Antigravity IDE bu sistemde algılanmadı",
+      cliNotInstalled:
+        "Antigravity CLI (agy) çalıştırılabilir dosyası PATH veya standart dizinlerde bulunamadı",
+      tunnelNotInstalled: "cloudflared CLI bu bilgisayarda yüklü değil",
+      cliIdleGuidance: "Doğrudan terminalden 'agy <komut>' ile çalıştırın",
+    },
   },
   action: {
     stop: "Durdur",
@@ -139,6 +153,14 @@ const tr = {
     upstreamOffline: "Çevrimdışı",
     startFailed: "Relay sunucusu başlatılamadı: {{error}}",
     stopFailed: "Relay sunucusu durdurulamadı: {{error}}",
+    mirrorBoundary: {
+      title: "Remote Mirror Kapsam Bildirimi",
+      badge: "Yalnızca Masaüstü ve IDE",
+      description:
+        "Mobile Remote Mirror yalnızca Antigravity IDE ve Antigravity 2.0 Masaüstü Uygulama oturumlarını aktarır. Antigravity CLI (agy) yalnızca terminalinizde çalışır ve mobil cihazlara yansıtılamaz.",
+      callout:
+        "Terminal CLI (agy) doğrudan bu ana bilgisayarda çalışır ve mobil cihazlara yansıtılmaz.",
+    },
   },
   tunnel: {
     title: "Cloudflare Hızlı Tünel",
@@ -212,6 +234,8 @@ const tr = {
       "Bu eşleştirme anahtarı başka bir cihaz tarafından kullanıldı. Lütfen masaüstü ana bilgisayarından yeni bir anahtar alın.",
     keyInvalidError:
       "Geçersiz eşleştirme anahtarı. Lütfen masaüstü panelindeki etkin anahtarı doğrulayın.",
+    platformScopeNotice:
+      "Mobil eşlikçi yalnızca Antigravity IDE ve Masaüstü Uygulama oturumlarını yansıtır. Terminal CLI (agy) desteklenmez.",
   },
   sessions: {
     title: "Bağlı Telefon Oturumları",
@@ -283,6 +307,12 @@ const tr = {
     switchedTitle: "Hesap Değiştirildi",
     switchedDescription:
       "Etkin hesap sistem tepsisi üzerinden {{email}} olarak değiştirildi.",
+    switchedAllTitle: "Tüm Ortamlar Değiştirildi",
+    switchedAllDescription:
+      "Sistem tepsisi üzerinden tüm ortamlar {{email}} hesabına geçirildi.",
+    switchedTargetTitle: "Hesap Değiştirildi",
+    switchedTargetDescription:
+      "Sistem tepsisi üzerinden {{target}} ortamı {{email}} hesabına geçirildi.",
   },
   editionSelection: {
     title: "Antigravity Sürümünüzü Seçin",
@@ -663,6 +693,57 @@ const tr = {
         "confirmation-failed": "Yerel hesap içe aktarma tamamlanamadı.",
         "internal-error": "Yerel hesap içe aktarma isteği başarısız oldu.",
       },
+    },
+    target: {
+      classic: "Antigravity Uygulaması",
+      classicShort: "Uygulama",
+      ide: "Antigravity IDE",
+      ideShort: "IDE",
+      cli: "Antigravity CLI",
+      cliShort: "CLI",
+      agy: "Antigravity CLI",
+      agyShort: "CLI",
+    },
+    switch: {
+      targetAll: "Tüm Ortamlar İçin Geçiş Yap",
+      targetAllDesc:
+        "Kimlik bilgilerini Uygulama, IDE ve CLI arasında tek tıklamayla eşitleyin",
+      targetAllShort: "Tümünü Değiştir",
+      activeAll: "Tümünde Etkin",
+      activeAllAria: "Tüm ortamlarda etkin: Uygulama, IDE ve CLI",
+      trigger: "Değiştir",
+      triggerAria: "{{email}} için etkin hesabı değiştir",
+      menuTitle: "Hedef Ortamı Seçin",
+      switchToTarget: "{{target}} için geçiş yap",
+      activeBadge: "Etkin",
+      currentlyActiveAria: "{{target}} şu anda etkin",
+      switching: "Değiştiriliyor...",
+      targetNotInstalled: "{{target}} bu sistemde yüklü değil",
+      successAllToast: {
+        title: "Tüm Ortamlar Değiştirildi",
+        description: "Tüm ortamlar başarıyla {{email}} hesabına geçirildi.",
+      },
+      partialFailureToast: {
+        title: "Kısmi Geçiş Tamamlandı",
+        description:
+          "{{totalCount}} ortamdan {{successCount}} tanesi {{email}} hesabına geçirildi. Başarısız olanlar {{failedTargets}}: {{error}}",
+      },
+      failureAllToast: {
+        title: "Geçiş Başarısız",
+        description: "Ortamlar değiştirilemedi: {{error}}",
+      },
+      noticeRestarted:
+        "Kimlik bilgileri uygulandı. {{target}} yeniden başlatıldı.",
+      noticeInjectedOnDisk:
+        "{{target}} için kimlik bilgileri diske yazıldı. Değişiklikler bir sonraki başlatmada geçerli olacaktır.",
+      noticeCliUpdated:
+        "CLI kimlik bilgileri güncellendi. Bir sonraki terminal komutunuz için hazır.",
+      noticeBatchAllRestarted:
+        "Kimlik bilgileri uygulandı. Çalışan ortamlar yeniden başlatıldı.",
+      noticeBatchAllInjected:
+        "Tüm ortamlar için kimlik bilgileri diske yazıldı. Değişiklikler bir sonraki başlatmada geçerli olacaktır.",
+      noticeBatchMixed:
+        "Kimlik bilgileri güncellendi: {{restartedTargets}} yeniden başlatıldı, {{injectedTargets}} için diske yazıldı.",
     },
     card: {
       active: "Aktif",

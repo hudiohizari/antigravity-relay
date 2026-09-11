@@ -1473,6 +1473,7 @@ describe("cloud switch fail-fast path", () => {
         CloudAccountSettingsStore: {
           getSetting: vi.fn(() => "en"),
           setActiveForTarget: vi.fn(),
+          evictAllMissingTargets: vi.fn(),
         },
       }),
     );
@@ -1522,6 +1523,7 @@ describe("cloud switch fail-fast path", () => {
     vi.doMock("../../shared/platform/paths", () => ({
       getAntigravityDbPaths: () => [],
       refreshAntigravityProcessCache: refreshAntigravityProcessCacheMock,
+      isAntigravityTargetInstalled: () => true,
     }));
 
     vi.doMock("../../shared/logging/logger", () => ({
@@ -1571,7 +1573,7 @@ describe("cloud switch fail-fast path", () => {
     expect(applyDeviceProfileMock).toHaveBeenCalledTimes(1);
     expect(applyDeviceProfileMock).toHaveBeenCalledWith(
       account.device_profile,
-      undefined,
+      "classic",
     );
     expect(startAntigravityMock).not.toHaveBeenCalled();
     expect(recordSwitchFailureMock).toHaveBeenCalledWith(
@@ -1646,6 +1648,7 @@ describe("cloud oauth client key backfill", () => {
             return defaultValue;
           }),
           setSetting: vi.fn(),
+          evictAllMissingTargets: vi.fn(),
         },
       }),
     );
@@ -1770,6 +1773,7 @@ describe("cloud oauth client key backfill", () => {
             return defaultValue;
           }),
           setSetting: vi.fn(),
+          evictAllMissingTargets: vi.fn(),
         },
       }),
     );
@@ -1892,6 +1896,7 @@ describe("cloud oauth client key backfill", () => {
             return defaultValue;
           }),
           setSetting: setSettingMock,
+          evictAllMissingTargets: vi.fn(),
         },
       }),
     );
@@ -2007,6 +2012,7 @@ describe("cloud oauth client key backfill", () => {
             return defaultValue;
           }),
           setSetting: setSettingMock,
+          evictAllMissingTargets: vi.fn(),
         },
       }),
     );

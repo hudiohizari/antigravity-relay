@@ -34,7 +34,7 @@ export function refreshAccountQuota(input: { accountId: string }) {
 
 export function switchCloudAccount(input: {
   accountId: string;
-  appTarget?: AntigravityAppTarget;
+  appTarget?: AntigravityAppTarget | "all";
 }) {
   return ipc.client.cloud.switchCloudAccount(input);
 }

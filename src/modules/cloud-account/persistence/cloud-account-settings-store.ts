@@ -1,14 +1,15 @@
-import { eq } from 'drizzle-orm';
-import { z } from 'zod';
+import { eq } from "drizzle-orm";
+import { z } from "zod";
 import {
   type AntigravityAppTarget,
   resolveAntigravityAppTarget,
-} from '@/shared/platform/antigravityAppTarget';
-import { logger } from '@/shared/logging/logger';
-import { settings } from '@/shared/persistence/database/schema';
-import { getCloudDb } from './cloud-account-db';
+} from "@/shared/platform/antigravityAppTarget";
+import { isAntigravityTargetInstalled } from "@/shared/platform/paths";
+import { logger } from "@/shared/logging/logger";
+import { settings } from "@/shared/persistence/database/schema";
+import { getCloudDb } from "./cloud-account-db";
 
-const ACTIVE_ACCOUNT_SETTING_PREFIX = 'active_cloud_account';
+const ACTIVE_ACCOUNT_SETTING_PREFIX = "active_cloud_account";
 const StringSettingSchema = z.string();
 
 export class CloudAccountSettingsStore {
@@ -45,7 +46,10 @@ export class CloudAccountSettingsStore {
       const rawSetting: unknown = JSON.parse(row.value);
       const parsed = schema.safeParse(rawSetting);
       if (!parsed.success) {
-        logger.warn(`Ignored invalid setting ${key}; using default value`, parsed.error);
+        logger.warn(
+          `Ignored invalid setting ${key}; using default value`,
+          parsed.error,
+        );
         return defaultValue;
       }
       return parsed.data;
@@ -74,21 +78,82 @@ export class CloudAccountSettingsStore {
     }
   }
 
-  static setActiveForTarget(target: AntigravityAppTarget | undefined, id: string): void {
+  static setActiveForTarget(
+    target: AntigravityAppTarget | undefined,
+    id: string,
+  ): void {
     const normalizedTarget = resolveAntigravityAppTarget(target);
     this.setSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.${normalizedTarget}`, id);
   }
 
-  static getActiveAccountIdForTarget(target: AntigravityAppTarget | undefined): string {
+  static getActiveAccountIdForTarget(
+    target: AntigravityAppTarget | undefined,
+  ): string {
     const normalizedTarget = resolveAntigravityAppTarget(target);
     const key = `${ACTIVE_ACCOUNT_SETTING_PREFIX}.${normalizedTarget}`;
-    const value = this.getSetting(key, '', StringSettingSchema);
+    const value = this.getSetting(key, "", StringSettingSchema);
 
-    if (typeof value !== 'string') {
-      logger.warn(`Ignored invalid active account setting ${key}: expected a string`);
-      return '';
+    if (typeof value !== "string") {
+      logger.warn(
+        `Ignored invalid active account setting ${key}: expected a string`,
+      );
+      return "";
     }
 
     return value.trim();
+  }
+
+  static deleteSetting(key: string): void {
+    const { raw, orm } = getCloudDb();
+    try {
+      orm.delete(settings).where(eq(settings.key, key)).run();
+    } finally {
+      raw.close();
+    }
+  }
+
+  static clearActiveForTarget(target: AntigravityAppTarget | undefined): void {
+    const normalizedTarget = resolveAntigravityAppTarget(target);
+    this.deleteSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.${normalizedTarget}`);
+  }
+
+  static evictIfTargetMissing(
+    target: AntigravityAppTarget | undefined,
+  ): boolean {
+    const normalizedTarget = resolveAntigravityAppTarget(target);
+    const currentActiveId = this.getActiveAccountIdForTarget(normalizedTarget);
+    if (!currentActiveId) {
+      return false;
+    }
+
+    try {
+      const isInstalled = isAntigravityTargetInstalled(normalizedTarget);
+      if (!isInstalled) {
+        logger.info(
+          `Evicted stale active account (${currentActiveId}) for uninstalled target: ${normalizedTarget}`,
+        );
+        this.clearActiveForTarget(normalizedTarget);
+        return true;
+      }
+    } catch (error) {
+      logger.warn(
+        `Preserved active account setting for target ${normalizedTarget} due to transient filesystem error`,
+        error,
+      );
+      return false;
+    }
+
+    return false;
+  }
+
+  static evictAllMissingTargets(): AntigravityAppTarget[] {
+    const targets: AntigravityAppTarget[] = ["classic", "ide", "agy"];
+    const evicted: AntigravityAppTarget[] = [];
+    for (const target of targets) {
+      if (this.evictIfTargetMissing(target)) {
+        evicted.push(target);
+      }
+    }
+    return evicted;
   }
 }

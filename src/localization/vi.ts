@@ -29,6 +29,20 @@ const vi = {
       "CLI cloudflared chưa được cài đặt trên máy tính này",
     wifi_network: "Wi-Fi",
     local_network: "Cục bộ",
+    service_relay: "Máy chủ Relay",
+    service_tunnel: "Đường hầm Cloudflare",
+    service_app: "Antigravity 2.0 (App)",
+    service_ide: "Antigravity IDE",
+    service_cli: "Antigravity CLI (agy)",
+    tooltips: {
+      appNotInstalled:
+        "Không tìm thấy ứng dụng máy tính Antigravity 2.0 trên hệ thống này",
+      ideNotInstalled: "Không tìm thấy Antigravity IDE trên hệ thống này",
+      cliNotInstalled:
+        "Không tìm thấy tệp thực thi Antigravity CLI (agy) trong PATH hoặc các thư mục chuẩn",
+      tunnelNotInstalled: "CLI cloudflared chưa được cài đặt trên máy tính này",
+      cliIdleGuidance: "Chạy trực tiếp từ terminal thông qua 'agy <lệnh>'",
+    },
   },
   action: {
     stop: "Dừng",
@@ -141,6 +155,14 @@ const vi = {
     upstreamOffline: "Ngoại tuyến",
     startFailed: "Không thể khởi động máy chủ relay: {{error}}",
     stopFailed: "Không thể dừng máy chủ relay: {{error}}",
+    mirrorBoundary: {
+      title: "Thông báo phạm vi Remote Mirror",
+      badge: "Chỉ dành cho Desktop và IDE",
+      description:
+        "Mobile Remote Mirror chỉ truyền các phiên Antigravity IDE và Ứng dụng Desktop Antigravity 2.0. Antigravity CLI (agy) chỉ chạy trong terminal và không thể phản chiếu tới thiết bị di động đồng hành.",
+      callout:
+        "Terminal CLI (agy) hoạt động trực tiếp trên máy chủ này và không được phản chiếu tới thiết bị di động.",
+    },
   },
   tunnel: {
     title: "Cloudflare Quick Tunnel",
@@ -214,6 +236,8 @@ const vi = {
       "Khóa ghép nối này đã được sử dụng bởi thiết bị khác. Vui lòng lấy khóa mới từ máy chủ desktop.",
     keyInvalidError:
       "Khóa ghép nối không hợp lệ. Vui lòng kiểm tra khóa đang hoạt động trên bảng điều khiển desktop.",
+    platformScopeNotice:
+      "Ứng dụng đồng hành di động chỉ phản chiếu các phiên Antigravity IDE và Desktop App. Không hỗ trợ Terminal CLI (agy).",
   },
   sessions: {
     title: "Phiên điện thoại đã kết nối",
@@ -285,6 +309,12 @@ const vi = {
     switchedTitle: "Đã chuyển tài khoản",
     switchedDescription:
       "Tài khoản hoạt động đã được chuyển sang {{email}} qua khay hệ thống.",
+    switchedAllTitle: "Đã chuyển tất cả môi trường",
+    switchedAllDescription:
+      "Đã chuyển tất cả môi trường sang {{email}} qua khay hệ thống.",
+    switchedTargetTitle: "Đã chuyển tài khoản",
+    switchedTargetDescription:
+      "Đã chuyển {{target}} sang {{email}} qua khay hệ thống.",
   },
   editionSelection: {
     title: "Chọn phiên bản Antigravity",
@@ -659,6 +689,57 @@ const vi = {
         "confirmation-failed": "Không thể hoàn tất việc nhập tài khoản cục bộ.",
         "internal-error": "Yêu cầu nhập tài khoản cục bộ thất bại.",
       },
+    },
+    target: {
+      classic: "Ứng dụng Antigravity",
+      classicShort: "App",
+      ide: "Antigravity IDE",
+      ideShort: "IDE",
+      cli: "Antigravity CLI",
+      cliShort: "CLI",
+      agy: "Antigravity CLI",
+      agyShort: "CLI",
+    },
+    switch: {
+      targetAll: "Chuyển đổi cho tất cả môi trường",
+      targetAllDesc:
+        "Đồng bộ hóa thông tin xác thực trên App, IDE và CLI trong một cú nhấp chuột",
+      targetAllShort: "Chuyển tất cả",
+      activeAll: "Hoạt động trên tất cả",
+      activeAllAria: "Hoạt động trên tất cả môi trường: App, IDE và CLI",
+      trigger: "Chuyển đổi",
+      triggerAria: "Chuyển tài khoản hoạt động cho {{email}}",
+      menuTitle: "Chọn môi trường mục tiêu",
+      switchToTarget: "Chuyển cho {{target}}",
+      activeBadge: "Hoạt động",
+      currentlyActiveAria: "{{target}} hiện đang hoạt động",
+      switching: "Đang chuyển...",
+      targetNotInstalled: "{{target}} chưa được cài đặt trên hệ thống này",
+      successAllToast: {
+        title: "Đã chuyển tất cả môi trường",
+        description: "Đã chuyển tất cả môi trường sang {{email}}.",
+      },
+      partialFailureToast: {
+        title: "Chuyển đổi một phần hoàn tất",
+        description:
+          "Đã chuyển {{successCount}} trên {{totalCount}} môi trường sang {{email}}. Thất bại cho {{failedTargets}}: {{error}}",
+      },
+      failureAllToast: {
+        title: "Chuyển đổi thất bại",
+        description: "Không thể chuyển đổi môi trường: {{error}}",
+      },
+      noticeRestarted:
+        "Đã áp dụng thông tin xác thực. Đã khởi động lại {{target}}.",
+      noticeInjectedOnDisk:
+        "Đã cập nhật thông tin xác thực trên đĩa cho {{target}}. Thay đổi có hiệu lực vào lần khởi chạy tiếp theo.",
+      noticeCliUpdated:
+        "Thông tin xác thực CLI đã được cập nhật. Sẵn sàng cho lệnh terminal tiếp theo của bạn.",
+      noticeBatchAllRestarted:
+        "Đã áp dụng thông tin xác thực. Các môi trường đang chạy đã được khởi động lại.",
+      noticeBatchAllInjected:
+        "Đã cập nhật thông tin xác thực trên đĩa cho tất cả môi trường. Thay đổi có hiệu lực vào lần khởi chạy tiếp theo.",
+      noticeBatchMixed:
+        "Đã cập nhật thông tin xác thực: khởi động lại {{restartedTargets}}, cập nhật trên đĩa cho {{injectedTargets}}.",
     },
     card: {
       active: "Đang hoạt động",

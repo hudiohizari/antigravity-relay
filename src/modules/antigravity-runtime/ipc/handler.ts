@@ -6,6 +6,7 @@ import { isNumber, isString } from "lodash-es";
 import {
   type AntigravityProcessCandidate,
   getAntigravityExecutablePath,
+  getAntigravityTargetInstallationStatus,
   getConfiguredAntigravityArgs,
   isConfiguredTargetExecutableProcessCandidate,
   isTargetAntigravityExecutableProcessCandidate,
@@ -432,22 +433,49 @@ export async function isProcessRunning(
   }
 }
 
+export interface ProcessStatusResult {
+  target: AntigravityAppTarget;
+  isRunning: boolean;
+  isBinaryInstalled: boolean;
+  executablePath: string | null;
+}
+
+export async function getProcessStatus(
+  target?: AntigravityAppTarget | null,
+): Promise<ProcessStatusResult> {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  const isRunning = await isProcessRunning(resolvedTarget);
+  const installStatus = getAntigravityTargetInstallationStatus(resolvedTarget);
+
+  return {
+    target: resolvedTarget,
+    isRunning,
+    isBinaryInstalled: isRunning || installStatus.isInstalled,
+    executablePath: installStatus.executablePath,
+  };
+}
+
 /**
  * Closes the Antigravity process.
- * @param edition The IDE edition to close ('1.x' or '2.0'). Defaults to '1.x'.
- * @returns {boolean} True if the Antigravity process is running, false otherwise.
+ * @param target The target application to close ('classic', 'ide', or 'agy').
+ * @returns {Promise<void>}
  */
 export async function closeAntigravity(
   target?: AntigravityAppTarget | null,
 ): Promise<void> {
   const resolvedTarget = resolveAntigravityAppTarget(target);
-  const appName = resolvedTarget === "ide" ? "Antigravity IDE" : "Antigravity";
+  const appName =
+    resolvedTarget === "ide"
+      ? "Antigravity IDE"
+      : resolvedTarget === "agy"
+        ? "Antigravity CLI"
+        : "Antigravity";
   logger.info(`Closing ${appName}...`);
   const platform = process.platform;
 
   try {
     // Stage 1: Graceful Shutdown (Platform specific)
-    if (platform === "darwin") {
+    if (platform === "darwin" && resolvedTarget !== "agy") {
       // macOS: Use AppleScript to quit gracefully
       try {
         logger.info("Attempting graceful exit via AppleScript...");
@@ -692,6 +720,14 @@ export async function startAntigravity(
   useUri = true,
 ): Promise<void> {
   const resolvedTarget = resolveAntigravityAppTarget(target);
+  if (resolvedTarget === "agy") {
+    logger.warn(
+      "Antigravity CLI ('agy') cannot be started via GUI launcher. Run 'agy' commands in your terminal.",
+    );
+    throw new Error(
+      "CLI_TERMINAL_ONLY: Antigravity CLI is executed via terminal commands ('agy <command>') and cannot be started as a desktop background process.",
+    );
+  }
   const appName = resolvedTarget === "ide" ? "Antigravity IDE" : "Antigravity";
   const configuredArgs = getConfiguredAntigravityArgs(resolvedTarget);
   const shouldUseUri =

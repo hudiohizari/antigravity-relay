@@ -1,26 +1,26 @@
-import type { AntigravityAppTarget } from '@/shared/platform/antigravityAppTarget';
-import type { DeviceProfile } from '@/modules/identity-profile/types';
-import { logger } from '@/shared/logging/logger';
-import { refreshAntigravityProcessCache } from '@/shared/platform/paths';
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import type { DeviceProfile } from "@/modules/identity-profile/types";
+import { logger } from "@/shared/logging/logger";
+import { refreshAntigravityProcessCache } from "@/shared/platform/paths";
 import {
   closeAntigravity,
   isProcessRunning,
   startAntigravity,
   _waitForProcessExit,
-} from '@/modules/antigravity-runtime/ipc/handler';
+} from "@/modules/antigravity-runtime/ipc/handler";
 import {
   applyDeviceProfile,
   syncTelemetryServiceMachineIdValue,
-} from '@/modules/identity-profile/ipc/handler';
+} from "@/modules/identity-profile/ipc/handler";
 import {
   type SwitchFailureReason,
   recordSwitchFailure,
   recordSwitchSuccess,
-} from '@/modules/antigravity-runtime/switch/switchMetrics';
-import { withTimingTrace } from '@/shared/observability/timingTrace';
+} from "@/modules/antigravity-runtime/switch/switchMetrics";
+import { withTimingTrace } from "@/shared/observability/timingTrace";
 
 export interface SwitchFlowOptions {
-  scope: 'local' | 'cloud';
+  scope: "local" | "cloud";
   targetProfile: DeviceProfile | null;
   appTarget?: AntigravityAppTarget;
   applyFingerprint: boolean;
@@ -50,7 +50,7 @@ function applyDeviceProfileBestEffort(
     applyDeviceProfile(profile, appTarget);
   } catch (error) {
     logger.warn(
-      'Skipping device profile apply because credential-store-backed targets do not require storage.json',
+      "Skipping device profile apply because credential-store-backed targets do not require storage.json",
       error,
     );
   }
@@ -65,40 +65,61 @@ function syncTelemetryServiceMachineIdBestEffort(
   }
 
   try {
-    syncTelemetryServiceMachineIdValue(profile.macMachineId, undefined, appTarget);
+    syncTelemetryServiceMachineIdValue(
+      profile.macMachineId,
+      undefined,
+      appTarget,
+    );
   } catch (error) {
-    logger.warn('Skipping telemetry.serviceMachineId sync after SQLite token injection', error);
+    logger.warn(
+      "Skipping telemetry.serviceMachineId sync after SQLite token injection",
+      error,
+    );
   }
 }
 
-function toSwitchFailureReason(stage: string, error: unknown): SwitchFailureReason {
-  if (stage === 'close') {
-    return 'process_close_failed';
+function toSwitchFailureReason(
+  stage: string,
+  error: unknown,
+): SwitchFailureReason {
+  if (stage === "close") {
+    return "process_close_failed";
   }
-  if (stage === 'missing_profile') {
-    return 'missing_bound_profile';
+  if (stage === "missing_profile") {
+    return "missing_bound_profile";
   }
-  if (stage === 'apply') {
-    return 'apply_device_profile_failed';
+  if (stage === "apply") {
+    return "apply_device_profile_failed";
   }
-  if (stage === 'switch') {
-    return 'perform_switch_failed';
+  if (stage === "switch") {
+    return "perform_switch_failed";
   }
-  if (stage === 'start') {
-    return 'start_process_failed';
+  if (stage === "start") {
+    return "start_process_failed";
   }
 
   // Keep legacy compatibility with reason encoded in thrown errors.
-  if (error instanceof Error && error.message.includes('missing bound device profile')) {
-    return 'missing_bound_profile';
+  if (
+    error instanceof Error &&
+    error.message.includes("missing bound device profile")
+  ) {
+    return "missing_bound_profile";
   }
-  if (error instanceof Error && error.message.includes('device_apply_failed')) {
-    return 'apply_device_profile_failed';
+  if (error instanceof Error && error.message.includes("device_apply_failed")) {
+    return "apply_device_profile_failed";
   }
-  return 'unknown';
+  return "unknown";
 }
 
-export async function executeSwitchFlow(options: SwitchFlowOptions): Promise<void> {
+export interface SwitchFlowResult {
+  target: AntigravityAppTarget;
+  wasRunning: boolean;
+  restarted: boolean;
+}
+
+export async function executeSwitchFlow(
+  options: SwitchFlowOptions,
+): Promise<SwitchFlowResult> {
   const {
     scope,
     appTarget,
@@ -113,105 +134,128 @@ export async function executeSwitchFlow(options: SwitchFlowOptions): Promise<voi
 
   let failureReason: SwitchFailureReason | null = null;
   let waitExitTimedOut = false;
-  let stage = 'close';
-  const isCliTarget = appTarget === 'agy';
+  let stage = "close";
+  const isCliTarget = appTarget === "agy";
+  let flowResult: SwitchFlowResult = {
+    target: appTarget || "classic",
+    wasRunning: false,
+    restarted: false,
+  };
+
   await withTimingTrace(
-    'switch.execute',
+    "switch.execute",
     {
       scope,
-      appTarget: appTarget || 'classic',
+      appTarget: appTarget || "classic",
       processExitTimeoutMs,
     },
     async (trace) => {
       try {
         if (isCliTarget) {
-          logger.info('Skipping GUI process steps for agy CLI switch');
-          stage = 'switch';
-          await trace.phase('performSwitchMs', performSwitch);
+          logger.info("Skipping GUI process steps for agy CLI switch");
+          stage = "switch";
+          await trace.phase("performSwitchMs", performSwitch);
           if (applyFingerprint) {
-            stage = 'apply';
-            trace.phaseSync('applyProfileMs', () => {
+            stage = "apply";
+            trace.phaseSync("applyProfileMs", () => {
               applyDeviceProfileBestEffort(targetProfile, appTarget);
             });
           }
           if (afterSwitchSuccess) {
-            stage = 'after_success';
-            await trace.phase('afterSwitchSuccessMs', afterSwitchSuccess);
+            stage = "after_success";
+            await trace.phase("afterSwitchSuccessMs", afterSwitchSuccess);
           }
           recordSwitchSuccess(scope);
+          flowResult = { target: "agy", wasRunning: false, restarted: false };
           return;
         }
 
         if (!skipRefreshProcessCache) {
-          await trace.phase('refreshProcessCacheMs', async () => {
+          await trace.phase("refreshProcessCacheMs", async () => {
             await refreshAntigravityProcessCache(appTarget);
           });
         }
 
-        const isRunning = await trace.phase('isProcessRunningMs', async () =>
+        const isRunning = await trace.phase("isProcessRunningMs", async () =>
           isProcessRunning(appTarget),
         );
-        if (isRunning) {
-          await trace.phase('closeMs', async () => {
+        const wasRunning = Boolean(isRunning);
+        if (wasRunning) {
+          await trace.phase("closeMs", async () => {
             await closeAntigravity(appTarget);
           });
           try {
-            await trace.phase('waitExitMs', async () => {
+            await trace.phase("waitExitMs", async () => {
               await _waitForProcessExit(processExitTimeoutMs, 100, appTarget);
             });
           } catch (error) {
             waitExitTimedOut = true;
-            logger.warn('Process did not exit cleanly within timeout, but proceeding...', error);
+            logger.warn(
+              "Process did not exit cleanly within timeout, but proceeding...",
+              error,
+            );
           }
         }
 
         if (useCredentialStore) {
-          stage = 'switch';
-          await trace.phase('performSwitchMs', performSwitch);
+          stage = "switch";
+          await trace.phase("performSwitchMs", performSwitch);
           if (applyFingerprint) {
-            stage = 'apply';
+            stage = "apply";
             if (!targetProfile) {
-              stage = 'missing_profile';
-              throw new Error('Account has no bound identity profile');
+              stage = "missing_profile";
+              throw new Error("Account has no bound identity profile");
             }
-            trace.phaseSync('applyProfileMs', () => {
+            trace.phaseSync("applyProfileMs", () => {
               applyDeviceProfile(targetProfile, appTarget);
             });
           }
         } else {
           if (applyFingerprint) {
-            stage = 'apply';
+            stage = "apply";
             if (!targetProfile) {
-              stage = 'missing_profile';
-              throw new Error('Account has no bound identity profile');
+              stage = "missing_profile";
+              throw new Error("Account has no bound identity profile");
             }
-            trace.phaseSync('applyProfileMs', () => {
+            trace.phaseSync("applyProfileMs", () => {
               applyDeviceProfile(targetProfile, appTarget);
             });
           } else if (!applyFingerprint) {
             logger.warn(
-              'Identity profile apply is disabled by CRACK_IDENTITY_PROFILE_APPLY_ENABLED / CRACK_DEVICE_FINGERPRINT_ENABLED',
+              "Identity profile apply is disabled by CRACK_IDENTITY_PROFILE_APPLY_ENABLED / CRACK_DEVICE_FINGERPRINT_ENABLED",
             );
           }
 
-          stage = 'switch';
-          await trace.phase('performSwitchMs', performSwitch);
+          stage = "switch";
+          await trace.phase("performSwitchMs", performSwitch);
           if (applyFingerprint) {
-            trace.phaseSync('syncTelemetryServiceMachineIdMs', () => {
+            trace.phaseSync("syncTelemetryServiceMachineIdMs", () => {
               syncTelemetryServiceMachineIdBestEffort(targetProfile, appTarget);
             });
           }
         }
 
-        stage = 'start';
-        await trace.phase('startMs', async () => {
-          await startAntigravity(appTarget);
-        });
+        if (wasRunning) {
+          stage = "start";
+          await trace.phase("startMs", async () => {
+            await startAntigravity(appTarget);
+          });
+        } else {
+          logger.info(
+            `Skipping process launch for ${appTarget}: application was not running prior to switch`,
+          );
+        }
+
         if (afterSwitchSuccess) {
-          stage = 'after_success';
-          await trace.phase('afterSwitchSuccessMs', afterSwitchSuccess);
+          stage = "after_success";
+          await trace.phase("afterSwitchSuccessMs", afterSwitchSuccess);
         }
         recordSwitchSuccess(scope);
+        flowResult = {
+          target: appTarget || "classic",
+          wasRunning,
+          restarted: wasRunning,
+        };
       } catch (error) {
         const reason = toSwitchFailureReason(stage, error);
         const message = getErrorMessage(error);
@@ -226,4 +270,6 @@ export async function executeSwitchFlow(options: SwitchFlowOptions): Promise<voi
       failureReason,
     }),
   );
+
+  return flowResult;
 }

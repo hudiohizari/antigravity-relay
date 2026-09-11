@@ -51,6 +51,7 @@ import {
   RotateCw,
   AlertTriangle,
   ExternalLink,
+  Info,
   Shield,
   Loader2,
   Wifi,
@@ -1106,6 +1107,31 @@ export const RelayDashboard: React.FC = () => {
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
                   {t("pairing.scanTip")}
                 </p>
+              </div>
+
+              {/* PWA Remote Mirror Scope Callout */}
+              <div
+                role="region"
+                aria-label={t("relay.mirrorBoundary.title")}
+                className="w-full flex items-start gap-3 p-3 rounded-lg border border-sky-500/20 bg-sky-500/5 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300 text-xs leading-relaxed"
+              >
+                <Info className="h-4 w-4 shrink-0 mt-0.5 text-sky-600 dark:text-sky-400" />
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground">
+                      {t("relay.mirrorBoundary.title")}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 h-4 border-sky-500/30 text-sky-700 dark:text-sky-300"
+                    >
+                      {t("relay.mirrorBoundary.badge")}
+                    </Badge>
+                  </div>
+                  <p className="text-muted-foreground">
+                    {t("pairing.platformScopeNotice")}
+                  </p>
+                </div>
               </div>
 
               {isRelayRunning && !isTunnelConnected && (
