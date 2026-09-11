@@ -242,7 +242,7 @@ export function CloudAccountToolbar({
         disabled={isSyncPending}
         title={t("cloud.syncFromAntigravity")}
         className="cursor-pointer"
-        onClick={() => onSyncLocal("classic")}
+        onClick={() => onSyncLocal("app")}
       >
         <Download
           className={`mr-2 h-4 w-4 ${isSyncPending ? "animate-bounce" : ""}`}

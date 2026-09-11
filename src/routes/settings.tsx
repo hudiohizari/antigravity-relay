@@ -109,7 +109,7 @@ function SettingsPage() {
   };
 
   const handleSelectAntigravityExecutable = async () => {
-    const selectedPath = await selectAntigravityExecutable("classic");
+    const selectedPath = await selectAntigravityExecutable("app");
     if (selectedPath) {
       await saveAntigravityExecutable(selectedPath);
     }
@@ -127,7 +127,7 @@ function SettingsPage() {
   };
 
   const handleDetectAntigravityArgs = async () => {
-    const detectedArgs = await getAntigravityArgs("classic");
+    const detectedArgs = await getAntigravityArgs("app");
     const nextValue = detectedArgs.join(" ");
     setAntigravityArgs(nextValue);
     if (config) {

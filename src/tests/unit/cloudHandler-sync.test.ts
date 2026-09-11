@@ -1573,7 +1573,7 @@ describe("cloud switch fail-fast path", () => {
     expect(applyDeviceProfileMock).toHaveBeenCalledTimes(1);
     expect(applyDeviceProfileMock).toHaveBeenCalledWith(
       account.device_profile,
-      "classic",
+      "app",
     );
     expect(startAntigravityMock).not.toHaveBeenCalled();
     expect(recordSwitchFailureMock).toHaveBeenCalledWith(

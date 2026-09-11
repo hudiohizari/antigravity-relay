@@ -1,11 +1,11 @@
-import { z } from 'zod';
+import { z } from "zod";
 import {
   DeviceProfileSchema,
   DeviceProfileVersionSchema,
   type DeviceProfile,
   type DeviceProfileVersion,
-} from '@/modules/identity-profile/types';
-import { isValidProxyUrl } from '@/shared/utils/url';
+} from "@/modules/identity-profile/types";
+import { isValidProxyUrl } from "@/shared/utils/url";
 
 export interface CloudTokenData {
   access_token: string;
@@ -62,8 +62,8 @@ export interface CloudQuotaGroup {
 
 export interface CloudAccountHealth {
   validation?: {
-    status: 'requires_action';
-    reason: 'VALIDATION_REQUIRED';
+    status: "requires_action";
+    reason: "VALIDATION_REQUIRED";
     detected_at_ms: number;
     next_probe_at_ms: number;
     verification_url?: string;
@@ -74,13 +74,13 @@ export interface CloudAccountHealth {
     invalid_grant_count?: number;
     invalid_grant_last_at_ms?: number;
     blocked_at_ms?: number;
-    reason?: 'invalid_grant';
+    reason?: "invalid_grant";
   };
 }
 
 export interface CloudAccount {
   id: string; // UUID
-  provider: 'google' | 'anthropic';
+  provider: "google" | "anthropic";
   email: string;
   name?: string | null;
   avatar_url?: string | null;
@@ -91,11 +91,15 @@ export interface CloudAccount {
   device_history?: DeviceProfileVersion[];
   created_at: number;
   last_used: number; // Unix timestamp
-  status?: 'active' | 'rate_limited' | 'expired';
+  status?: "active" | "rate_limited" | "expired";
   status_reason?: string;
   is_active?: boolean;
+  is_active_app?: boolean;
+  /** @deprecated Retained for frontend optimistic state and legacy test suites */
   is_active_classic?: boolean;
   is_active_ide?: boolean;
+  is_active_cli?: boolean;
+  /** @deprecated Retained for frontend optimistic state and legacy test suites */
   is_active_agy?: boolean;
   proxy_url?: string;
 }
@@ -105,7 +109,10 @@ export const AutoSwitchModelConfigSchema = z.object({
   priority: z.boolean(),
 });
 
-export const AutoSwitchModelsConfigSchema = z.record(z.string(), AutoSwitchModelConfigSchema);
+export const AutoSwitchModelsConfigSchema = z.record(
+  z.string(),
+  AutoSwitchModelConfigSchema,
+);
 
 export type AutoSwitchModelConfig = z.infer<typeof AutoSwitchModelConfigSchema>;
 
@@ -159,20 +166,24 @@ export const CloudQuotaDataSchema = z.object({
   subscription_tier: z.string().optional(),
   is_forbidden: z.boolean().optional(),
   isForbidden: z.boolean().optional(),
-  ai_credits: z.object({ credits: z.number(), expiryDate: z.string() }).optional(),
+  ai_credits: z
+    .object({ credits: z.number(), expiryDate: z.string() })
+    .optional(),
   quota_groups: z.array(CloudQuotaGroupSchema).optional(),
 });
 
-const HttpsUrlSchema = z.url().refine((value) => new URL(value).protocol === 'https:', {
-  message: 'Expected an HTTPS URL',
-});
+const HttpsUrlSchema = z
+  .url()
+  .refine((value) => new URL(value).protocol === "https:", {
+    message: "Expected an HTTPS URL",
+  });
 
 export const CloudAccountHealthSchema = z
   .object({
     validation: z
       .object({
-        status: z.literal('requires_action'),
-        reason: z.literal('VALIDATION_REQUIRED'),
+        status: z.literal("requires_action"),
+        reason: z.literal("VALIDATION_REQUIRED"),
         detected_at_ms: z.number().int().nonnegative(),
         next_probe_at_ms: z.number().int().nonnegative(),
         verification_url: HttpsUrlSchema.optional(),
@@ -185,7 +196,7 @@ export const CloudAccountHealthSchema = z
         invalid_grant_count: z.number().int().nonnegative().optional(),
         invalid_grant_last_at_ms: z.number().int().nonnegative().optional(),
         blocked_at_ms: z.number().int().nonnegative().optional(),
-        reason: z.literal('invalid_grant').optional(),
+        reason: z.literal("invalid_grant").optional(),
       })
       .optional(),
   })
@@ -193,7 +204,7 @@ export const CloudAccountHealthSchema = z
 
 export const CloudAccountSchema = z.object({
   id: z.string(),
-  provider: z.enum(['google', 'anthropic']),
+  provider: z.enum(["google", "anthropic"]),
   email: z.string(), // Relaxed: was z.string().email() but caused validation issues with some formats
   name: z.string().optional().nullable(),
   avatar_url: z.string().optional().nullable(),
@@ -204,25 +215,27 @@ export const CloudAccountSchema = z.object({
   device_history: z.array(DeviceProfileVersionSchema).optional(),
   created_at: z.number(),
   last_used: z.number(),
-  status: z.enum(['active', 'rate_limited', 'expired']).optional(),
+  status: z.enum(["active", "rate_limited", "expired"]).optional(),
   status_reason: z.string().optional(),
   is_active: z.boolean().optional(),
+  is_active_app: z.boolean().optional(),
   is_active_classic: z.boolean().optional(),
   is_active_ide: z.boolean().optional(),
+  is_active_cli: z.boolean().optional(),
   is_active_agy: z.boolean().optional(),
   proxy_url: z.string().optional(),
 });
 
 const ImportedProxyUrlSchema = z.string().refine(isValidProxyUrl, {
-  message: 'Invalid proxy URL',
+  message: "Invalid proxy URL",
 });
 
 export const CloudAccountExportSchema = z.object({
-  version: z.literal('1.0'),
+  version: z.literal("1.0"),
   exportedAt: z.number(),
   accounts: z.array(
     z.object({
-      provider: z.enum(['google', 'anthropic']),
+      provider: z.enum(["google", "anthropic"]),
       email: z.string(),
       name: z.string().optional().nullable(),
       avatar_url: z.string().optional().nullable(),
@@ -231,7 +244,7 @@ export const CloudAccountExportSchema = z.object({
       device_profile: DeviceProfileSchema.optional(),
       device_history: z.array(DeviceProfileVersionSchema).optional(),
       proxy_url: ImportedProxyUrlSchema.optional().nullable(),
-      status: z.enum(['active', 'rate_limited', 'expired']).optional(),
+      status: z.enum(["active", "rate_limited", "expired"]).optional(),
       status_reason: z.string().optional(),
     }),
   ),

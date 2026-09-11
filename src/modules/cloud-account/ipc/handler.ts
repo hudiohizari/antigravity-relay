@@ -44,7 +44,10 @@ import {
 import { runWithSwitchGuard } from "@/modules/antigravity-runtime/switch/switchGuard";
 import { executeSwitchFlow } from "@/modules/antigravity-runtime/switch/switchFlow";
 import { getCurrentAccountInfo } from "@/modules/account/public";
-import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import {
+  type AntigravityAppTarget,
+  resolveAntigravityAppTarget,
+} from "@/shared/platform/antigravityAppTarget";
 import type {
   DeviceProfile,
   DeviceProfilesSnapshot,
@@ -503,29 +506,40 @@ export async function listCloudAccounts(): Promise<CloudAccount[]> {
   }
 
   await Promise.all([
-    refreshAntigravityProcessCache("classic"),
+    refreshAntigravityProcessCache("app"),
     refreshAntigravityProcessCache("ide"),
   ]);
 
-  let classicEmail = "";
+  let appEmail = "";
   let ideEmail = "";
   try {
-    const classicInfo = getCurrentAccountInfo("classic");
-    if (classicInfo.isAuthenticated) {
-      classicEmail = normalizeAccountEmail(classicInfo.email);
+    let appInfo = getCurrentAccountInfo("app");
+    if (!appInfo?.isAuthenticated) {
+      try {
+        const classicInfo = getCurrentAccountInfo("classic");
+        if (classicInfo?.isAuthenticated) {
+          appInfo = classicInfo;
+        }
+      } catch {
+        // ignore fallback error
+      }
+    }
+    if (appInfo?.isAuthenticated) {
+      appEmail = normalizeAccountEmail(appInfo.email);
     }
   } catch (err) {
-    logger.warn(
-      "Failed to read current classic account info during listing",
-      err,
-    );
+    logger.warn("Failed to read current app account info during listing", err);
   }
-  const classicUsesCredentialStore =
+  const appUsesCredentialStore =
+    CredentialStoreInjectionAdapter.shouldInjectTokenIntoCredentialStore(
+      "app",
+    ) ||
     CredentialStoreInjectionAdapter.shouldInjectTokenIntoCredentialStore(
       "classic",
     );
-  const activeClassicAccountId = classicUsesCredentialStore
-    ? CloudAccountSettingsStore.getActiveAccountIdForTarget("classic")
+  const activeAppAccountId = appUsesCredentialStore
+    ? CloudAccountSettingsStore.getActiveAccountIdForTarget("app") ||
+      CloudAccountSettingsStore.getActiveAccountIdForTarget("classic")
     : "";
   try {
     const ideInfo = getCurrentAccountInfo("ide");
@@ -538,31 +552,34 @@ export async function listCloudAccounts(): Promise<CloudAccount[]> {
   const activeIdeAccountId = ideEmail
     ? ""
     : CloudAccountSettingsStore.getActiveAccountIdForTarget("ide");
-  const activeAgyAccountId =
+  const activeCliAccountId =
+    CloudAccountSettingsStore.getActiveAccountIdForTarget("cli") ||
     CloudAccountSettingsStore.getActiveAccountIdForTarget("agy");
 
   return accounts.map((account) => {
     const accountEmail = normalizeAccountEmail(account.email);
-    const isClassicActive =
-      classicUsesCredentialStore && activeClassicAccountId
-        ? activeClassicAccountId === account.id
-        : classicEmail === accountEmail;
+    const isAppActive =
+      appUsesCredentialStore && activeAppAccountId
+        ? activeAppAccountId === account.id
+        : appEmail === accountEmail;
     const isIdeActive =
       ideEmail === accountEmail ||
       (!!activeIdeAccountId && activeIdeAccountId === account.id);
-    const isAgyActive = activeAgyAccountId === account.id;
+    const isCliActive = activeCliAccountId === account.id;
     return {
       ...account,
-      is_active: isClassicActive || isIdeActive || isAgyActive,
-      is_active_classic: isClassicActive,
+      is_active: isAppActive || isIdeActive || isCliActive,
+      is_active_app: isAppActive,
+      is_active_classic: isAppActive,
       is_active_ide: isIdeActive,
-      is_active_agy: isAgyActive,
+      is_active_cli: isCliActive,
+      is_active_agy: isCliActive,
     };
   });
 }
 
 export async function deleteCloudAccount(accountId: string): Promise<void> {
-  for (const target of ["classic", "ide", "agy"] as const) {
+  for (const target of ["app", "ide", "cli"] as const) {
     if (
       CloudAccountSettingsStore.getActiveAccountIdForTarget(target) ===
       accountId
@@ -803,7 +820,7 @@ async function executeSingleTargetSwitch(
       });
 
       trace.phaseSync("deviceProfileSetupMs", () => {
-        if (appTarget !== "agy") {
+        if (appTarget !== "cli" && appTarget !== ("agy" as any)) {
           ensureGlobalOriginalFromCurrentStorage(appTarget);
         }
 
@@ -875,7 +892,7 @@ export async function switchCloudAccount(
       }
 
       logger.info(
-        `Switching to cloud account: ${account.email} (${account.id}) [target=${appTarget || "classic"}]`,
+        `Switching to cloud account: ${account.email} (${account.id}) [target=${appTarget || "app"}]`,
       );
 
       await withTimingTrace(
@@ -932,18 +949,14 @@ export async function switchCloudAccount(
       );
 
       if (appTarget === "all") {
-        const candidateTargets: AntigravityAppTarget[] = [
-          "classic",
-          "ide",
-          "agy",
-        ];
+        const candidateTargets: AntigravityAppTarget[] = ["app", "ide", "cli"];
         const installedTargets = candidateTargets.filter((t) =>
           isAntigravityTargetInstalled(t),
         );
         const targetsToSwitch =
           installedTargets.length > 0
             ? installedTargets
-            : (["classic"] as AntigravityAppTarget[]);
+            : (["app"] as AntigravityAppTarget[]);
 
         const succeededTargets: AntigravityAppTarget[] = [];
         const failedTargets: FailedTargetReport[] = [];
@@ -996,7 +1009,8 @@ export async function switchCloudAccount(
         };
       }
 
-      const singleTarget: AntigravityAppTarget = appTarget || "classic";
+      const singleTarget: AntigravityAppTarget =
+        resolveAntigravityAppTarget(appTarget);
       if (!isAntigravityTargetInstalled(singleTarget)) {
         throw new Error(
           `TARGET_NOT_INSTALLED: Target '${singleTarget}' is not installed on this system.`,

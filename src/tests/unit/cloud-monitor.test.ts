@@ -299,9 +299,9 @@ describe("CloudMonitorService", () => {
     await vi.advanceTimersByTimeAsync(1000);
     await pollPromise;
 
-    // Only agy resolves (no desktop storage.json), so it must be the target passed to the switch.
+    // Only agy/cli resolves (no desktop storage.json), so it must be the target passed to the switch.
     expect(AutoSwitchService.checkAndSwitchIfNeeded).toHaveBeenCalledWith(
-      "agy",
+      "cli",
     );
   });
 

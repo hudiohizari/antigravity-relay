@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const LocalAccountDiscoverySourceIdSchema = z.enum([
   "antigravity-keyring",
+  "antigravity-app-db",
   "antigravity-classic-db",
   "antigravity-ide-db",
   "legacy-agent",
@@ -11,6 +12,15 @@ export const LocalAccountDiscoverySourceIdSchema = z.enum([
 export type LocalAccountDiscoverySourceId = z.infer<
   typeof LocalAccountDiscoverySourceIdSchema
 >;
+
+export function resolveLocalAccountDiscoverySourceId(
+  sourceId: LocalAccountDiscoverySourceId | string,
+): LocalAccountDiscoverySourceId {
+  if (sourceId === "antigravity-classic-db") {
+    return "antigravity-app-db";
+  }
+  return LocalAccountDiscoverySourceIdSchema.parse(sourceId);
+}
 
 export const DiscoveredCredentialSchema = z
   .object({

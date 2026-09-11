@@ -31,14 +31,13 @@ const zhCn = {
     local_network: "本地",
     service_relay: "中继服务器",
     service_tunnel: "Cloudflare 隧道",
-    service_app: "Antigravity 2.0 (应用)",
+    service_app: "Antigravity App",
     service_ide: "Antigravity IDE",
-    service_cli: "Antigravity CLI (agy)",
+    service_cli: "Antigravity CLI",
     tooltips: {
-      appNotInstalled: "系统未检测到 Antigravity 2.0 桌面应用程序",
+      appNotInstalled: "系统未检测到 Antigravity App",
       ideNotInstalled: "系统未检测到 Antigravity IDE",
-      cliNotInstalled:
-        "在 PATH 或标准目录中未找到 Antigravity CLI (agy) 可执行文件",
+      cliNotInstalled: "在 PATH 或标准目录中未找到 Antigravity CLI 可执行文件",
       tunnelNotInstalled: "此计算机上未安装 cloudflared CLI",
       cliIdleGuidance: "请直接在终端中运行 'agy <命令>'",
     },
@@ -152,10 +151,10 @@ const zhCn = {
     stopFailed: "停止中继服务器失败: {{error}}",
     mirrorBoundary: {
       title: "远程镜像范围提示",
-      badge: "仅限桌面应用与 IDE",
+      badge: "仅限 App 与 IDE",
       description:
-        "移动远程镜像仅用于投射 Antigravity IDE 和 Antigravity 2.0 桌面应用会话。Antigravity CLI (agy) 仅在终端运行，无法镜像到移动配套设备。",
-      callout: "终端 CLI (agy) 直接在当前主机上运行，不会镜像到移动设备。",
+        "移动远程镜像仅用于投射 Antigravity App 和 Antigravity IDE 会话。Antigravity CLI 仅在终端运行，无法镜像到移动配套设备。",
+      callout: "Antigravity CLI 直接在当前主机上运行，不会镜像到移动设备。",
     },
   },
   tunnel: {
@@ -222,7 +221,7 @@ const zhCn = {
     keyConsumedError: "此配对密钥已被其他设备使用。请从桌面主机获取新密钥。",
     keyInvalidError: "无效的配对密钥。请在桌面仪表板上验证当前有效密钥。",
     platformScopeNotice:
-      "移动配套应用仅镜像 Antigravity IDE 与桌面应用会话。不支持终端 CLI (agy)。",
+      "移动配套应用仅镜像 Antigravity App 与 Antigravity IDE 会话。不支持 Antigravity CLI。",
   },
   sessions: {
     title: "已连接的手机会话",
@@ -292,22 +291,6 @@ const zhCn = {
     switchedTargetTitle: "账号已切换",
     switchedTargetDescription: "已通过系统托盘将 {{target}} 切换到 {{email}}。",
   },
-  editionSelection: {
-    title: "选择您的 Antigravity 版本",
-    description:
-      "选择您正在使用的 Antigravity 版本。这将帮助管理器连接到正确的应用程序。",
-    edition1x: {
-      name: "Antigravity 1.x",
-      description:
-        "原始 Antigravity 应用程序。如果您使用的是旧版本，请选择此项。",
-    },
-    edition20: {
-      name: "Antigravity IDE",
-      description:
-        "新版 Antigravity IDE (2.0)。如果您使用的是最新的 IDE 版本，请选择此项。",
-    },
-    confirm: "继续",
-  },
   account: {
     current: "当前",
     lastUsed: "上次使用 {{time}}",
@@ -363,23 +346,23 @@ const zhCn = {
       description: "应用信息。",
     },
     cache: {
-      title: "Antigravity 缓存",
+      title: "Antigravity App 缓存",
       description:
-        "清理已知的 Antigravity 缓存目录，用于解决登录或版本验证问题。",
-      clear: "清理 Antigravity 缓存",
-      dialogTitle: "清理 Antigravity 缓存？",
+        "清理已知的 Antigravity App 缓存目录，用于解决登录或版本验证问题。",
+      clear: "清理 Antigravity App 缓存",
+      dialogTitle: "清理 Antigravity App 缓存？",
       dialogDescription: "将删除以下实际存在的缓存目录。",
       pathsLabel: "缓存目录",
-      noPaths: "未发现已知的 Antigravity 缓存目录。",
+      noPaths: "未发现已知的 Antigravity App 缓存目录。",
       warning:
-        "请先关闭 Antigravity，避免缓存文件被占用或在清理过程中重新生成。",
+        "请先关闭 Antigravity App，避免缓存文件被占用或在清理过程中重新生成。",
       cancel: "取消",
       confirm: "清理缓存",
       clearing: "正在清理...",
       clearedTitle: "缓存已清理",
-      clearedDescription: "已从 Antigravity 缓存目录释放 {{size}} MB。",
+      clearedDescription: "已从 Antigravity App 缓存目录释放 {{size}} MB。",
       failedTitle: "清理缓存失败",
-      notFoundTitle: "未发现 Antigravity 缓存",
+      notFoundTitle: "未发现 Antigravity App 缓存",
     },
     version: "版本",
     platform: "平台",
@@ -401,14 +384,14 @@ const zhCn = {
       auto_refresh_desc: "定期自动刷新所有账号的配额信息",
       auto_sync: "自动获取当前账号",
       auto_sync_desc: "定期自动同步当前活跃账号信息",
-      antigravity_executable: "Antigravity 可执行文件",
+      antigravity_executable: "Antigravity App 可执行文件",
       antigravity_executable_desc:
-        "可选路径，用于发现便携模式数据目录并启动 Antigravity。",
+        "可选路径，用于发现便携模式数据目录并启动 Antigravity App。",
       antigravity_executable_placeholder:
         "例如：C:\\Program Files\\Antigravity\\Antigravity.exe",
-      antigravity_args: "Antigravity 启动参数",
+      antigravity_args: "Antigravity App 启动参数",
       antigravity_args_desc:
-        "启动 Antigravity 时传入的可选参数，例如 --user-data-dir。",
+        "启动 Antigravity App 时传入的可选参数，例如 --user-data-dir。",
       antigravity_args_placeholder:
         "例如：--user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "检测",
@@ -615,7 +598,8 @@ const zhCn = {
       failed: "失败 {{count}}",
       sources: {
         "antigravity-keyring": "系统凭据存储",
-        "antigravity-classic-db": "Antigravity 数据库",
+        "antigravity-app-db": "Antigravity App 数据库",
+        "antigravity-classic-db": "Antigravity App 数据库",
         "antigravity-ide-db": "Antigravity IDE 数据库",
         "legacy-agent": "旧版 Agent 数据",
         "antigravity-cli-token": "Antigravity CLI",
@@ -652,6 +636,8 @@ const zhCn = {
       },
     },
     target: {
+      app: "Antigravity 应用",
+      appShort: "应用",
       classic: "Antigravity 应用",
       classicShort: "应用",
       ide: "Antigravity IDE",

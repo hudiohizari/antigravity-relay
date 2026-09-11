@@ -32,7 +32,7 @@ const electronBridge = {
         | string
         | {
             accountId: string;
-            target?: "classic" | "ide" | "agy" | "cli" | "all";
+            target?: "app" | "classic" | "ide" | "agy" | "cli" | "all";
           },
     ) => void,
   ) => {
@@ -42,7 +42,7 @@ const electronBridge = {
         | string
         | {
             accountId: string;
-            target?: "classic" | "ide" | "agy" | "cli" | "all";
+            target?: "app" | "classic" | "ide" | "agy" | "cli" | "all";
           },
     ) => callback(payload);
     ipcRenderer.on("tray://account-switched", handler);

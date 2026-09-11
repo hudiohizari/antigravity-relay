@@ -464,10 +464,11 @@ export async function closeAntigravity(
   target?: AntigravityAppTarget | null,
 ): Promise<void> {
   const resolvedTarget = resolveAntigravityAppTarget(target);
+  const isCli = resolvedTarget === "cli";
   const appName =
     resolvedTarget === "ide"
       ? "Antigravity IDE"
-      : resolvedTarget === "agy"
+      : isCli
         ? "Antigravity CLI"
         : "Antigravity";
   logger.info(`Closing ${appName}...`);
@@ -475,7 +476,7 @@ export async function closeAntigravity(
 
   try {
     // Stage 1: Graceful Shutdown (Platform specific)
-    if (platform === "darwin" && resolvedTarget !== "agy") {
+    if (platform === "darwin" && !isCli) {
       // macOS: Use AppleScript to quit gracefully
       try {
         logger.info("Attempting graceful exit via AppleScript...");
@@ -720,7 +721,7 @@ export async function startAntigravity(
   useUri = true,
 ): Promise<void> {
   const resolvedTarget = resolveAntigravityAppTarget(target);
-  if (resolvedTarget === "agy") {
+  if (resolvedTarget === "cli") {
     logger.warn(
       "Antigravity CLI ('agy') cannot be started via GUI launcher. Run 'agy' commands in your terminal.",
     );
@@ -731,7 +732,7 @@ export async function startAntigravity(
   const appName = resolvedTarget === "ide" ? "Antigravity IDE" : "Antigravity";
   const configuredArgs = getConfiguredAntigravityArgs(resolvedTarget);
   const shouldUseUri =
-    resolvedTarget === "classic" && useUri && configuredArgs.length === 0;
+    resolvedTarget === "app" && useUri && configuredArgs.length === 0;
   logger.info(`Starting ${appName}...`);
 
   if (await isProcessRunning(target)) {

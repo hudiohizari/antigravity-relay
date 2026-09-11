@@ -32,15 +32,14 @@ const ru = {
     local_network: "Локальный",
     service_relay: "Сервер Relay",
     service_tunnel: "Туннель Cloudflare",
-    service_app: "Antigravity 2.0 (Приложение)",
+    service_app: "Antigravity App",
     service_ide: "Antigravity IDE",
-    service_cli: "Antigravity CLI (agy)",
+    service_cli: "Antigravity CLI",
     tooltips: {
-      appNotInstalled:
-        "Настольное приложение Antigravity 2.0 не обнаружено в этой системе",
+      appNotInstalled: "Приложение Antigravity не обнаружено в этой системе",
       ideNotInstalled: "Antigravity IDE не обнаружен в этой системе",
       cliNotInstalled:
-        "Исполняемый файл Antigravity CLI (agy) не найден в PATH или стандартных каталогах",
+        "Исполняемый файл Antigravity CLI не найден в PATH или стандартных каталогах",
       tunnelNotInstalled: "CLI cloudflared не установлен на этом компьютере",
       cliIdleGuidance: "Запускайте напрямую из терминала через 'agy <команда>'",
     },
@@ -157,11 +156,11 @@ const ru = {
     stopFailed: "Не удалось остановить relay-сервер: {{error}}",
     mirrorBoundary: {
       title: "Уведомление об области действия Remote Mirror",
-      badge: "Только настольное приложение и IDE",
+      badge: "Только App и IDE",
       description:
-        "Mobile Remote Mirror транслирует только сеансы Antigravity IDE и настольного приложения Antigravity 2.0. Antigravity CLI (agy) работает исключительно в терминале и не может отображаться на мобильных устройствах.",
+        "Mobile Remote Mirror транслирует только сеансы Antigravity App и Antigravity IDE. Antigravity CLI работает исключительно в терминале и не может отображаться на мобильных устройствах.",
       callout:
-        "Терминальный CLI (agy) работает непосредственно на этом хосте и не транслируется на мобильные устройства.",
+        "Antigravity CLI работает непосредственно на этом хосте и не транслируется на мобильные устройства.",
     },
   },
   tunnel: {
@@ -238,7 +237,7 @@ const ru = {
     keyInvalidError:
       "Недействительный ключ сопряжения. Проверьте активный ключ на панели управления desktop.",
     platformScopeNotice:
-      "Мобильный компаньон транслирует только сеансы Antigravity IDE и настольного приложения. Терминальный CLI (agy) не поддерживается.",
+      "Мобильный компаньон транслирует только сеансы Antigravity App и Antigravity IDE. Antigravity CLI не поддерживается.",
   },
   sessions: {
     title: "Подключенные сессии телефонов",
@@ -317,22 +316,6 @@ const ru = {
     switchedTargetDescription:
       "Среда {{target}} переключена на {{email}} через системный трей.",
   },
-  editionSelection: {
-    title: "Выберите версию Antigravity",
-    description:
-      "Выберите, какую версию Antigravity вы используете. Это поможет менеджеру подключиться к правильному приложению.",
-    edition1x: {
-      name: "Antigravity 1.x",
-      description:
-        "Оригинальное приложение Antigravity. Выберите это, если вы используете устаревшую версию.",
-    },
-    edition20: {
-      name: "Antigravity IDE",
-      description:
-        "Новый Antigravity IDE (2.0). Выберите это, если вы используете последнюю версию IDE.",
-    },
-    confirm: "Продолжить",
-  },
   account: {
     current: "Текущий",
     lastUsed: "Последнее использование {{time}}",
@@ -389,23 +372,24 @@ const ru = {
       description: "Информация о приложении.",
     },
     cache: {
-      title: "Кэш Antigravity",
+      title: "Кэш Antigravity App",
       description:
-        "Очистите известные каталоги кэша Antigravity, чтобы устранить ошибки входа или проверки версии.",
-      clear: "Очистить кэш Antigravity",
-      dialogTitle: "Очистить кэш Antigravity?",
+        "Очистите известные каталоги кэша Antigravity App, чтобы устранить ошибки входа или проверки версии.",
+      clear: "Очистить кэш Antigravity App",
+      dialogTitle: "Очистить кэш Antigravity App?",
       dialogDescription: "Следующие существующие каталоги кэша будут удалены.",
       pathsLabel: "Каталоги кэша",
-      noPaths: "Известные каталоги кэша Antigravity не найдены.",
+      noPaths: "Известные каталоги кэша Antigravity App не найдены.",
       warning:
-        "Закройте Antigravity перед очисткой, чтобы избежать заблокированных файлов.",
+        "Закройте Antigravity App перед очисткой, чтобы избежать заблокированных файлов.",
       cancel: "Отмена",
       confirm: "Очистить кэш",
       clearing: "Очистка...",
       clearedTitle: "Кэш очищен",
-      clearedDescription: "Из каталогов кэша Antigravity удалено {{size}} МБ.",
+      clearedDescription:
+        "Из каталогов кэша Antigravity App удалено {{size}} МБ.",
       failedTitle: "Не удалось очистить кэш",
-      notFoundTitle: "Кэш Antigravity не найден",
+      notFoundTitle: "Кэш Antigravity App не найден",
     },
     version: "Версия",
     platform: "Платформа",
@@ -428,14 +412,14 @@ const ru = {
         "Периодически обновлять информацию о квотах для всех аккаунтов",
       auto_sync: "Автосинхронизация текущего",
       auto_sync_desc: "Периодически синхронизировать активный аккаунт",
-      antigravity_executable: "Файл запуска Antigravity",
+      antigravity_executable: "Файл запуска Antigravity App",
       antigravity_executable_desc:
-        "Необязательный путь для поиска данных portable mode и запуска Antigravity.",
+        "Необязательный путь для поиска данных portable mode и запуска Antigravity App.",
       antigravity_executable_placeholder:
         "Например: C:\\Program Files\\Antigravity\\Antigravity.exe",
-      antigravity_args: "Аргументы запуска Antigravity",
+      antigravity_args: "Аргументы запуска Antigravity App",
       antigravity_args_desc:
-        "Необязательные аргументы запуска, например --user-data-dir.",
+        "Необязательные аргументы запуска Antigravity App, например --user-data-dir.",
       antigravity_args_placeholder:
         "Например: --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Найти",
@@ -652,7 +636,8 @@ const ru = {
       failed: "С ошибкой: {{count}}",
       sources: {
         "antigravity-keyring": "Системное хранилище ключей",
-        "antigravity-classic-db": "База данных Antigravity",
+        "antigravity-app-db": "База данных Antigravity App",
+        "antigravity-classic-db": "База данных Antigravity App",
         "antigravity-ide-db": "База данных Antigravity IDE",
         "legacy-agent": "Данные старого агента",
         "antigravity-cli-token": "Antigravity CLI",
@@ -695,6 +680,8 @@ const ru = {
       },
     },
     target: {
+      app: "Приложение Antigravity",
+      appShort: "Приложение",
       classic: "Приложение Antigravity",
       classicShort: "Приложение",
       ide: "Antigravity IDE",

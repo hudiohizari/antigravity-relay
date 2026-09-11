@@ -192,11 +192,11 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
 
     expect(result.overall).toBe("success");
     expect(result.accountId).toBe("acc-1");
-    expect(result.succeededTargets).toEqual(["classic", "ide", "agy"]);
+    expect(result.succeededTargets).toEqual(["app", "ide", "cli"]);
     expect(result.failedTargets).toEqual([]);
-    expect(result.results?.classic?.success).toBe(true);
+    expect(result.results?.app?.success).toBe(true);
     expect(result.results?.ide?.success).toBe(true);
-    expect(result.results?.agy?.success).toBe(true);
+    expect(result.results?.cli?.success).toBe(true);
     expect(mocks.syncActiveFlags).toHaveBeenCalled();
   });
 
@@ -212,14 +212,14 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
 
     expect(result.overall).toBe("partial");
     expect(result.accountId).toBe("acc-1");
-    expect(result.succeededTargets).toEqual(["classic", "agy"]);
+    expect(result.succeededTargets).toEqual(["app", "cli"]);
     expect(result.failedTargets).toEqual([
       { target: "ide", error: "SQLITE_BUSY: database is locked" },
     ]);
-    expect(result.results?.classic?.success).toBe(true);
+    expect(result.results?.app?.success).toBe(true);
     expect(result.results?.ide?.success).toBe(false);
     expect(result.results?.ide?.error).toContain("SQLITE_BUSY");
-    expect(result.results?.agy?.success).toBe(true);
+    expect(result.results?.cli?.success).toBe(true);
 
     // Active flags must still be synced so successful targets remain active
     expect(mocks.syncActiveFlags).toHaveBeenCalled();
@@ -233,9 +233,9 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
     expect(result.overall).toBe("failed");
     expect(result.succeededTargets).toEqual([]);
     expect(result.failedTargets.length).toBe(3);
-    expect(result.results?.classic?.success).toBe(false);
+    expect(result.results?.app?.success).toBe(false);
     expect(result.results?.ide?.success).toBe(false);
-    expect(result.results?.agy?.success).toBe(false);
+    expect(result.results?.cli?.success).toBe(false);
   });
 
   it("throws TARGET_NOT_INSTALLED error when switching a specific target that is not installed", async () => {
@@ -249,20 +249,20 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
   it("switches a single installed target successfully", async () => {
     mocks.isAntigravityTargetInstalled.mockReturnValue(true);
 
-    const result = await switchCloudAccount("acc-1", "classic");
+    const result = await switchCloudAccount("acc-1", "app");
 
     expect(result.overall).toBe("success");
-    expect(result.succeededTargets).toEqual(["classic"]);
+    expect(result.succeededTargets).toEqual(["app"]);
     expect(result.failedTargets).toEqual([]);
     expect(mocks.syncActiveFlags).toHaveBeenCalled();
   });
 
-  it("evicts missing target settings on listCloudAccounts and maps is_active_agy", async () => {
+  it("evicts missing target settings on listCloudAccounts and maps is_active_cli and is_active_agy", async () => {
     const { listCloudAccounts } =
       await import("@/modules/cloud-account/ipc/handler");
     mocks.getActiveAccountIdForTarget.mockImplementation(
       (target: AntigravityAppTarget) => {
-        if (target === "agy") return "acc-1";
+        if (target === "cli" || target === "agy") return "acc-1";
         return "";
       },
     );
@@ -271,6 +271,7 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
 
     expect(mocks.evictAllMissingTargets).toHaveBeenCalled();
     expect(accounts).toHaveLength(1);
+    expect(accounts[0].is_active_cli).toBe(true);
     expect(accounts[0].is_active_agy).toBe(true);
   });
 });

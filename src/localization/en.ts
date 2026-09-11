@@ -32,15 +32,14 @@ const en = {
     local_network: "Local",
     service_relay: "Relay Server",
     service_tunnel: "Cloudflare Tunnel",
-    service_app: "Antigravity 2.0 (App)",
+    service_app: "Antigravity App",
     service_ide: "Antigravity IDE",
-    service_cli: "Antigravity CLI (agy)",
+    service_cli: "Antigravity CLI",
     tooltips: {
-      appNotInstalled:
-        "Antigravity 2.0 desktop application is not detected on this system",
+      appNotInstalled: "Antigravity App is not detected on this system",
       ideNotInstalled: "Antigravity IDE is not detected on this system",
       cliNotInstalled:
-        "Antigravity CLI (agy) executable is not found in PATH or standard directories",
+        "Antigravity CLI executable is not found in PATH or standard directories",
       tunnelNotInstalled: "cloudflared CLI is not installed on this computer",
       cliIdleGuidance: "Run directly from terminal via 'agy <command>'",
     },
@@ -156,11 +155,11 @@ const en = {
     stopFailed: "Failed to stop relay server: {{error}}",
     mirrorBoundary: {
       title: "Remote Mirror Scope Notice",
-      badge: "Desktop & IDE Only",
+      badge: "App & IDE Only",
       description:
-        "The Mobile Remote Mirror streams Antigravity IDE and Antigravity 2.0 Desktop App sessions only. Antigravity CLI (agy) runs exclusively in your terminal and cannot be mirrored to mobile companion devices.",
+        "The Mobile Remote Mirror streams Antigravity App and Antigravity IDE sessions only. Antigravity CLI runs exclusively in your terminal and cannot be mirrored to mobile companion devices.",
       callout:
-        "Terminal CLI (agy) operates directly on this host and is not mirrored to mobile devices.",
+        "Antigravity CLI operates directly on this host and is not mirrored to mobile devices.",
     },
   },
   tunnel: {
@@ -236,7 +235,7 @@ const en = {
     keyInvalidError:
       "Invalid pairing key. Please verify the active key on your desktop dashboard.",
     platformScopeNotice:
-      "Mobile companion mirrors Antigravity IDE and Desktop App sessions. Terminal CLI (agy) is not supported.",
+      "Mobile companion mirrors Antigravity App and Antigravity IDE sessions. Antigravity CLI is not supported.",
   },
   sessions: {
     title: "Connected Phone Sessions",
@@ -315,22 +314,6 @@ const en = {
     switchedTargetDescription:
       "Switched {{target}} to {{email}} via system tray.",
   },
-  editionSelection: {
-    title: "Choose Your Antigravity Edition",
-    description:
-      "Select which version of Antigravity you are using. This helps the Relay connect to the correct application.",
-    edition1x: {
-      name: "Antigravity 1.x",
-      description:
-        "The original Antigravity application. Choose this if you are using the legacy version.",
-    },
-    edition20: {
-      name: "Antigravity IDE",
-      description:
-        "The new Antigravity IDE (2.0). Choose this if you are using the latest IDE version.",
-    },
-    confirm: "Continue",
-  },
   account: {
     current: "Current",
     lastUsed: "Last used {{time}}",
@@ -387,25 +370,25 @@ const en = {
       description: "Application information.",
     },
     cache: {
-      title: "Antigravity Cache",
+      title: "Antigravity App Cache",
       description:
-        "Clear known Antigravity cache directories to resolve login or version validation issues.",
-      clear: "Clear Antigravity Cache",
-      dialogTitle: "Clear Antigravity Cache?",
+        "Clear known Antigravity App cache directories to resolve login or version validation issues.",
+      clear: "Clear Antigravity App Cache",
+      dialogTitle: "Clear Antigravity App Cache?",
       dialogDescription:
         "The following existing cache directories will be removed.",
       pathsLabel: "Cache directories",
-      noPaths: "No known Antigravity cache directories were found.",
+      noPaths: "No known Antigravity App cache directories were found.",
       warning:
-        "Close Antigravity before clearing its cache to avoid locked or recreated files.",
+        "Close Antigravity App before clearing its cache to avoid locked or recreated files.",
       cancel: "Cancel",
       confirm: "Clear Cache",
       clearing: "Clearing...",
       clearedTitle: "Cache cleared",
       clearedDescription:
-        "{{size}} MB was removed from Antigravity cache directories.",
+        "{{size}} MB was removed from Antigravity App cache directories.",
       failedTitle: "Failed to clear cache",
-      notFoundTitle: "No Antigravity cache found",
+      notFoundTitle: "No Antigravity App cache found",
     },
     version: "Version",
     platform: "Platform",
@@ -427,14 +410,14 @@ const en = {
       auto_refresh_desc: "Periodically refresh quota info for all accounts",
       auto_sync: "Auto Sync Current Account",
       auto_sync_desc: "Periodically sync active account information",
-      antigravity_executable: "Antigravity executable",
+      antigravity_executable: "Antigravity App Executable",
       antigravity_executable_desc:
-        "Optional path used to find portable mode data and launch Antigravity.",
+        "Optional path used to find portable mode data and launch Antigravity App.",
       antigravity_executable_placeholder:
         "Example: C:\\Program Files\\Antigravity\\Antigravity.exe",
-      antigravity_args: "Antigravity launch arguments",
+      antigravity_args: "Antigravity App Launch Arguments",
       antigravity_args_desc:
-        "Optional arguments passed when launching Antigravity, such as --user-data-dir.",
+        "Optional arguments passed when launching Antigravity App, such as --user-data-dir.",
       antigravity_args_placeholder:
         "Example: --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Detect",
@@ -653,7 +636,8 @@ const en = {
       failed: "Failed {{count}}",
       sources: {
         "antigravity-keyring": "System Credential Store",
-        "antigravity-classic-db": "Antigravity Database",
+        "antigravity-app-db": "Antigravity App Database",
+        "antigravity-classic-db": "Antigravity App Database",
         "antigravity-ide-db": "Antigravity IDE Database",
         "legacy-agent": "Legacy Agent Data",
         "antigravity-cli-token": "Antigravity CLI",
@@ -694,6 +678,8 @@ const en = {
       },
     },
     target: {
+      app: "Antigravity App",
+      appShort: "App",
       classic: "Antigravity App",
       classicShort: "App",
       ide: "Antigravity IDE",

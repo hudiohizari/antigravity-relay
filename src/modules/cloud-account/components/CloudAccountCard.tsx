@@ -133,9 +133,9 @@ function formatModelDisplayName(modelName: string): string {
 }
 
 export function useInstalledTargets() {
-  const { data: classicStatus } = useQuery({
-    queryKey: ["process", "status", "classic"],
-    queryFn: () => getProcessStatus("classic"),
+  const { data: appStatus } = useQuery({
+    queryKey: ["process", "status", "app"],
+    queryFn: () => getProcessStatus("app"),
     staleTime: 30000,
   });
   const { data: ideStatus } = useQuery({
@@ -143,16 +143,22 @@ export function useInstalledTargets() {
     queryFn: () => getProcessStatus("ide"),
     staleTime: 30000,
   });
-  const { data: agyStatus } = useQuery({
-    queryKey: ["process", "status", "agy"],
-    queryFn: () => getProcessStatus("agy"),
+  const { data: cliStatus } = useQuery({
+    queryKey: ["process", "status", "cli"],
+    queryFn: () => getProcessStatus("cli"),
     staleTime: 30000,
   });
 
+  const appInstalled = appStatus?.isBinaryInstalled ?? true;
+  const ideInstalled = ideStatus?.isBinaryInstalled ?? true;
+  const cliInstalled = cliStatus?.isBinaryInstalled ?? true;
+
   return {
-    classic: classicStatus?.isBinaryInstalled ?? true,
-    ide: ideStatus?.isBinaryInstalled ?? true,
-    agy: agyStatus?.isBinaryInstalled ?? true,
+    app: appInstalled,
+    ide: ideInstalled,
+    cli: cliInstalled,
+    classic: appInstalled,
+    agy: cliInstalled,
   };
 }
 
@@ -197,15 +203,14 @@ export function CloudAccountCard({
   const [proxyUrl, setProxyUrl] = useState(account.proxy_url || "");
   const [proxySaved, setProxySaved] = useState(false);
   const installedTargets = useInstalledTargets();
-  const isCliActive = Boolean(
-    account.is_active_agy || (account as any).is_active_cli,
-  );
-  const isClassicActive = Boolean(
+  const isCliActive = Boolean(account.is_active_cli || account.is_active_agy);
+  const isAppActive = Boolean(
+    account.is_active_app ||
     account.is_active_classic ||
     (!account.is_active_ide && !isCliActive && account.is_active),
   );
   const isAllActive = Boolean(
-    isClassicActive && account.is_active_ide && isCliActive,
+    isAppActive && account.is_active_ide && isCliActive,
   );
 
   const getQuotaTextColorClass = (percentage: number) => {
@@ -435,34 +440,85 @@ export function CloudAccountCard({
           </CardDescription>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {isClassicActive && (
-              <span className="inline-flex items-center gap-1 rounded border border-green-500/20 bg-green-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:border-green-500/30 dark:bg-green-500/15 dark:text-green-400">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
-                </span>
-                {t("cloud.target.classic")}
-              </span>
+            {isAppActive && (
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      role="status"
+                      aria-label={`${t("cloud.target.app")}: ${t("cloud.switch.activeBadge")}`}
+                      className="inline-flex items-center gap-1 rounded border border-green-500/25 bg-green-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:border-green-500/30 dark:bg-green-500/15 dark:text-green-400 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none cursor-default"
+                    >
+                      <span
+                        className="relative flex h-1.5 w-1.5"
+                        aria-hidden="true"
+                      >
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+                      </span>
+                      <span>{t("cloud.target.appShort")}</span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs font-medium">
+                    {t("cloud.target.app")}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
 
             {account.is_active_ide && (
-              <span className="inline-flex items-center gap-1 rounded border border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-400">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                </span>
-                {t("cloud.target.ide")}
-              </span>
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      role="status"
+                      aria-label={`${t("cloud.target.ide")}: ${t("cloud.switch.activeBadge")}`}
+                      className="inline-flex items-center gap-1 rounded border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-400 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none cursor-default"
+                    >
+                      <span
+                        className="relative flex h-1.5 w-1.5"
+                        aria-hidden="true"
+                      >
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
+                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                      </span>
+                      <span>{t("cloud.target.ideShort")}</span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs font-medium">
+                    {t("cloud.target.ide")}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
 
             {isCliActive && (
-              <span className="inline-flex items-center gap-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-tight text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-400">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                </span>
-                {t("cloud.target.cli")}
-              </span>
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      role="status"
+                      aria-label={`${t("cloud.target.cli")}: ${t("cloud.switch.activeBadge")}`}
+                      className="inline-flex items-center gap-1 rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-tight text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-400 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none cursor-default"
+                    >
+                      <span
+                        className="relative flex h-1.5 w-1.5"
+                        aria-hidden="true"
+                      >
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      </span>
+                      <span>{t("cloud.target.cliShort")}</span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs font-medium">
+                    {t("cloud.target.cli")}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
 
@@ -658,36 +714,36 @@ export function CloudAccountCard({
                   {t("cloud.switch.menuTitle")}
                 </DropdownMenuLabel>
 
-                {/* Target 1: Antigravity 2.0 (Classic App) */}
+                {/* Target 1: Antigravity App */}
                 <DropdownMenuItem
-                  disabled={
-                    isSwitching || isClassicActive || !installedTargets.classic
-                  }
-                  onSelect={() => onSwitch(account.id, "classic")}
+                  disabled={isSwitching || isAppActive || !installedTargets.app}
+                  onSelect={() => onSwitch(account.id, "app")}
                   className={cn(
                     "flex items-center justify-between cursor-pointer",
-                    (!installedTargets.classic || isClassicActive) &&
+                    (!installedTargets.app || isAppActive) &&
                       "cursor-not-allowed opacity-60",
                   )}
                   title={
-                    !installedTargets.classic
+                    !installedTargets.app
                       ? t("status.tooltips.appNotInstalled")
                       : undefined
                   }
                 >
                   <span className="flex items-center gap-2">
                     <Workflow className="h-4 w-4 text-green-600" />
-                    <span>{t("cloud.target.classic")}</span>
-                    {!installedTargets.classic && (
+                    <span>{t("cloud.target.app")}</span>
+                    {!installedTargets.app && (
                       <span
                         className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
                         title={t("status.tooltips.appNotInstalled")}
                       />
                     )}
                   </span>
-                  {isSwitching && switchingTarget === "classic" ? (
+                  {isSwitching &&
+                  (switchingTarget === "app" ||
+                    switchingTarget === "classic") ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : isClassicActive ? (
+                  ) : isAppActive ? (
                     <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                   ) : null}
                 </DropdownMenuItem>
@@ -730,15 +786,15 @@ export function CloudAccountCard({
 
                 {/* Target 3: Antigravity CLI */}
                 <DropdownMenuItem
-                  disabled={isSwitching || isCliActive || !installedTargets.agy}
-                  onSelect={() => onSwitch(account.id, "agy")}
+                  disabled={isSwitching || isCliActive || !installedTargets.cli}
+                  onSelect={() => onSwitch(account.id, "cli")}
                   className={cn(
                     "flex items-center justify-between cursor-pointer",
-                    (!installedTargets.agy || isCliActive) &&
+                    (!installedTargets.cli || isCliActive) &&
                       "cursor-not-allowed opacity-60",
                   )}
                   title={
-                    !installedTargets.agy
+                    !installedTargets.cli
                       ? t("status.tooltips.cliNotInstalled")
                       : undefined
                   }
@@ -746,14 +802,15 @@ export function CloudAccountCard({
                   <span className="flex items-center gap-2 font-mono">
                     <Terminal className="h-4 w-4 text-emerald-600" />
                     <span>{t("cloud.target.cli")}</span>
-                    {!installedTargets.agy && (
+                    {!installedTargets.cli && (
                       <span
                         className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
                         title={t("status.tooltips.cliNotInstalled")}
                       />
                     )}
                   </span>
-                  {isSwitching && switchingTarget === "agy" ? (
+                  {isSwitching &&
+                  (switchingTarget === "cli" || switchingTarget === "agy") ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : isCliActive ? (
                     <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -959,15 +1016,14 @@ export function CompactCloudAccountCard({
   const { t } = useTranslation();
   const { config } = useAppConfig();
   const installedTargets = useInstalledTargets();
-  const isCliActive = Boolean(
-    account.is_active_agy || (account as any).is_active_cli,
-  );
-  const isClassicActive = Boolean(
+  const isCliActive = Boolean(account.is_active_cli || account.is_active_agy);
+  const isAppActive = Boolean(
+    account.is_active_app ||
     account.is_active_classic ||
     (!account.is_active_ide && !isCliActive && account.is_active),
   );
   const isAllActive = Boolean(
-    isClassicActive && account.is_active_ide && isCliActive,
+    isAppActive && account.is_active_ide && isCliActive,
   );
 
   const getQuotaBarColorClass = (percentage: number) => {
@@ -1032,20 +1088,62 @@ export function CompactCloudAccountCard({
         <div className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
           <span className="truncate max-w-[140px]">{account.email}</span>
           <div className="flex flex-wrap items-center gap-1">
-            {isClassicActive && (
-              <span className="rounded border border-green-500/20 bg-green-500/10 px-1 py-0.5 text-[9px] font-bold text-green-700 dark:border-green-500/30 dark:bg-green-500/15 dark:text-green-400">
-                {t("cloud.target.classicShort")}
-              </span>
+            {isAppActive && (
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      role="status"
+                      aria-label={`${t("cloud.target.app")}: ${t("cloud.switch.activeBadge")}`}
+                      className="rounded border border-green-500/25 bg-green-500/10 px-1 py-0.5 text-[9px] font-bold text-green-700 dark:border-green-500/30 dark:bg-green-500/15 dark:text-green-400 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none cursor-default"
+                    >
+                      {t("cloud.target.appShort")}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs font-medium">
+                    {t("cloud.target.app")}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
             {account.is_active_ide && (
-              <span className="rounded border border-indigo-500/20 bg-indigo-500/10 px-1 py-0.5 text-[9px] font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-400">
-                {t("cloud.target.ideShort")}
-              </span>
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      role="status"
+                      aria-label={`${t("cloud.target.ide")}: ${t("cloud.switch.activeBadge")}`}
+                      className="rounded border border-indigo-500/25 bg-indigo-500/10 px-1 py-0.5 text-[9px] font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-400 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none cursor-default"
+                    >
+                      {t("cloud.target.ideShort")}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs font-medium">
+                    {t("cloud.target.ide")}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
             {isCliActive && (
-              <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1 py-0.5 font-mono text-[9px] font-bold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-400">
-                {t("cloud.target.cliShort")}
-              </span>
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      role="status"
+                      aria-label={`${t("cloud.target.cli")}: ${t("cloud.switch.activeBadge")}`}
+                      className="rounded border border-emerald-500/25 bg-emerald-500/10 px-1 py-0.5 font-mono text-[9px] font-bold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-400 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none cursor-default"
+                    >
+                      {t("cloud.target.cliShort")}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs font-medium">
+                    {t("cloud.target.cli")}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
           {validationBlockedStatusLabel && (
@@ -1187,36 +1285,35 @@ export function CompactCloudAccountCard({
                 {t("cloud.switch.menuTitle")}
               </DropdownMenuLabel>
 
-              {/* Target 1: Antigravity 2.0 (Classic App) */}
+              {/* Target 1: Antigravity App */}
               <DropdownMenuItem
-                disabled={
-                  isSwitching || isClassicActive || !installedTargets.classic
-                }
-                onSelect={() => onSwitch(account.id, "classic")}
+                disabled={isSwitching || isAppActive || !installedTargets.app}
+                onSelect={() => onSwitch(account.id, "app")}
                 className={cn(
                   "flex items-center justify-between cursor-pointer",
-                  (!installedTargets.classic || isClassicActive) &&
+                  (!installedTargets.app || isAppActive) &&
                     "cursor-not-allowed opacity-60",
                 )}
                 title={
-                  !installedTargets.classic
+                  !installedTargets.app
                     ? t("status.tooltips.appNotInstalled")
                     : undefined
                 }
               >
                 <span className="flex items-center gap-2">
                   <Workflow className="h-4 w-4 text-green-600" />
-                  <span>{t("cloud.target.classic")}</span>
-                  {!installedTargets.classic && (
+                  <span>{t("cloud.target.app")}</span>
+                  {!installedTargets.app && (
                     <span
                       className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
                       title={t("status.tooltips.appNotInstalled")}
                     />
                   )}
                 </span>
-                {isSwitching && switchingTarget === "classic" ? (
+                {isSwitching &&
+                (switchingTarget === "app" || switchingTarget === "classic") ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : isClassicActive ? (
+                ) : isAppActive ? (
                   <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                 ) : null}
               </DropdownMenuItem>
@@ -1257,15 +1354,15 @@ export function CompactCloudAccountCard({
 
               {/* Target 3: Antigravity CLI */}
               <DropdownMenuItem
-                disabled={isSwitching || isCliActive || !installedTargets.agy}
-                onSelect={() => onSwitch(account.id, "agy")}
+                disabled={isSwitching || isCliActive || !installedTargets.cli}
+                onSelect={() => onSwitch(account.id, "cli")}
                 className={cn(
                   "flex items-center justify-between cursor-pointer",
-                  (!installedTargets.agy || isCliActive) &&
+                  (!installedTargets.cli || isCliActive) &&
                     "cursor-not-allowed opacity-60",
                 )}
                 title={
-                  !installedTargets.agy
+                  !installedTargets.cli
                     ? t("status.tooltips.cliNotInstalled")
                     : undefined
                 }
@@ -1273,14 +1370,15 @@ export function CompactCloudAccountCard({
                 <span className="flex items-center gap-2 font-mono">
                   <Terminal className="h-4 w-4 text-emerald-600" />
                   <span>{t("cloud.target.cli")}</span>
-                  {!installedTargets.agy && (
+                  {!installedTargets.cli && (
                     <span
                       className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
                       title={t("status.tooltips.cliNotInstalled")}
                     />
                   )}
                 </span>
-                {isSwitching && switchingTarget === "agy" ? (
+                {isSwitching &&
+                (switchingTarget === "cli" || switchingTarget === "agy") ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : isCliActive ? (
                   <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />

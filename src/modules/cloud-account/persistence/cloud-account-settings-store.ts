@@ -79,19 +79,47 @@ export class CloudAccountSettingsStore {
   }
 
   static setActiveForTarget(
-    target: AntigravityAppTarget | undefined,
+    target: AntigravityAppTarget | string | undefined,
     id: string,
   ): void {
     const normalizedTarget = resolveAntigravityAppTarget(target);
     this.setSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.${normalizedTarget}`, id);
+
+    // Dual-write during transition
+    if (normalizedTarget === "app") {
+      this.setSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.classic`, id);
+    } else if (normalizedTarget === "cli") {
+      this.setSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.agy`, id);
+    }
   }
 
   static getActiveAccountIdForTarget(
-    target: AntigravityAppTarget | undefined,
+    target: AntigravityAppTarget | string | undefined,
   ): string {
     const normalizedTarget = resolveAntigravityAppTarget(target);
     const key = `${ACTIVE_ACCOUNT_SETTING_PREFIX}.${normalizedTarget}`;
-    const value = this.getSetting(key, "", StringSettingSchema);
+    let value = this.getSetting(key, "", StringSettingSchema);
+
+    // Fallback read compatibility: check legacy setting if canonical is empty
+    if (
+      (typeof value !== "string" || value.trim() === "") &&
+      normalizedTarget === "app"
+    ) {
+      value = this.getSetting(
+        `${ACTIVE_ACCOUNT_SETTING_PREFIX}.classic`,
+        "",
+        StringSettingSchema,
+      );
+    } else if (
+      (typeof value !== "string" || value.trim() === "") &&
+      normalizedTarget === "cli"
+    ) {
+      value = this.getSetting(
+        `${ACTIVE_ACCOUNT_SETTING_PREFIX}.agy`,
+        "",
+        StringSettingSchema,
+      );
+    }
 
     if (typeof value !== "string") {
       logger.warn(
@@ -112,13 +140,22 @@ export class CloudAccountSettingsStore {
     }
   }
 
-  static clearActiveForTarget(target: AntigravityAppTarget | undefined): void {
+  static clearActiveForTarget(
+    target: AntigravityAppTarget | string | undefined,
+  ): void {
     const normalizedTarget = resolveAntigravityAppTarget(target);
     this.deleteSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.${normalizedTarget}`);
+
+    // Dual-delete during transition
+    if (normalizedTarget === "app") {
+      this.deleteSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.classic`);
+    } else if (normalizedTarget === "cli") {
+      this.deleteSetting(`${ACTIVE_ACCOUNT_SETTING_PREFIX}.agy`);
+    }
   }
 
   static evictIfTargetMissing(
-    target: AntigravityAppTarget | undefined,
+    target: AntigravityAppTarget | string | undefined,
   ): boolean {
     const normalizedTarget = resolveAntigravityAppTarget(target);
     const currentActiveId = this.getActiveAccountIdForTarget(normalizedTarget);
@@ -147,7 +184,7 @@ export class CloudAccountSettingsStore {
   }
 
   static evictAllMissingTargets(): AntigravityAppTarget[] {
-    const targets: AntigravityAppTarget[] = ["classic", "ide", "agy"];
+    const targets: AntigravityAppTarget[] = ["app", "ide", "cli"];
     const evicted: AntigravityAppTarget[] = [];
     for (const target of targets) {
       if (this.evictIfTargetMissing(target)) {

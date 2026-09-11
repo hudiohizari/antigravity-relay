@@ -1,22 +1,22 @@
-import Database from 'better-sqlite3';
-import fs from 'fs';
-import path from 'path';
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { getCloudAccountsDbPath } from '@/shared/platform/paths';
-import { logger } from '@/shared/logging/logger';
-import { TableInfoRowSchema } from '@/shared/persistence/database/types';
-import { parseRows } from '@/shared/persistence/database/sqlite';
+import Database from "better-sqlite3";
+import fs from "fs";
+import path from "path";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { getCloudAccountsDbPath } from "@/shared/platform/paths";
+import { logger } from "@/shared/logging/logger";
+import { TableInfoRowSchema } from "@/shared/persistence/database/types";
+import { parseRows } from "@/shared/persistence/database/sqlite";
 import {
   configureDatabase,
   openDrizzleConnection,
-} from '@/shared/persistence/database/dbConnection';
-import * as drizzleSchema from '@/shared/persistence/database/schema';
+} from "@/shared/persistence/database/dbConnection";
+import * as drizzleSchema from "@/shared/persistence/database/schema";
 
 export const CLOUD_ACCOUNT_SQLITE_BUSY_TIMEOUT_MS = 3000;
 
 export type DrizzleExecutor = Pick<
   BetterSQLite3Database<typeof drizzleSchema>,
-  'insert' | 'update' | 'delete' | 'select'
+  "insert" | "update" | "delete" | "select"
 >;
 
 function ensureDatabaseInitialized(dbPath: string): void {
@@ -28,7 +28,9 @@ function ensureDatabaseInitialized(dbPath: string): void {
   let db: Database.Database | null = null;
   try {
     db = new Database(dbPath);
-    configureDatabase(db, { busyTimeoutMs: CLOUD_ACCOUNT_SQLITE_BUSY_TIMEOUT_MS });
+    configureDatabase(db, {
+      busyTimeoutMs: CLOUD_ACCOUNT_SQLITE_BUSY_TIMEOUT_MS,
+    });
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS accounts (
@@ -50,34 +52,46 @@ function ensureDatabaseInitialized(dbPath: string): void {
       );
     `);
 
-    const tableInfoRaw = db.pragma('table_info(accounts)') as unknown[];
-    const tableInfo = parseRows(TableInfoRowSchema, tableInfoRaw, 'cloud.accounts.tableInfo');
-    const hasIsActive = tableInfo.some((col) => col.name === 'is_active');
-    const hasDeviceProfileJson = tableInfo.some((col) => col.name === 'device_profile_json');
-    const hasDeviceHistoryJson = tableInfo.some((col) => col.name === 'device_history_json');
-    const hasProxyUrl = tableInfo.some((col) => col.name === 'proxy_url');
-    const hasStatusReason = tableInfo.some((col) => col.name === 'status_reason');
-    const hasHealthJson = tableInfo.some((col) => col.name === 'health_json');
+    const tableInfoRaw = db.pragma("table_info(accounts)") as unknown[];
+    const tableInfo = parseRows(
+      TableInfoRowSchema,
+      tableInfoRaw,
+      "cloud.accounts.tableInfo",
+    );
+    const hasIsActive = tableInfo.some((col) => col.name === "is_active");
+    const hasDeviceProfileJson = tableInfo.some(
+      (col) => col.name === "device_profile_json",
+    );
+    const hasDeviceHistoryJson = tableInfo.some(
+      (col) => col.name === "device_history_json",
+    );
+    const hasProxyUrl = tableInfo.some((col) => col.name === "proxy_url");
+    const hasStatusReason = tableInfo.some(
+      (col) => col.name === "status_reason",
+    );
+    const hasHealthJson = tableInfo.some((col) => col.name === "health_json");
     if (!hasIsActive) {
-      db.exec('ALTER TABLE accounts ADD COLUMN is_active INTEGER DEFAULT 0');
+      db.exec("ALTER TABLE accounts ADD COLUMN is_active INTEGER DEFAULT 0");
     }
     if (!hasDeviceProfileJson) {
-      db.exec('ALTER TABLE accounts ADD COLUMN device_profile_json TEXT');
+      db.exec("ALTER TABLE accounts ADD COLUMN device_profile_json TEXT");
     }
     if (!hasDeviceHistoryJson) {
-      db.exec('ALTER TABLE accounts ADD COLUMN device_history_json TEXT');
+      db.exec("ALTER TABLE accounts ADD COLUMN device_history_json TEXT");
     }
     if (!hasProxyUrl) {
-      db.exec('ALTER TABLE accounts ADD COLUMN proxy_url TEXT');
+      db.exec("ALTER TABLE accounts ADD COLUMN proxy_url TEXT");
     }
     if (!hasStatusReason) {
-      db.exec('ALTER TABLE accounts ADD COLUMN status_reason TEXT');
+      db.exec("ALTER TABLE accounts ADD COLUMN status_reason TEXT");
     }
     if (!hasHealthJson) {
-      db.exec('ALTER TABLE accounts ADD COLUMN health_json TEXT');
+      db.exec("ALTER TABLE accounts ADD COLUMN health_json TEXT");
     }
 
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_accounts_email ON accounts(email);`);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_accounts_email ON accounts(email);`,
+    );
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS settings (
@@ -85,8 +99,29 @@ function ensureDatabaseInitialized(dbPath: string): void {
         value TEXT NOT NULL
       );
     `);
+
+    // Idempotent migration of legacy active account settings
+    db.exec(`
+      INSERT OR IGNORE INTO settings (key, value)
+      SELECT 'active_cloud_account.app', value
+      FROM settings
+      WHERE key = 'active_cloud_account.classic'
+      AND NOT EXISTS (
+        SELECT 1 FROM settings WHERE key = 'active_cloud_account.app'
+      );
+    `);
+
+    db.exec(`
+      INSERT OR IGNORE INTO settings (key, value)
+      SELECT 'active_cloud_account.cli', value
+      FROM settings
+      WHERE key = 'active_cloud_account.agy'
+      AND NOT EXISTS (
+        SELECT 1 FROM settings WHERE key = 'active_cloud_account.cli'
+      );
+    `);
   } catch (error) {
-    logger.error('Failed to initialize cloud database schema', error);
+    logger.error("Failed to initialize cloud database schema", error);
     throw error;
   } finally {
     if (db) {

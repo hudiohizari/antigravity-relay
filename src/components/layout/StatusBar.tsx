@@ -51,7 +51,7 @@ interface StatusBarProps {
 }
 
 interface ManagedService {
-  id: "relay" | "tunnel" | "classic" | "ide" | "agy";
+  id: "relay" | "tunnel" | "app" | "ide" | "cli";
   type: "service" | "app";
   labelKey: string;
   icon: React.ElementType;
@@ -104,7 +104,7 @@ function useTargetProcessService(target: AntigravityAppTarget) {
     }
     if (isRunning) {
       stopMutation.mutate();
-    } else if (target !== "agy") {
+    } else if (target !== "cli" && (target as string) !== "agy") {
       startMutation.mutate();
     }
   };
@@ -258,7 +258,10 @@ function ServiceRow({ service }: { service: ManagedService }) {
           <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-foreground whitespace-nowrap">
+          <div
+            className="text-sm font-medium text-foreground truncate max-w-[140px] sm:max-w-[180px]"
+            title={t(service.labelKey)}
+          >
             {t(service.labelKey)}
           </div>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
@@ -298,7 +301,7 @@ function ServiceRow({ service }: { service: ManagedService }) {
                     window.electron.openExternalUrl(service.url!);
                   }
                 }}
-                className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 hover:underline truncate max-w-[180px]"
+                className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 hover:underline truncate max-w-[130px] sm:max-w-[180px]"
                 title={service.url}
               >
                 <span className="truncate">{service.url}</span>
@@ -312,8 +315,19 @@ function ServiceRow({ service }: { service: ManagedService }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <span
-              className="inline-flex shrink-0"
+              className={cn(
+                "inline-flex shrink-0 rounded-md",
+                isStartDisabled &&
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              )}
               tabIndex={isStartDisabled ? 0 : undefined}
+              role={isStartDisabled ? "button" : undefined}
+              aria-disabled={isStartDisabled ? "true" : undefined}
+              aria-label={
+                isStartDisabled && tooltipMessage
+                  ? `${t(service.labelKey)}: ${tooltipMessage}`
+                  : undefined
+              }
               title={tooltipMessage}
             >
               <Button
@@ -363,9 +377,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const { t } = useTranslation();
   const relay = useRelayService();
   const tunnel = useTunnelService();
-  const classic = useTargetProcessService("classic");
+  const app = useTargetProcessService("app");
   const ide = useTargetProcessService("ide");
-  const agy = useTargetProcessService("agy");
+  const cli = useTargetProcessService("cli");
 
   const services: ManagedService[] = [
     {
@@ -386,13 +400,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       canStart: tunnel.isBinaryInstalled !== false,
     },
     {
-      id: "classic",
+      id: "app",
       type: "app",
       labelKey: "status.service_app",
       icon: Workflow,
-      ...classic,
+      ...app,
       uninstalledTooltipKey: "status.tooltips.appNotInstalled",
-      canStart: classic.isBinaryInstalled !== false,
+      canStart: app.isBinaryInstalled !== false,
     },
     {
       id: "ide",
@@ -404,11 +418,11 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       canStart: ide.isBinaryInstalled !== false,
     },
     {
-      id: "agy",
+      id: "cli",
       type: "app",
       labelKey: "status.service_cli",
       icon: Terminal,
-      ...agy,
+      ...cli,
       uninstalledTooltipKey: "status.tooltips.cliNotInstalled",
       idleTooltipKey: "status.tooltips.cliIdleGuidance",
       canStart: false,
@@ -490,7 +504,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         side="top"
         align="start"
         sideOffset={8}
-        className="w-96 p-2.5 rounded-lg border shadow-lg max-h-[min(460px,85vh)] overflow-y-auto"
+        className="w-[calc(100vw-24px)] max-w-sm sm:w-96 p-2.5 rounded-lg border shadow-lg max-h-[min(460px,85vh)] overflow-y-auto"
       >
         <div className="px-2 pb-2">
           <div className="text-sm font-semibold text-foreground">

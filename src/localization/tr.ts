@@ -31,15 +31,14 @@ const tr = {
     local_network: "Yerel",
     service_relay: "Relay Sunucusu",
     service_tunnel: "Cloudflare Tüneli",
-    service_app: "Antigravity 2.0 (Uygulama)",
+    service_app: "Antigravity App",
     service_ide: "Antigravity IDE",
-    service_cli: "Antigravity CLI (agy)",
+    service_cli: "Antigravity CLI",
     tooltips: {
-      appNotInstalled:
-        "Antigravity 2.0 masaüstü uygulaması bu sistemde algılanmadı",
+      appNotInstalled: "Antigravity App bu sistemde algılanmadı",
       ideNotInstalled: "Antigravity IDE bu sistemde algılanmadı",
       cliNotInstalled:
-        "Antigravity CLI (agy) çalıştırılabilir dosyası PATH veya standart dizinlerde bulunamadı",
+        "Antigravity CLI çalıştırılabilir dosyası PATH veya standart dizinlerde bulunamadı",
       tunnelNotInstalled: "cloudflared CLI bu bilgisayarda yüklü değil",
       cliIdleGuidance: "Doğrudan terminalden 'agy <komut>' ile çalıştırın",
     },
@@ -156,11 +155,11 @@ const tr = {
     stopFailed: "Relay sunucusu durdurulamadı: {{error}}",
     mirrorBoundary: {
       title: "Remote Mirror Kapsam Bildirimi",
-      badge: "Yalnızca Masaüstü ve IDE",
+      badge: "Yalnızca App ve IDE",
       description:
-        "Mobile Remote Mirror yalnızca Antigravity IDE ve Antigravity 2.0 Masaüstü Uygulama oturumlarını aktarır. Antigravity CLI (agy) yalnızca terminalinizde çalışır ve mobil cihazlara yansıtılamaz.",
+        "Mobile Remote Mirror yalnızca Antigravity App ve Antigravity IDE oturumlarını aktarır. Antigravity CLI yalnızca terminalinizde çalışır ve mobil cihazlara yansıtılamaz.",
       callout:
-        "Terminal CLI (agy) doğrudan bu ana bilgisayarda çalışır ve mobil cihazlara yansıtılmaz.",
+        "Antigravity CLI doğrudan bu ana bilgisayarda çalışır ve mobil cihazlara yansıtılmaz.",
     },
   },
   tunnel: {
@@ -236,7 +235,7 @@ const tr = {
     keyInvalidError:
       "Geçersiz eşleştirme anahtarı. Lütfen masaüstü panelindeki etkin anahtarı doğrulayın.",
     platformScopeNotice:
-      "Mobil eşlikçi yalnızca Antigravity IDE ve Masaüstü Uygulama oturumlarını yansıtır. Terminal CLI (agy) desteklenmez.",
+      "Mobil eşlikçi yalnızca Antigravity App ve Antigravity IDE oturumlarını yansıtır. Antigravity CLI desteklenmez.",
   },
   sessions: {
     title: "Bağlı Telefon Oturumları",
@@ -315,22 +314,6 @@ const tr = {
     switchedTargetDescription:
       "Sistem tepsisi üzerinden {{target}} ortamı {{email}} hesabına geçirildi.",
   },
-  editionSelection: {
-    title: "Antigravity Sürümünüzü Seçin",
-    description:
-      "Kullandığınız Antigravity sürümünü seçin. Bu, Relay'in doğru uygulamaya bağlanmasını sağlar.",
-    edition1x: {
-      name: "Antigravity 1.x",
-      description:
-        "Orijinal Antigravity uygulaması. Eski sürümü kullanıyorsanız bunu seçin.",
-    },
-    edition20: {
-      name: "Antigravity IDE",
-      description:
-        "Yeni Antigravity IDE (2.0). En son IDE sürümünü kullanıyorsanız bunu seçin.",
-    },
-    confirm: "Devam Et",
-  },
   account: {
     current: "Mevcut",
     lastUsed: "Son kullanım: {{time}}",
@@ -389,24 +372,24 @@ const tr = {
       description: "Uygulama bilgileri.",
     },
     cache: {
-      title: "Antigravity Önbelleği",
+      title: "Antigravity App Önbelleği",
       description:
-        "Oturum açma veya sürüm doğrulama sorunlarını gidermek için bilinen Antigravity önbellek klasörlerini temizleyin.",
-      clear: "Antigravity Önbelleğini Temizle",
-      dialogTitle: "Antigravity önbelleği temizlensin mi?",
+        "Oturum açma veya sürüm doğrulama sorunlarını gidermek için bilinen Antigravity App önbellek klasörlerini temizleyin.",
+      clear: "Antigravity App Önbelleğini Temizle",
+      dialogTitle: "Antigravity App önbelleği temizlensin mi?",
       dialogDescription: "Aşağıdaki mevcut önbellek klasörleri silinecek.",
       pathsLabel: "Önbellek klasörleri",
-      noPaths: "Bilinen bir Antigravity önbellek klasörü bulunamadı.",
+      noPaths: "Bilinen bir Antigravity App önbellek klasörü bulunamadı.",
       warning:
-        "Kilitli dosyaları önlemek için temizlemeden önce Antigravity uygulamasını kapatın.",
+        "Kilitli dosyaları önlemek için temizlemeden önce Antigravity App uygulamasını kapatın.",
       cancel: "İptal",
       confirm: "Önbelleği Temizle",
       clearing: "Temizleniyor...",
       clearedTitle: "Önbellek temizlendi",
       clearedDescription:
-        "Antigravity önbellek klasörlerinden {{size}} MB silindi.",
+        "Antigravity App önbellek klasörlerinden {{size}} MB silindi.",
       failedTitle: "Önbellek temizlenemedi",
-      notFoundTitle: "Antigravity önbelleği bulunamadı",
+      notFoundTitle: "Antigravity App önbelleği bulunamadı",
     },
     version: "Sürüm",
     platform: "Platform",
@@ -430,14 +413,14 @@ const tr = {
         "Tüm hesaplar için kota bilgilerini periyodik olarak yenile",
       auto_sync: "Mevcut Hesabı Otomatik Eşitle",
       auto_sync_desc: "Aktif hesap bilgilerini periyodik olarak eşitle",
-      antigravity_executable: "Antigravity çalıştırılabilir dosyası",
+      antigravity_executable: "Antigravity App çalıştırılabilir dosyası",
       antigravity_executable_desc:
-        "Portable mode verilerini bulmak ve Antigravity uygulamasını başlatmak için isteğe bağlı yol.",
+        "Portable mode verilerini bulmak ve Antigravity App uygulamasını başlatmak için isteğe bağlı yol.",
       antigravity_executable_placeholder:
         "Örnek: C:\\Program Files\\Antigravity\\Antigravity.exe",
-      antigravity_args: "Antigravity başlatma argümanları",
+      antigravity_args: "Antigravity App başlatma argümanları",
       antigravity_args_desc:
-        "Antigravity başlatılırken iletilecek isteğe bağlı argümanlar, örneğin --user-data-dir.",
+        "Antigravity App başlatılırken iletilecek isteğe bağlı argümanlar, örneğin --user-data-dir.",
       antigravity_args_placeholder:
         "Örnek: --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Algıla",
@@ -655,7 +638,8 @@ const tr = {
       failed: "Başarısız: {{count}}",
       sources: {
         "antigravity-keyring": "Sistem Kimlik Bilgisi Deposu",
-        "antigravity-classic-db": "Antigravity Veritabanı",
+        "antigravity-app-db": "Antigravity App Veritabanı",
+        "antigravity-classic-db": "Antigravity App Veritabanı",
         "antigravity-ide-db": "Antigravity IDE Veritabanı",
         "legacy-agent": "Eski Agent Verisi",
         "antigravity-cli-token": "Antigravity CLI",
@@ -696,6 +680,8 @@ const tr = {
       },
     },
     target: {
+      app: "Antigravity Uygulaması",
+      appShort: "Uygulama",
       classic: "Antigravity Uygulaması",
       classicShort: "Uygulama",
       ide: "Antigravity IDE",

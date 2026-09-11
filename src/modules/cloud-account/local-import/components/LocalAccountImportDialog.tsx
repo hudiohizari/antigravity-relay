@@ -32,6 +32,7 @@ type DialogPhase =
 
 const SOURCE_I18N_KEYS = {
   "antigravity-keyring": "cloud.localImport.sources.antigravity-keyring",
+  "antigravity-app-db": "cloud.localImport.sources.antigravity-classic-db",
   "antigravity-classic-db": "cloud.localImport.sources.antigravity-classic-db",
   "antigravity-ide-db": "cloud.localImport.sources.antigravity-ide-db",
   "legacy-agent": "cloud.localImport.sources.legacy-agent",

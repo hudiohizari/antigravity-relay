@@ -34,15 +34,15 @@ const fr = {
     local_network: "Local",
     service_relay: "Serveur Relay",
     service_tunnel: "Tunnel Cloudflare",
-    service_app: "Antigravity 2.0 (App)",
+    service_app: "Antigravity App",
     service_ide: "Antigravity IDE",
-    service_cli: "Antigravity CLI (agy)",
+    service_cli: "Antigravity CLI",
     tooltips: {
       appNotInstalled:
-        "L application de bureau Antigravity 2.0 n est pas detectee sur ce systeme",
+        "L application Antigravity n est pas detectee sur ce systeme",
       ideNotInstalled: "Antigravity IDE n est pas detecte sur ce systeme",
       cliNotInstalled:
-        "L executable Antigravity CLI (agy) est introuvable dans PATH ou les dossiers standards",
+        "L executable Antigravity CLI est introuvable dans PATH ou les dossiers standards",
       tunnelNotInstalled:
         "Le CLI cloudflared n est pas installe sur cet ordinateur",
       cliIdleGuidance:
@@ -164,11 +164,11 @@ const fr = {
     stopFailed: "Échec de l'arrêt du serveur relais : {{error}}",
     mirrorBoundary: {
       title: "Avis sur le perimetre de Remote Mirror",
-      badge: "Bureau et IDE uniquement",
+      badge: "App et IDE uniquement",
       description:
-        "Mobile Remote Mirror diffuse uniquement les sessions Antigravity IDE et l application de bureau Antigravity 2.0. Antigravity CLI (agy) s execute exclusivement dans votre terminal et ne peut pas etre diffuse sur les appareils mobiles compagnons.",
+        "Mobile Remote Mirror diffuse uniquement les sessions Antigravity App et Antigravity IDE. Antigravity CLI s execute exclusivement dans votre terminal et ne peut pas etre diffuse sur les appareils mobiles compagnons.",
       callout:
-        "Le terminal CLI (agy) fonctionne directement sur cet hote et n est pas diffuse sur les appareils mobiles.",
+        "Antigravity CLI fonctionne directement sur cet hote et n est pas diffuse sur les appareils mobiles.",
     },
   },
   tunnel: {
@@ -248,7 +248,7 @@ const fr = {
     keyInvalidError:
       "Clé d'appairage invalide. Veuillez vérifier la clé active sur votre tableau de bord desktop.",
     platformScopeNotice:
-      "Le compagnon mobile diffuse uniquement les sessions Antigravity IDE et Desktop App. Le terminal CLI (agy) n est pas pris en charge.",
+      "Le compagnon mobile diffuse uniquement les sessions Antigravity App et Antigravity IDE. Antigravity CLI n est pas pris en charge.",
   },
   sessions: {
     title: "Sessions mobiles connectées",
@@ -327,22 +327,6 @@ const fr = {
     switchedTargetDescription:
       "L environnement {{target}} a ete bascule vers {{email}} via la zone de notification.",
   },
-  editionSelection: {
-    title: "Choisissez votre edition Antigravity",
-    description:
-      "Selectionnez la version d Antigravity que vous utilisez. Cela aide le Relay a se connecter a la bonne application.",
-    edition1x: {
-      name: "Antigravity 1.x",
-      description:
-        "L application Antigravity originale. Choisissez ceci si vous utilisez l ancienne version.",
-    },
-    edition20: {
-      name: "Antigravity IDE",
-      description:
-        "Le nouvel Antigravity IDE (2.0). Choisissez ceci si vous utilisez la derniere version IDE.",
-    },
-    confirm: "Continuer",
-  },
   account: {
     current: "Actuel",
     lastUsed: "Derniere utilisation {{time}}",
@@ -404,25 +388,25 @@ const fr = {
       description: "Informations sur l application.",
     },
     cache: {
-      title: "Cache Antigravity",
+      title: "Cache Antigravity App",
       description:
-        "Effacez les dossiers de cache connus d Antigravity pour résoudre les problèmes de connexion ou de validation de version.",
-      clear: "Effacer le cache Antigravity",
-      dialogTitle: "Effacer le cache Antigravity ?",
+        "Effacez les dossiers de cache connus d Antigravity App pour résoudre les problèmes de connexion ou de validation de version.",
+      clear: "Effacer le cache Antigravity App",
+      dialogTitle: "Effacer le cache Antigravity App ?",
       dialogDescription:
         "Les dossiers de cache existants suivants seront supprimés.",
       pathsLabel: "Dossiers de cache",
-      noPaths: "Aucun dossier de cache Antigravity connu n a été trouvé.",
+      noPaths: "Aucun dossier de cache Antigravity App connu n a été trouvé.",
       warning:
-        "Fermez Antigravity avant le nettoyage afin d éviter les fichiers verrouillés.",
+        "Fermez Antigravity App avant le nettoyage afin d éviter les fichiers verrouillés.",
       cancel: "Annuler",
       confirm: "Effacer le cache",
       clearing: "Nettoyage...",
       clearedTitle: "Cache effacé",
       clearedDescription:
-        "{{size}} Mo ont été supprimés des dossiers de cache Antigravity.",
+        "{{size}} Mo ont été supprimés des dossiers de cache Antigravity App.",
       failedTitle: "Échec du nettoyage du cache",
-      notFoundTitle: "Aucun cache Antigravity trouvé",
+      notFoundTitle: "Aucun cache Antigravity App trouvé",
     },
     version: "Version",
     platform: "Plateforme",
@@ -447,14 +431,14 @@ const fr = {
       auto_sync: "Synchronisation automatique du compte actuel",
       auto_sync_desc:
         "Synchroniser regulierement les informations du compte actif",
-      antigravity_executable: "Executable Antigravity",
+      antigravity_executable: "Executable Antigravity App",
       antigravity_executable_desc:
-        "Chemin facultatif utilise pour trouver les donnees du mode portable et lancer Antigravity.",
+        "Chemin facultatif utilise pour trouver les donnees du mode portable et lancer Antigravity App.",
       antigravity_executable_placeholder:
         "Exemple : C:\\Program Files\\Antigravity\\Antigravity.exe",
-      antigravity_args: "Arguments de lancement Antigravity",
+      antigravity_args: "Arguments de lancement Antigravity App",
       antigravity_args_desc:
-        "Arguments facultatifs transmis au lancement d Antigravity, comme --user-data-dir.",
+        "Arguments facultatifs transmis au lancement d Antigravity App, comme --user-data-dir.",
       antigravity_args_placeholder:
         "Exemple : --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Detecter",
@@ -651,6 +635,8 @@ const fr = {
     },
     localImport: en.cloud.localImport,
     target: {
+      app: "Application Antigravity",
+      appShort: "App",
       classic: "Application Antigravity",
       classicShort: "App",
       ide: "Antigravity IDE",

@@ -340,7 +340,7 @@ describe("useTrayAccountSync", () => {
     expect(cached!.find((a) => a.id === "acc-1")?.is_active).toBe(true);
   });
 
-  it("handles multi-target payloads and normalizes cli alias to agy", () => {
+  it("handles multi-target payloads and normalizes cli alias to agy with dual-property hydration", () => {
     renderHook(() => useTrayAccountSync(), {
       wrapper: createWrapper(),
     });
@@ -356,11 +356,12 @@ describe("useTrayAccountSync", () => {
       QUERY_KEYS.cloudAccounts,
     );
     const acc2 = cached!.find((a) => a.id === "acc-2");
+    expect(acc2?.is_active_cli).toBe(true);
     expect(acc2?.is_active_agy).toBe(true);
     expect(acc2?.is_active).toBe(true);
   });
 
-  it("handles single target ide and classic switch payloads correctly", () => {
+  it("handles single target ide, app, and classic switch payloads correctly", () => {
     renderHook(() => useTrayAccountSync(), {
       wrapper: createWrapper(),
     });
@@ -382,12 +383,26 @@ describe("useTrayAccountSync", () => {
     act(() => {
       switchedCallback!({
         accountId: "acc-2",
+        target: "app",
+      });
+    });
+
+    cached = queryClient.getQueryData<CloudAccount[]>(QUERY_KEYS.cloudAccounts);
+    acc2 = cached!.find((a) => a.id === "acc-2");
+    expect(acc2?.is_active_app).toBe(true);
+    expect(acc2?.is_active_classic).toBe(true);
+    expect(acc2?.is_active).toBe(true);
+
+    act(() => {
+      switchedCallback!({
+        accountId: "acc-2",
         target: "classic",
       });
     });
 
     cached = queryClient.getQueryData<CloudAccount[]>(QUERY_KEYS.cloudAccounts);
     acc2 = cached!.find((a) => a.id === "acc-2");
+    expect(acc2?.is_active_app).toBe(true);
     expect(acc2?.is_active_classic).toBe(true);
     expect(acc2?.is_active).toBe(true);
   });

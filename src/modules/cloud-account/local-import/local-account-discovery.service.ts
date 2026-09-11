@@ -268,7 +268,7 @@ export function createDefaultLocalAccountDiscoveryService(): LocalAccountDiscove
   return new LocalAccountDiscoveryService({
     sources: [
       new AntigravityKeyringDiscoverySource(),
-      new AntigravityDatabaseDiscoverySource("classic"),
+      new AntigravityDatabaseDiscoverySource("app"),
       new AntigravityDatabaseDiscoverySource("ide"),
       new LegacyAgentDiscoverySource(),
       new AntigravityCliDiscoverySource(),

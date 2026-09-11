@@ -114,6 +114,33 @@ describe("AntigravityDatabaseDiscoverySource", () => {
     ]);
   });
 
+  it("identifies as antigravity-app-db when target is app or defaulted, supporting alias fallback", async () => {
+    const readTokenInfoFromPath = vi.fn().mockReturnValue({
+      accessToken: "access-app",
+      refreshToken: "refresh-app",
+    });
+    const source = new AntigravityDatabaseDiscoverySource("app", {
+      existsSync: () => true,
+      getDbPaths: () => ["app.vscdb"],
+      readTokenInfoFromPath,
+    });
+
+    expect(source.id).toBe("antigravity-app-db");
+    const result = await source.discover();
+    expect(result.candidates).toEqual([
+      {
+        source: { id: "antigravity-app-db", location: "app.vscdb" },
+        credential: {
+          accessToken: "access-app",
+          refreshToken: "refresh-app",
+        },
+      },
+    ]);
+
+    const defaultSource = new AntigravityDatabaseDiscoverySource();
+    expect(defaultSource.id).toBe("antigravity-app-db");
+  });
+
   it("records a damaged database and continues with the remaining paths", async () => {
     const leakedToken = "refresh-token-must-not-leak";
     const readTokenInfoFromPath = vi
@@ -147,7 +174,7 @@ describe("AntigravityDatabaseDiscoverySource", () => {
   it("discovers classic and IDE databases in one session and deduplicates their token", async () => {
     const dependencies = {
       existsSync: () => true,
-      getDbPaths: (target: "classic" | "ide") => [`${target}.vscdb`],
+      getDbPaths: (target: "classic" | "ide" | "app") => [`${target}.vscdb`],
       readTokenInfoFromPath: () => ({
         accessToken: "shared-access",
         refreshToken: "shared-refresh",

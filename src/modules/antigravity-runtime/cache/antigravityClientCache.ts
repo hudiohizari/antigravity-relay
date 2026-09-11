@@ -1,8 +1,8 @@
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import { logger } from '@/shared/logging/logger';
-import type { PathResolutionOptions } from '@/shared/platform/paths';
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { logger } from "@/shared/logging/logger";
+import type { PathResolutionOptions } from "@/shared/platform/paths";
 
 export interface AntigravityClientCacheClearResult {
   clearedPaths: string[];
@@ -10,47 +10,58 @@ export interface AntigravityClientCacheClearResult {
   errors: string[];
 }
 
-export function getAntigravityClientCachePaths(options?: PathResolutionOptions): string[] {
+export function getAntigravityClientCachePaths(
+  options?: PathResolutionOptions,
+): string[] {
   const platform = options?.platform ?? process.platform;
 
-  if (platform === 'darwin') {
+  if (platform === "darwin") {
     const home = os.homedir();
     return [
-      path.posix.join(home, 'Library', 'HTTPStorages', 'com.google.antigravity'),
-      path.posix.join(home, 'Library', 'Caches', 'com.google.antigravity'),
-      path.posix.join(home, '.antigravity'),
-      path.posix.join(home, '.config', 'antigravity'),
+      path.posix.join(
+        home,
+        "Library",
+        "HTTPStorages",
+        "com.google.antigravity",
+      ),
+      path.posix.join(home, "Library", "Caches", "com.google.antigravity"),
+      path.posix.join(home, ".antigravity"),
+      path.posix.join(home, ".config", "antigravity"),
     ];
   }
 
-  if (platform === 'linux') {
+  if (platform === "linux") {
     const home = os.homedir();
     const paths = [
-      path.posix.join(home, '.cache', 'Antigravity'),
-      path.posix.join(home, '.cache', 'google-antigravity'),
-      path.posix.join(home, '.antigravity'),
+      path.posix.join(home, ".cache", "Antigravity"),
+      path.posix.join(home, ".cache", "google-antigravity"),
+      path.posix.join(home, ".antigravity"),
     ];
     if (process.env.XDG_CACHE_HOME) {
-      paths.push(path.posix.join(process.env.XDG_CACHE_HOME, 'Antigravity'));
-      paths.push(path.posix.join(process.env.XDG_CACHE_HOME, 'google-antigravity'));
+      paths.push(path.posix.join(process.env.XDG_CACHE_HOME, "Antigravity"));
+      paths.push(
+        path.posix.join(process.env.XDG_CACHE_HOME, "google-antigravity"),
+      );
     }
 
     return paths;
   }
 
-  if (platform !== 'win32') {
+  if (platform !== "win32") {
     return [];
   }
 
   const paths: string[] = [];
   if (process.env.LOCALAPPDATA) {
-    paths.push(path.win32.join(process.env.LOCALAPPDATA, 'Google', 'Antigravity'));
-    paths.push(path.win32.join(process.env.LOCALAPPDATA, 'Antigravity', 'Cache'));
-    paths.push(path.win32.join(process.env.LOCALAPPDATA, 'Antigravity IDE', 'Cache'));
+    paths.push(
+      path.win32.join(process.env.LOCALAPPDATA, "Google", "Antigravity"),
+    );
+    paths.push(
+      path.win32.join(process.env.LOCALAPPDATA, "Antigravity", "Cache"),
+    );
   }
   if (process.env.APPDATA) {
-    paths.push(path.win32.join(process.env.APPDATA, 'Antigravity', 'Cache'));
-    paths.push(path.win32.join(process.env.APPDATA, 'Antigravity IDE', 'Cache'));
+    paths.push(path.win32.join(process.env.APPDATA, "Antigravity", "Cache"));
   }
 
   return paths;
@@ -64,12 +75,17 @@ function getPathSize(targetPath: string): number {
 
   return fs
     .readdirSync(targetPath)
-    .reduce((total, entry) => total + getPathSize(path.join(targetPath, entry)), 0);
+    .reduce(
+      (total, entry) => total + getPathSize(path.join(targetPath, entry)),
+      0,
+    );
 }
 
 export function clearAntigravityClientCache(): AntigravityClientCacheClearResult {
   const cachePaths = getAntigravityClientCachePaths();
-  logger.info(`Starting Antigravity cache clearing, ${cachePaths.length} potential paths`);
+  logger.info(
+    `Starting Antigravity cache clearing, ${cachePaths.length} potential paths`,
+  );
 
   const result: AntigravityClientCacheClearResult = {
     clearedPaths: [],
@@ -89,7 +105,9 @@ export function clearAntigravityClientCache(): AntigravityClientCacheClearResult
       fs.rmSync(cachePath, { recursive: true });
       result.clearedPaths.push(cachePath);
       result.totalSizeFreed += size;
-      logger.info(`Cleared ${cachePath}: ${(size / 1024 / 1024).toFixed(2)} MB freed`);
+      logger.info(
+        `Cleared ${cachePath}: ${(size / 1024 / 1024).toFixed(2)} MB freed`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const failure = `Failed to remove ${cachePath}: ${message}`;

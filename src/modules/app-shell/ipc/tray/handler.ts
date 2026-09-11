@@ -18,6 +18,8 @@ export interface TargetAccountsMap {
   classic: CloudAccount | null;
   ide: CloudAccount | null;
   agy: CloudAccount | null;
+  app?: CloudAccount | null;
+  cli?: CloudAccount | null;
 }
 
 export function middleTruncate(text: string, maxLength = 24): string {

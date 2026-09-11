@@ -1,35 +1,35 @@
-import fs from 'fs';
-import { eq } from 'drizzle-orm';
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { isObjectLike, isString } from 'lodash-es';
+import fs from "fs";
+import { eq } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { isObjectLike, isString } from "lodash-es";
 import {
   type AntigravityAppTarget,
   resolveAntigravityAppTarget,
-} from '@/shared/platform/antigravityAppTarget';
+} from "@/shared/platform/antigravityAppTarget";
 import {
   getAntigravityVersion,
   isCredentialStoreVersion,
   isNewVersion,
-} from '@/modules/antigravity-runtime/utils/antigravityVersion';
-import type { CloudAccount } from '@/modules/cloud-account/types';
-import { logger } from '@/shared/logging/logger';
-import { getAntigravityDbPaths } from '@/shared/platform/paths';
-import { openDrizzleConnection } from '@/shared/persistence/database/dbConnection';
-import { itemTable } from '@/shared/persistence/database/schema';
-import * as drizzleSchema from '@/shared/persistence/database/schema';
-import { ItemTableValueRowSchema } from '@/shared/persistence/database/types';
-import { parseRow } from '@/shared/persistence/database/sqlite';
-import { ProtobufUtils } from '@/shared/serialization/protobuf';
-import { writeAntigravityCredentialStoreToken } from './antigravityCredentialStore';
+} from "@/modules/antigravity-runtime/utils/antigravityVersion";
+import type { CloudAccount } from "@/modules/cloud-account/types";
+import { logger } from "@/shared/logging/logger";
+import { getAntigravityDbPaths } from "@/shared/platform/paths";
+import { openDrizzleConnection } from "@/shared/persistence/database/dbConnection";
+import { itemTable } from "@/shared/persistence/database/schema";
+import * as drizzleSchema from "@/shared/persistence/database/schema";
+import { ItemTableValueRowSchema } from "@/shared/persistence/database/types";
+import { parseRow } from "@/shared/persistence/database/sqlite";
+import { ProtobufUtils } from "@/shared/serialization/protobuf";
+import { writeAntigravityCredentialStoreToken } from "./antigravityCredentialStore";
 
-const SQLITE_BUSY_CODES = new Set(['SQLITE_BUSY', 'SQLITE_LOCKED']);
+const SQLITE_BUSY_CODES = new Set(["SQLITE_BUSY", "SQLITE_LOCKED"]);
 const SQLITE_BUSY_TIMEOUT_MS = 3000;
 const SQLITE_RETRY_DELAY_MS = 150;
 const SQLITE_MAX_RETRIES = 3;
 
 type DrizzleExecutor = Pick<
   BetterSQLite3Database<typeof drizzleSchema>,
-  'insert' | 'update' | 'delete' | 'select'
+  "insert" | "update" | "delete" | "select"
 >;
 
 function isSqliteBusyError(error: unknown): boolean {
@@ -41,7 +41,10 @@ function isSqliteBusyError(error: unknown): boolean {
     return true;
   }
   if (isString(err.message)) {
-    return err.message.includes('SQLITE_BUSY') || err.message.includes('SQLITE_LOCKED');
+    return (
+      err.message.includes("SQLITE_BUSY") ||
+      err.message.includes("SQLITE_LOCKED")
+    );
   }
   return false;
 }
@@ -55,7 +58,10 @@ function sleepSync(ms: number): void {
 function getIdeDb(
   dbPath: string,
   readOnly: boolean,
-): { raw: import('better-sqlite3').Database; orm: BetterSQLite3Database<typeof drizzleSchema> } {
+): {
+  raw: import("better-sqlite3").Database;
+  orm: BetterSQLite3Database<typeof drizzleSchema>;
+} {
   return openDrizzleConnection(
     dbPath,
     { readonly: readOnly },
@@ -63,7 +69,11 @@ function getIdeDb(
   );
 }
 
-function upsertItemValue(db: DrizzleExecutor, key: string, value: string): void {
+function upsertItemValue(
+  db: DrizzleExecutor,
+  key: string,
+  value: string,
+): void {
   db.insert(itemTable)
     .values({ key, value })
     .onConflictDoUpdate({
@@ -73,7 +83,11 @@ function upsertItemValue(db: DrizzleExecutor, key: string, value: string): void 
     .run();
 }
 
-function getItemValue(db: DrizzleExecutor, key: string, context: string): string | null {
+function getItemValue(
+  db: DrizzleExecutor,
+  key: string,
+  context: string,
+): string | null {
   const rows = db
     .select({ value: itemTable.value })
     .from(itemTable)
@@ -84,23 +98,26 @@ function getItemValue(db: DrizzleExecutor, key: string, context: string): string
 }
 
 function shouldWriteGcpTos(account: CloudAccount): boolean {
-  if (account.token.oauth_client_key === 'antigravity_enterprise') {
+  if (account.token.oauth_client_key === "antigravity_enterprise") {
     return false;
   }
 
   return account.token.is_gcp_tos ?? false;
 }
 
-function writeAuthStatusAndCleanup(db: DrizzleExecutor, account: CloudAccount): void {
+function writeAuthStatusAndCleanup(
+  db: DrizzleExecutor,
+  account: CloudAccount,
+): void {
   const authStatus = {
     name: account.name || account.email,
     email: account.email,
     apiKey: account.token.access_token,
   };
 
-  upsertItemValue(db, 'antigravityAuthStatus', JSON.stringify(authStatus));
-  upsertItemValue(db, 'antigravityOnboarding', 'true');
-  db.delete(itemTable).where(eq(itemTable.key, 'google.antigravity')).run();
+  upsertItemValue(db, "antigravityAuthStatus", JSON.stringify(authStatus));
+  upsertItemValue(db, "antigravityOnboarding", "true");
+  db.delete(itemTable).where(eq(itemTable.key, "google.antigravity")).run();
 }
 
 export class CredentialStoreInjectionAdapter {
@@ -108,7 +125,8 @@ export class CredentialStoreInjectionAdapter {
 
   private static assertTokenUsableForInjection(account: CloudAccount): void {
     const hasRefreshToken =
-      isString(account.token.refresh_token) && account.token.refresh_token.trim().length > 0;
+      isString(account.token.refresh_token) &&
+      account.token.refresh_token.trim().length > 0;
     const now = Math.floor(Date.now() / 1000);
 
     if (!hasRefreshToken && account.token.expiry_timestamp <= now) {
@@ -130,9 +148,11 @@ export class CredentialStoreInjectionAdapter {
       account.token.id_token,
       account.email,
     );
-    const userStatusPayload = ProtobufUtils.createMinimalUserStatusPayload(account.email);
+    const userStatusPayload = ProtobufUtils.createMinimalUserStatusPayload(
+      account.email,
+    );
     const userStatusEntry = ProtobufUtils.createUnifiedStateEntry(
-      'userStatusSentinelKey',
+      "userStatusSentinelKey",
       userStatusPayload,
     );
     const normalizedProjectId = account.token.project_id?.trim();
@@ -140,51 +160,67 @@ export class CredentialStoreInjectionAdapter {
     orm.transaction((transaction) => {
       const existingOauthToken = getItemValue(
         transaction,
-        'antigravityUnifiedStateSync.oauthToken',
-        'ide.itemTable.antigravityUnifiedStateSync.oauthToken',
+        "antigravityUnifiedStateSync.oauthToken",
+        "ide.itemTable.antigravityUnifiedStateSync.oauthToken",
       );
       let oauthToken = ProtobufUtils.createUnifiedStateEntry(
-        'oauthTokenInfoSentinelKey',
+        "oauthTokenInfoSentinelKey",
         oauthInfo,
       );
       if (existingOauthToken) {
         try {
-          const existingTopic = new Uint8Array(Buffer.from(existingOauthToken, 'base64'));
+          const existingTopic = new Uint8Array(
+            Buffer.from(existingOauthToken, "base64"),
+          );
           const mergedTopic = ProtobufUtils.replaceUnifiedTopicEntry(
             existingTopic,
-            'oauthTokenInfoSentinelKey',
+            "oauthTokenInfoSentinelKey",
             oauthInfo,
           );
-          oauthToken = Buffer.from(mergedTopic).toString('base64');
+          oauthToken = Buffer.from(mergedTopic).toString("base64");
         } catch (error) {
           logger.warn(
-            'Failed to merge existing unified OAuth topic; replacing OAuth token entry',
+            "Failed to merge existing unified OAuth topic; replacing OAuth token entry",
             error,
           );
         }
       }
 
-      upsertItemValue(transaction, 'antigravityUnifiedStateSync.oauthToken', oauthToken);
-      upsertItemValue(transaction, 'antigravityUnifiedStateSync.userStatus', userStatusEntry);
+      upsertItemValue(
+        transaction,
+        "antigravityUnifiedStateSync.oauthToken",
+        oauthToken,
+      );
+      upsertItemValue(
+        transaction,
+        "antigravityUnifiedStateSync.userStatus",
+        userStatusEntry,
+      );
       transaction
         .delete(itemTable)
-        .where(eq(itemTable.key, 'jetskiStateSync.agentManagerInitState'))
+        .where(eq(itemTable.key, "jetskiStateSync.agentManagerInitState"))
         .run();
       if (normalizedProjectId) {
-        const projectPayload = ProtobufUtils.createStringValuePayload(normalizedProjectId);
+        const projectPayload =
+          ProtobufUtils.createStringValuePayload(normalizedProjectId);
         const projectEntry = ProtobufUtils.createUnifiedStateEntry(
-          'enterpriseGcpProjectId',
+          "enterpriseGcpProjectId",
           projectPayload,
         );
         upsertItemValue(
           transaction,
-          'antigravityUnifiedStateSync.enterprisePreferences',
+          "antigravityUnifiedStateSync.enterprisePreferences",
           projectEntry,
         );
       } else {
         transaction
           .delete(itemTable)
-          .where(eq(itemTable.key, 'antigravityUnifiedStateSync.enterprisePreferences'))
+          .where(
+            eq(
+              itemTable.key,
+              "antigravityUnifiedStateSync.enterprisePreferences",
+            ),
+          )
           .run();
       }
       writeAuthStatusAndCleanup(transaction, account);
@@ -197,15 +233,15 @@ export class CredentialStoreInjectionAdapter {
   ): void {
     const encodedAgentState = getItemValue(
       orm,
-      'jetskiStateSync.agentManagerInitState',
-      'ide.itemTable.jetskiStateSync.agentManagerInitState',
+      "jetskiStateSync.agentManagerInitState",
+      "ide.itemTable.jetskiStateSync.agentManagerInitState",
     );
 
     orm.transaction((transaction) => {
       if (!encodedAgentState) {
         logger.warn(
-          'jetskiStateSync.agentManagerInitState not found. ' +
-            'Injecting minimal auth state only. User may need to complete onboarding in the IDE first.',
+          "jetskiStateSync.agentManagerInitState not found. " +
+            "Injecting minimal auth state only. User may need to complete onboarding in the IDE first.",
         );
 
         writeAuthStatusAndCleanup(transaction, account);
@@ -216,9 +252,12 @@ export class CredentialStoreInjectionAdapter {
         return;
       }
 
-      const encodedStateBuffer = Buffer.from(encodedAgentState, 'base64');
+      const encodedStateBuffer = Buffer.from(encodedAgentState, "base64");
       const agentStateBytes = new Uint8Array(encodedStateBuffer);
-      const stateWithoutPreviousToken = ProtobufUtils.removeField(agentStateBytes, 6);
+      const stateWithoutPreviousToken = ProtobufUtils.removeField(
+        agentStateBytes,
+        6,
+      );
       const oauthTokenField = ProtobufUtils.createOAuthTokenInfo(
         account.token.access_token,
         account.token.refresh_token,
@@ -229,51 +268,60 @@ export class CredentialStoreInjectionAdapter {
         stateWithoutPreviousToken.length + oauthTokenField.length,
       );
       updatedAgentStateBytes.set(stateWithoutPreviousToken, 0);
-      updatedAgentStateBytes.set(oauthTokenField, stateWithoutPreviousToken.length);
+      updatedAgentStateBytes.set(
+        oauthTokenField,
+        stateWithoutPreviousToken.length,
+      );
 
-      const updatedEncodedAgentState = Buffer.from(updatedAgentStateBytes).toString('base64');
+      const updatedEncodedAgentState = Buffer.from(
+        updatedAgentStateBytes,
+      ).toString("base64");
 
       transaction
         .update(itemTable)
         .set({ value: updatedEncodedAgentState })
-        .where(eq(itemTable.key, 'jetskiStateSync.agentManagerInitState'))
+        .where(eq(itemTable.key, "jetskiStateSync.agentManagerInitState"))
         .run();
 
       writeAuthStatusAndCleanup(transaction, account);
     });
   }
 
-  private static detectFormatCapability(db: DrizzleExecutor): 'new' | 'old' | 'dual' | null {
+  private static detectFormatCapability(
+    db: DrizzleExecutor,
+  ): "new" | "old" | "dual" | null {
     const unifiedValue = getItemValue(
       db,
-      'antigravityUnifiedStateSync.oauthToken',
-      'ide.itemTable.antigravityUnifiedStateSync.oauthToken',
+      "antigravityUnifiedStateSync.oauthToken",
+      "ide.itemTable.antigravityUnifiedStateSync.oauthToken",
     );
     const oldValue = getItemValue(
       db,
-      'jetskiStateSync.agentManagerInitState',
-      'ide.itemTable.jetskiStateSync.agentManagerInitState',
+      "jetskiStateSync.agentManagerInitState",
+      "ide.itemTable.jetskiStateSync.agentManagerInitState",
     );
 
     if (unifiedValue && oldValue) {
-      return 'dual';
+      return "dual";
     }
     if (unifiedValue) {
-      return 'new';
+      return "new";
     }
     if (oldValue) {
-      return 'old';
+      return "old";
     }
 
     return null;
   }
 
-  static shouldInjectTokenIntoCredentialStore(appTarget?: AntigravityAppTarget): boolean {
+  static shouldInjectTokenIntoCredentialStore(
+    appTarget?: AntigravityAppTarget,
+  ): boolean {
     const resolvedTarget = resolveAntigravityAppTarget(appTarget);
-    if (resolvedTarget === 'agy') {
+    if (resolvedTarget === "cli") {
       return true;
     }
-    if (resolvedTarget === 'ide') {
+    if (resolvedTarget === "ide") {
       return false;
     }
 
@@ -281,7 +329,7 @@ export class CredentialStoreInjectionAdapter {
       const version = getAntigravityVersion(appTarget);
 
       // Some Linux builds expose Chromium/Electron engine versions instead of product versions.
-      const parts = version.shortVersion.split('.');
+      const parts = version.shortVersion.split(".");
       if (parts.length >= 2) {
         const secondPart = parseInt(parts[1], 10);
         if (secondPart >= 100) {
@@ -296,7 +344,7 @@ export class CredentialStoreInjectionAdapter {
       return isCredentialStoreVersion(version);
     } catch (error) {
       logger.warn(
-        'Version detection failed; defaulting to credential store for Classic Antigravity',
+        "Version detection failed; defaulting to credential store for Classic Antigravity",
         error,
       );
       return true;
@@ -307,36 +355,45 @@ export class CredentialStoreInjectionAdapter {
     db: DrizzleExecutor,
     appTarget?: AntigravityAppTarget,
   ): {
-    name: 'new' | 'old' | 'dual';
+    name: "new" | "old" | "dual";
     reason: string;
   } {
     try {
       const version = getAntigravityVersion(appTarget);
       return {
-        name: isNewVersion(version) ? 'new' : 'old',
+        name: isNewVersion(version) ? "new" : "old",
         reason: `version:${version.shortVersion}`,
       };
     } catch (error) {
       if (!this.versionFailureLogged) {
-        logger.warn('Version detection failed, falling back to capability detection', error);
+        logger.warn(
+          "Version detection failed, falling back to capability detection",
+          error,
+        );
         this.versionFailureLogged = true;
       }
     }
 
     const capability = this.detectFormatCapability(db);
     if (capability) {
-      return { name: capability, reason: 'capability' };
+      return { name: capability, reason: "capability" };
     }
 
-    return { name: 'dual', reason: 'fallback' };
+    return { name: "dual", reason: "fallback" };
   }
 
-  private static getStrategy(name: 'new' | 'old'): {
-    name: 'new' | 'old';
-    inject: (db: BetterSQLite3Database<typeof drizzleSchema>, account: CloudAccount) => void;
+  private static getStrategy(name: "new" | "old"): {
+    name: "new" | "old";
+    inject: (
+      db: BetterSQLite3Database<typeof drizzleSchema>,
+      account: CloudAccount,
+    ) => void;
   } {
-    if (name === 'new') {
-      return { name, inject: (db, account) => this.injectNewFormat(db, account) };
+    if (name === "new") {
+      return {
+        name,
+        inject: (db, account) => this.injectNewFormat(db, account),
+      };
     }
     return { name, inject: (db, account) => this.injectOldFormat(db, account) };
   }
@@ -351,7 +408,7 @@ export class CredentialStoreInjectionAdapter {
       const { raw, orm } = getIdeDb(dbPath, false);
       try {
         const { name, reason } = this.resolveInjectionStrategy(orm, appTarget);
-        if (name === 'dual') {
+        if (name === "dual") {
           let newInjected = false;
           let oldInjected = false;
 
@@ -359,18 +416,18 @@ export class CredentialStoreInjectionAdapter {
             this.injectNewFormat(orm, account);
             newInjected = true;
           } catch (newError) {
-            logger.warn('Failed to inject new format', newError);
+            logger.warn("Failed to inject new format", newError);
           }
 
           try {
             this.injectOldFormat(orm, account);
             oldInjected = true;
           } catch (oldError) {
-            logger.warn('Failed to inject old format', oldError);
+            logger.warn("Failed to inject old format", oldError);
           }
 
           if (!newInjected && !oldInjected) {
-            throw new Error('Token injection failed for both formats');
+            throw new Error("Token injection failed for both formats");
           }
 
           return { strategy: `dual:${reason}`, attempts: attempt };
@@ -382,7 +439,10 @@ export class CredentialStoreInjectionAdapter {
       } catch (error) {
         lastError = error;
         if (isSqliteBusyError(error) && attempt < SQLITE_MAX_RETRIES) {
-          logger.warn(`SQLite busy, retrying injection (attempt ${attempt})`, error);
+          logger.warn(
+            `SQLite busy, retrying injection (attempt ${attempt})`,
+            error,
+          );
           sleepSync(SQLITE_RETRY_DELAY_MS);
           continue;
         }
@@ -395,12 +455,18 @@ export class CredentialStoreInjectionAdapter {
     throw lastError;
   }
 
-  static injectCloudToken(account: CloudAccount, appTarget?: AntigravityAppTarget): void {
+  static injectCloudToken(
+    account: CloudAccount,
+    appTarget?: AntigravityAppTarget,
+  ): void {
     const dbPaths = getAntigravityDbPaths(appTarget);
-    const dbPath = dbPaths.find((candidatePath) => fs.existsSync(candidatePath)) ?? null;
+    const dbPath =
+      dbPaths.find((candidatePath) => fs.existsSync(candidatePath)) ?? null;
 
     if (!dbPath) {
-      throw new Error(`Antigravity database not found. Checked paths: ${dbPaths.join(', ')}`);
+      throw new Error(
+        `Antigravity database not found. Checked paths: ${dbPaths.join(", ")}`,
+      );
     }
 
     const result = this.injectWithRetry(dbPath, account, appTarget);
@@ -412,11 +478,11 @@ export class CredentialStoreInjectionAdapter {
   static injectCloudTokenWithStorageStrategy(
     account: CloudAccount,
     appTarget?: AntigravityAppTarget,
-  ): 'credential-store' | 'sqlite' {
+  ): "credential-store" | "sqlite" {
     this.assertTokenUsableForInjection(account);
 
     if (this.shouldInjectTokenIntoCredentialStore(appTarget)) {
-      if (appTarget === 'agy') {
+      if (appTarget === "cli" || appTarget === "agy") {
         writeAntigravityCredentialStoreToken(account.token, {
           email: account.email,
           syncGoogleOAuthFiles: true,
@@ -424,10 +490,10 @@ export class CredentialStoreInjectionAdapter {
       } else {
         writeAntigravityCredentialStoreToken(account.token);
       }
-      return 'credential-store';
+      return "credential-store";
     }
 
     this.injectCloudToken(account, appTarget);
-    return 'sqlite';
+    return "sqlite";
   }
 }

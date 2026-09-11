@@ -32,15 +32,14 @@ const vi = {
     local_network: "Cục bộ",
     service_relay: "Máy chủ Relay",
     service_tunnel: "Đường hầm Cloudflare",
-    service_app: "Antigravity 2.0 (App)",
+    service_app: "Antigravity App",
     service_ide: "Antigravity IDE",
-    service_cli: "Antigravity CLI (agy)",
+    service_cli: "Antigravity CLI",
     tooltips: {
-      appNotInstalled:
-        "Không tìm thấy ứng dụng máy tính Antigravity 2.0 trên hệ thống này",
+      appNotInstalled: "Không tìm thấy Antigravity App trên hệ thống này",
       ideNotInstalled: "Không tìm thấy Antigravity IDE trên hệ thống này",
       cliNotInstalled:
-        "Không tìm thấy tệp thực thi Antigravity CLI (agy) trong PATH hoặc các thư mục chuẩn",
+        "Không tìm thấy tệp thực thi Antigravity CLI trong PATH hoặc các thư mục chuẩn",
       tunnelNotInstalled: "CLI cloudflared chưa được cài đặt trên máy tính này",
       cliIdleGuidance: "Chạy trực tiếp từ terminal thông qua 'agy <lệnh>'",
     },
@@ -158,11 +157,11 @@ const vi = {
     stopFailed: "Không thể dừng máy chủ relay: {{error}}",
     mirrorBoundary: {
       title: "Thông báo phạm vi Remote Mirror",
-      badge: "Chỉ dành cho Desktop và IDE",
+      badge: "Chỉ dành cho App và IDE",
       description:
-        "Mobile Remote Mirror chỉ truyền các phiên Antigravity IDE và Ứng dụng Desktop Antigravity 2.0. Antigravity CLI (agy) chỉ chạy trong terminal và không thể phản chiếu tới thiết bị di động đồng hành.",
+        "Mobile Remote Mirror chỉ truyền các phiên Antigravity App và Antigravity IDE. Antigravity CLI chỉ chạy trong terminal và không thể phản chiếu tới thiết bị di động đồng hành.",
       callout:
-        "Terminal CLI (agy) hoạt động trực tiếp trên máy chủ này và không được phản chiếu tới thiết bị di động.",
+        "Antigravity CLI hoạt động trực tiếp trên máy chủ này và không được phản chiếu tới thiết bị di động.",
     },
   },
   tunnel: {
@@ -238,7 +237,7 @@ const vi = {
     keyInvalidError:
       "Khóa ghép nối không hợp lệ. Vui lòng kiểm tra khóa đang hoạt động trên bảng điều khiển desktop.",
     platformScopeNotice:
-      "Ứng dụng đồng hành di động chỉ phản chiếu các phiên Antigravity IDE và Desktop App. Không hỗ trợ Terminal CLI (agy).",
+      "Ứng dụng đồng hành di động chỉ phản chiếu các phiên Antigravity App và Antigravity IDE. Không hỗ trợ Antigravity CLI.",
   },
   sessions: {
     title: "Phiên điện thoại đã kết nối",
@@ -317,22 +316,6 @@ const vi = {
     switchedTargetDescription:
       "Đã chuyển {{target}} sang {{email}} qua khay hệ thống.",
   },
-  editionSelection: {
-    title: "Chọn phiên bản Antigravity",
-    description:
-      "Chọn phiên bản Antigravity bạn đang sử dụng. Điều này giúp Relay kết nối đúng ứng dụng.",
-    edition1x: {
-      name: "Antigravity 1.x",
-      description:
-        "Ứng dụng Antigravity gốc. Chọn nếu bạn đang dùng phiên bản cũ.",
-    },
-    edition20: {
-      name: "Antigravity IDE",
-      description:
-        "Antigravity IDE mới (2.0). Chọn nếu bạn đang dùng phiên bản IDE mới nhất.",
-    },
-    confirm: "Tiếp tục",
-  },
   account: {
     current: "Hiện tại",
     lastUsed: "Đã dùng {{time}}",
@@ -390,23 +373,23 @@ const vi = {
       description: "Thông tin ứng dụng.",
     },
     cache: {
-      title: "Bộ nhớ đệm Antigravity",
+      title: "Bộ nhớ đệm Antigravity App",
       description:
-        "Xóa các thư mục bộ nhớ đệm Antigravity đã biết để khắc phục lỗi đăng nhập hoặc xác thực phiên bản.",
-      clear: "Xóa bộ nhớ đệm Antigravity",
-      dialogTitle: "Xóa bộ nhớ đệm Antigravity?",
+        "Xóa các thư mục bộ nhớ đệm Antigravity App đã biết để khắc phục lỗi đăng nhập hoặc xác thực phiên bản.",
+      clear: "Xóa bộ nhớ đệm Antigravity App",
+      dialogTitle: "Xóa bộ nhớ đệm Antigravity App?",
       dialogDescription: "Các thư mục bộ nhớ đệm hiện có sau đây sẽ bị xóa.",
       pathsLabel: "Thư mục bộ nhớ đệm",
-      noPaths: "Không tìm thấy thư mục bộ nhớ đệm Antigravity đã biết.",
-      warning: "Hãy đóng Antigravity trước khi xóa để tránh tệp bị khóa.",
+      noPaths: "Không tìm thấy thư mục bộ nhớ đệm Antigravity App đã biết.",
+      warning: "Hãy đóng Antigravity App trước khi xóa để tránh tệp bị khóa.",
       cancel: "Hủy",
       confirm: "Xóa bộ nhớ đệm",
       clearing: "Đang xóa...",
       clearedTitle: "Đã xóa bộ nhớ đệm",
       clearedDescription:
-        "Đã xóa {{size}} MB khỏi các thư mục bộ nhớ đệm Antigravity.",
+        "Đã xóa {{size}} MB khỏi các thư mục bộ nhớ đệm Antigravity App.",
       failedTitle: "Không thể xóa bộ nhớ đệm",
-      notFoundTitle: "Không tìm thấy bộ nhớ đệm Antigravity",
+      notFoundTitle: "Không tìm thấy bộ nhớ đệm Antigravity App",
     },
     version: "Phiên bản",
     platform: "Nền tảng",
@@ -429,14 +412,14 @@ const vi = {
         "Định kỳ cập nhật thông tin quota cho tất cả tài khoản",
       auto_sync: "Tự động đồng bộ tài khoản hiện tại",
       auto_sync_desc: "Định kỳ đồng bộ thông tin tài khoản đang hoạt động",
-      antigravity_executable: "Tệp chạy Antigravity",
+      antigravity_executable: "Tệp chạy Antigravity App",
       antigravity_executable_desc:
-        "Đường dẫn tùy chọn dùng để tìm dữ liệu portable mode và khởi chạy Antigravity.",
+        "Đường dẫn tùy chọn dùng để tìm dữ liệu portable mode và khởi chạy Antigravity App.",
       antigravity_executable_placeholder:
         "Ví dụ: C:\\Program Files\\Antigravity\\Antigravity.exe",
-      antigravity_args: "Tham số khởi chạy Antigravity",
+      antigravity_args: "Tham số khởi chạy Antigravity App",
       antigravity_args_desc:
-        "Tham số tùy chọn khi khởi chạy Antigravity, ví dụ --user-data-dir.",
+        "Tham số tùy chọn khi khởi chạy Antigravity App, ví dụ --user-data-dir.",
       antigravity_args_placeholder:
         "Ví dụ: --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Phát hiện",
@@ -653,7 +636,8 @@ const vi = {
       failed: "Thất bại {{count}}",
       sources: {
         "antigravity-keyring": "Kho lưu trữ thông tin đăng nhập hệ thống",
-        "antigravity-classic-db": "Cơ sở dữ liệu Antigravity",
+        "antigravity-app-db": "Cơ sở dữ liệu Antigravity App",
+        "antigravity-classic-db": "Cơ sở dữ liệu Antigravity App",
         "antigravity-ide-db": "Cơ sở dữ liệu Antigravity IDE",
         "legacy-agent": "Dữ liệu Agent cũ",
         "antigravity-cli-token": "Antigravity CLI",
@@ -692,6 +676,8 @@ const vi = {
       },
     },
     target: {
+      app: "Ứng dụng Antigravity",
+      appShort: "App",
       classic: "Ứng dụng Antigravity",
       classicShort: "App",
       ide: "Antigravity IDE",

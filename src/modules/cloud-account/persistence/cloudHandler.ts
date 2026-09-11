@@ -742,7 +742,7 @@ export class CloudAccountRepo {
   static syncActiveFlags(): void {
     const { raw, orm } = getCloudDb();
     try {
-      const activeTargets: AntigravityAppTarget[] = ["classic", "ide", "agy"];
+      const activeTargets: AntigravityAppTarget[] = ["app", "ide", "cli"];
       const activeAccountIds = new Set<string>();
       for (const target of activeTargets) {
         const id =
@@ -770,7 +770,7 @@ export class CloudAccountRepo {
   static setActive(id: string, target?: AntigravityAppTarget): void {
     CloudAccountSettingsStore.setActiveForTarget(target, id);
     this.syncActiveFlags();
-    logger.info(`Set account ${id} as active (target=${target || "classic"})`);
+    logger.info(`Set account ${id} as active (target=${target || "app"})`);
   }
 
   static setAccountProxy(id: string, proxyUrl: string | null): void {

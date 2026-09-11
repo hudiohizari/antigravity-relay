@@ -9,7 +9,7 @@ export type TraySwitchedPayload =
   | string
   | {
       accountId: string;
-      target?: "all" | "classic" | "ide" | "agy" | "cli";
+      target?: "all" | "app" | "ide" | "cli" | "classic" | "agy";
     };
 
 export function useTrayAccountSync(): void {
@@ -47,7 +47,12 @@ export function useTrayAccountSync(): void {
 
       const rawTarget =
         typeof payload === "string" ? "all" : (payload.target ?? "all");
-      const target = rawTarget === "cli" ? "agy" : rawTarget;
+      const target =
+        rawTarget === "classic"
+          ? "app"
+          : rawTarget === "agy"
+            ? "cli"
+            : rawTarget;
       let switchedEmail: string | undefined;
 
       queryClient.setQueryData<CloudAccount[]>(
@@ -64,35 +69,46 @@ export function useTrayAccountSync(): void {
               return {
                 ...acc,
                 is_active: isMatch,
+                is_active_app: isMatch,
                 is_active_classic: isMatch,
                 is_active_ide: isMatch,
+                is_active_cli: isMatch,
                 is_active_agy: isMatch,
               };
             }
-            if (target === "classic") {
+            if (target === "app") {
+              const otherActive = Boolean(
+                acc.is_active_ide || acc.is_active_cli || acc.is_active_agy,
+              );
               return {
                 ...acc,
+                is_active_app: isMatch,
                 is_active_classic: isMatch,
-                is_active:
-                  isMatch || Boolean(acc.is_active_ide || acc.is_active_agy),
+                is_active: isMatch || otherActive,
               };
             }
             if (target === "ide") {
+              const otherActive = Boolean(
+                acc.is_active_app ||
+                acc.is_active_classic ||
+                acc.is_active_cli ||
+                acc.is_active_agy,
+              );
               return {
                 ...acc,
                 is_active_ide: isMatch,
-                is_active:
-                  isMatch ||
-                  Boolean(acc.is_active_classic || acc.is_active_agy),
+                is_active: isMatch || otherActive,
               };
             }
-            if (target === "agy") {
+            if (target === "cli") {
+              const otherActive = Boolean(
+                acc.is_active_app || acc.is_active_classic || acc.is_active_ide,
+              );
               return {
                 ...acc,
+                is_active_cli: isMatch,
                 is_active_agy: isMatch,
-                is_active:
-                  isMatch ||
-                  Boolean(acc.is_active_classic || acc.is_active_ide),
+                is_active: isMatch || otherActive,
               };
             }
             return {
@@ -111,9 +127,14 @@ export function useTrayAccountSync(): void {
         payload.target &&
         payload.target !== "all"
       ) {
-        const targetKey = payload.target === "cli" ? "agy" : payload.target;
+        const canonicalKey =
+          payload.target === "classic"
+            ? "app"
+            : payload.target === "agy"
+              ? "cli"
+              : payload.target;
         const targetName =
-          t(`cloud.target.${targetKey}`) ||
+          t(`cloud.target.${canonicalKey}`) ||
           t(`cloud.target.${payload.target}`) ||
           payload.target;
         toast({

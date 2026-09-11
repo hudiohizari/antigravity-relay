@@ -135,9 +135,9 @@ export async function executeSwitchFlow(
   let failureReason: SwitchFailureReason | null = null;
   let waitExitTimedOut = false;
   let stage = "close";
-  const isCliTarget = appTarget === "agy";
+  const isCliTarget = appTarget === "cli" || appTarget === "agy";
   let flowResult: SwitchFlowResult = {
-    target: appTarget || "classic",
+    target: appTarget || "app",
     wasRunning: false,
     restarted: false,
   };
@@ -146,13 +146,13 @@ export async function executeSwitchFlow(
     "switch.execute",
     {
       scope,
-      appTarget: appTarget || "classic",
+      appTarget: appTarget || "app",
       processExitTimeoutMs,
     },
     async (trace) => {
       try {
         if (isCliTarget) {
-          logger.info("Skipping GUI process steps for agy CLI switch");
+          logger.info("Skipping GUI process steps for CLI switch");
           stage = "switch";
           await trace.phase("performSwitchMs", performSwitch);
           if (applyFingerprint) {
@@ -166,7 +166,11 @@ export async function executeSwitchFlow(
             await trace.phase("afterSwitchSuccessMs", afterSwitchSuccess);
           }
           recordSwitchSuccess(scope);
-          flowResult = { target: "agy", wasRunning: false, restarted: false };
+          flowResult = {
+            target: appTarget || "cli",
+            wasRunning: false,
+            restarted: false,
+          };
           return;
         }
 

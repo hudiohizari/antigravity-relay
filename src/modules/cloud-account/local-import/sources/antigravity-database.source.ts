@@ -1,22 +1,23 @@
-import fs from 'fs';
-import { uniq } from 'lodash-es';
-import type { AntigravityAppTarget } from '@/shared/platform/antigravityAppTarget';
+import fs from "fs";
+import { uniq } from "lodash-es";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 import {
   IdeAccountImportAdapter,
   type IdeTokenInfo,
-} from '@/modules/cloud-account/persistence/ide-account-import-adapter';
-import { getAntigravityDbPaths } from '@/shared/platform/paths';
+} from "@/modules/cloud-account/persistence/ide-account-import-adapter";
+import { getAntigravityDbPaths } from "@/shared/platform/paths";
 import {
   createLocalAccountDiscoveryFailure,
   createLocalAccountDiscoveryFailureByCode,
-} from '../discovery-errors';
+} from "../discovery-errors";
 import type {
   LocalAccountDiscoverySource,
   LocalAccountDiscoverySourceId,
   LocalAccountSourceResult,
-} from '../types';
+} from "../types";
 
-type DatabaseDiscoveryTarget = Extract<AntigravityAppTarget, 'classic' | 'ide'>;
+type DatabaseDiscoveryTarget =
+  Extract<AntigravityAppTarget, "app" | "ide"> | "classic";
 
 interface AntigravityDatabaseDiscoverySourceDependencies {
   existsSync: (candidatePath: string) => boolean;
@@ -24,27 +25,45 @@ interface AntigravityDatabaseDiscoverySourceDependencies {
   readTokenInfoFromPath: (dbPath: string) => IdeTokenInfo;
 }
 
-function getSourceId(target: DatabaseDiscoveryTarget): LocalAccountDiscoverySourceId {
-  return target === 'ide' ? 'antigravity-ide-db' : 'antigravity-classic-db';
+export function getSourceId(
+  target: DatabaseDiscoveryTarget,
+): LocalAccountDiscoverySourceId {
+  if (target === "ide") {
+    return "antigravity-ide-db";
+  }
+  if (target === "classic") {
+    return "antigravity-classic-db";
+  }
+  return "antigravity-app-db";
+}
+
+export function resolveDatabaseSourceId(
+  sourceId: LocalAccountDiscoverySourceId | string,
+): LocalAccountDiscoverySourceId {
+  if (sourceId === "antigravity-classic-db") {
+    return "antigravity-app-db";
+  }
+  return sourceId as LocalAccountDiscoverySourceId;
 }
 
 export class AntigravityDatabaseDiscoverySource implements LocalAccountDiscoverySource {
   readonly id: LocalAccountDiscoverySourceId;
 
   constructor(
-    private readonly target: DatabaseDiscoveryTarget,
+    private readonly target: DatabaseDiscoveryTarget = "app",
     private readonly dependencies: AntigravityDatabaseDiscoverySourceDependencies = {
       existsSync: fs.existsSync,
       getDbPaths: getAntigravityDbPaths,
-      readTokenInfoFromPath: (dbPath) => IdeAccountImportAdapter.readTokenInfoFromPath(dbPath),
+      readTokenInfoFromPath: (dbPath) =>
+        IdeAccountImportAdapter.readTokenInfoFromPath(dbPath),
     },
   ) {
     this.id = getSourceId(target);
   }
 
   async discover(): Promise<LocalAccountSourceResult> {
-    const candidates: LocalAccountSourceResult['candidates'] = [];
-    const failures: LocalAccountSourceResult['failures'] = [];
+    const candidates: LocalAccountSourceResult["candidates"] = [];
+    const failures: LocalAccountSourceResult["failures"] = [];
     const dbPaths = uniq(this.dependencies.getDbPaths(this.target));
     let existingPathCount = 0;
 
@@ -63,7 +82,9 @@ export class AntigravityDatabaseDiscoverySource implements LocalAccountDiscovery
           source,
           credential: {
             refreshToken: tokenInfo.refreshToken,
-            ...(tokenInfo.accessToken ? { accessToken: tokenInfo.accessToken } : {}),
+            ...(tokenInfo.accessToken
+              ? { accessToken: tokenInfo.accessToken }
+              : {}),
             ...(tokenInfo.idToken ? { idToken: tokenInfo.idToken } : {}),
             ...(tokenInfo.projectId ? { projectId: tokenInfo.projectId } : {}),
           },
@@ -79,7 +100,7 @@ export class AntigravityDatabaseDiscoverySource implements LocalAccountDiscovery
           {
             id: this.id,
           },
-          'missing',
+          "missing",
         ),
       );
     }

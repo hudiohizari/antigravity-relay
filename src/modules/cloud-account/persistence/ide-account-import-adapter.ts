@@ -34,7 +34,7 @@ export function getTargetDisplayName(target?: AntigravityAppTarget): string {
   if (resolved === "ide") {
     return "Antigravity IDE";
   }
-  if (resolved === "agy") {
+  if (resolved === "cli") {
     return "Antigravity CLI";
   }
   return "Antigravity";
@@ -338,8 +338,8 @@ export class IdeAccountImportAdapter {
     let tokenInfo: IdeTokenInfo | null = null;
     let sourceDescription = "";
 
-    if (resolvedTarget === "agy") {
-      logger.info("SyncLocal: Target is agy, reading CLI token file");
+    if (resolvedTarget === "cli") {
+      logger.info("SyncLocal: Target is CLI, reading CLI token file");
       tokenInfo = this.readCliToken();
       sourceDescription = "Antigravity CLI token file";
     } else {

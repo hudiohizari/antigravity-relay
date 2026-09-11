@@ -1277,4 +1277,29 @@ describe("getAgyCliTokenPaths", () => {
     ]);
     expect(listRunningWslDistros).toHaveBeenCalledTimes(1);
   });
+
+  it("resolves target cli deterministically to agy binary and process candidate", async () => {
+    setPlatform("darwin");
+    const paths = await import("../../shared/platform/paths");
+    const isCli = paths.isTargetAntigravityProcessCandidate(
+      {
+        name: "agy",
+        commandLine: "/usr/local/bin/agy auth login",
+        executablePath: "/usr/local/bin/agy",
+      },
+      "cli",
+    );
+    expect(isCli).toBe(true);
+
+    const isNotApp = paths.isTargetAntigravityProcessCandidate(
+      {
+        name: "Antigravity",
+        commandLine: "/Applications/Antigravity.app/Contents/MacOS/Antigravity",
+        executablePath:
+          "/Applications/Antigravity.app/Contents/MacOS/Antigravity",
+      },
+      "cli",
+    );
+    expect(isNotApp).toBe(false);
+  });
 });

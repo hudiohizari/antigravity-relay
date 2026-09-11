@@ -303,7 +303,7 @@ export function isTargetAntigravityProcessCandidate(
     commandBase === "agy" ||
     commandBase === "agy.exe";
 
-  if (normalizedTarget === "agy") {
+  if (normalizedTarget === "cli" || normalizedTarget === ("agy" as any)) {
     return isAgyBinary;
   }
 
@@ -1059,7 +1059,7 @@ export function hasAntigravityStorage(
   options?: PathResolutionOptions,
 ): boolean {
   const resolvedTarget = resolveAntigravityAppTarget(target);
-  if (resolvedTarget === "agy") {
+  if (resolvedTarget === "cli" || resolvedTarget === ("agy" as any)) {
     const home = os.homedir();
     const pathApi = getCurrentPlatformPathApi(options);
     const sessionDir = pathApi.join(home, ".gemini", "antigravity-cli");
@@ -1093,7 +1093,7 @@ export function getAntigravityExecutablePath(
   options?: PathResolutionOptions,
 ): string {
   const resolvedTarget = resolveAntigravityAppTarget(target);
-  if (resolvedTarget === "agy") {
+  if (resolvedTarget === "cli" || resolvedTarget === ("agy" as any)) {
     return (
       detectAgyCliExecutablePath({
         platform: getCurrentPlatform(options),

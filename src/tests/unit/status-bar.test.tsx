@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "@/components/layout/StatusBar";
 import * as processActions from "@/modules/antigravity-runtime/actions/process";
 import * as relayActions from "@/modules/relay/actions/relay";
+import { resolveAntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -48,12 +49,15 @@ describe("StatusBar Component", () => {
 
     vi.mocked(processActions.isProcessRunning).mockResolvedValue(false);
     vi.mocked(processActions.getProcessStatus).mockImplementation(
-      async (target) => ({
-        target: target || "classic",
-        isRunning: false,
-        isBinaryInstalled: true,
-        executablePath: `/bin/${target || "classic"}`,
-      }),
+      async (target) => {
+        const resolved = resolveAntigravityAppTarget(target);
+        return {
+          target: resolved,
+          isRunning: false,
+          isBinaryInstalled: true,
+          executablePath: `/bin/${resolved}`,
+        };
+      },
     );
     vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
       isRunning: false,
@@ -137,14 +141,17 @@ describe("StatusBar Component", () => {
     expect(summaries.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("calculates aggregate summary as 1/5 when only classic is running", async () => {
+  it("calculates aggregate summary as 1/5 when only app is running", async () => {
     vi.mocked(processActions.getProcessStatus).mockImplementation(
-      async (target) => ({
-        target: target || "classic",
-        isRunning: target === "classic",
-        isBinaryInstalled: true,
-        executablePath: `/bin/${target || "classic"}`,
-      }),
+      async (target) => {
+        const resolved = resolveAntigravityAppTarget(target);
+        return {
+          target: resolved,
+          isRunning: resolved === "app",
+          isBinaryInstalled: true,
+          executablePath: `/bin/${resolved}`,
+        };
+      },
     );
 
     render(
@@ -157,14 +164,17 @@ describe("StatusBar Component", () => {
     expect(summaries.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("calculates aggregate summary as 2/5 when classic and relay are running", async () => {
+  it("calculates aggregate summary as 2/5 when app and relay are running", async () => {
     vi.mocked(processActions.getProcessStatus).mockImplementation(
-      async (target) => ({
-        target: target || "classic",
-        isRunning: target === "classic",
-        isBinaryInstalled: true,
-        executablePath: `/bin/${target || "classic"}`,
-      }),
+      async (target) => {
+        const resolved = resolveAntigravityAppTarget(target);
+        return {
+          target: resolved,
+          isRunning: resolved === "app",
+          isBinaryInstalled: true,
+          executablePath: `/bin/${resolved}`,
+        };
+      },
     );
     vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
       isRunning: true,
@@ -194,12 +204,15 @@ describe("StatusBar Component", () => {
 
   it("calculates aggregate summary as all running when 5/5 services running", async () => {
     vi.mocked(processActions.getProcessStatus).mockImplementation(
-      async (target) => ({
-        target: target || "classic",
-        isRunning: true,
-        isBinaryInstalled: true,
-        executablePath: `/bin/${target || "classic"}`,
-      }),
+      async (target) => {
+        const resolved = resolveAntigravityAppTarget(target);
+        return {
+          target: resolved,
+          isRunning: true,
+          isBinaryInstalled: true,
+          executablePath: `/bin/${resolved}`,
+        };
+      },
     );
     vi.mocked(relayActions.getRelayStatus).mockResolvedValue({
       isRunning: true,
@@ -342,7 +355,7 @@ describe("StatusBar Component", () => {
     });
   });
 
-  it("triggers startAntigravity when toggling stopped classic service (index 2)", async () => {
+  it("triggers startAntigravity when toggling stopped app service (index 2)", async () => {
     render(
       <QueryClientProvider client={queryClient}>
         <StatusBar defaultOpen={true} />
@@ -359,18 +372,21 @@ describe("StatusBar Component", () => {
     fireEvent.click(startButtons[2]);
 
     await waitFor(() => {
-      expect(processActions.startAntigravity).toHaveBeenCalledWith("classic");
+      expect(processActions.startAntigravity).toHaveBeenCalledWith("app");
     });
   });
 
-  it("triggers closeAntigravity when toggling running classic service (index 2)", async () => {
+  it("triggers closeAntigravity when toggling running app service (index 2)", async () => {
     vi.mocked(processActions.getProcessStatus).mockImplementation(
-      async (target) => ({
-        target: target || "classic",
-        isRunning: target === "classic",
-        isBinaryInstalled: true,
-        executablePath: `/bin/${target || "classic"}`,
-      }),
+      async (target) => {
+        const resolved = resolveAntigravityAppTarget(target);
+        return {
+          target: resolved,
+          isRunning: resolved === "app",
+          isBinaryInstalled: true,
+          executablePath: `/bin/${resolved}`,
+        };
+      },
     );
 
     render(
@@ -385,7 +401,7 @@ describe("StatusBar Component", () => {
     fireEvent.click(stopButton);
 
     await waitFor(() => {
-      expect(processActions.closeAntigravity).toHaveBeenCalledWith("classic");
+      expect(processActions.closeAntigravity).toHaveBeenCalledWith("app");
     });
   });
 
@@ -432,17 +448,21 @@ describe("StatusBar Component", () => {
     );
 
     fireEvent.click(cliStartButton);
+    expect(processActions.startAntigravity).not.toHaveBeenCalledWith("cli");
     expect(processActions.startAntigravity).not.toHaveBeenCalledWith("agy");
   });
 
   it("allows stopping running CLI service (index 4)", async () => {
     vi.mocked(processActions.getProcessStatus).mockImplementation(
-      async (target) => ({
-        target: target || "classic",
-        isRunning: target === "agy",
-        isBinaryInstalled: true,
-        executablePath: `/bin/${target || "classic"}`,
-      }),
+      async (target) => {
+        const resolved = resolveAntigravityAppTarget(target);
+        return {
+          target: resolved,
+          isRunning: resolved === "cli",
+          isBinaryInstalled: true,
+          executablePath: `/bin/${resolved}`,
+        };
+      },
     );
 
     render(
@@ -457,7 +477,7 @@ describe("StatusBar Component", () => {
     fireEvent.click(stopButton);
 
     await waitFor(() => {
-      expect(processActions.closeAntigravity).toHaveBeenCalledWith("agy");
+      expect(processActions.closeAntigravity).toHaveBeenCalledWith("cli");
     });
   });
 

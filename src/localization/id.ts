@@ -32,15 +32,14 @@ const id = {
     local_network: "Lokal",
     service_relay: "Server Relay",
     service_tunnel: "Tunnel Cloudflare",
-    service_app: "Antigravity 2.0 (App)",
+    service_app: "Antigravity App",
     service_ide: "Antigravity IDE",
-    service_cli: "Antigravity CLI (agy)",
+    service_cli: "Antigravity CLI",
     tooltips: {
-      appNotInstalled:
-        "Aplikasi desktop Antigravity 2.0 tidak terdeteksi di sistem ini",
+      appNotInstalled: "Aplikasi Antigravity tidak terdeteksi di sistem ini",
       ideNotInstalled: "Antigravity IDE tidak terdeteksi di sistem ini",
       cliNotInstalled:
-        "Eksekusi Antigravity CLI (agy) tidak ditemukan di PATH atau direktori standar",
+        "Eksekusi Antigravity CLI tidak ditemukan di PATH atau direktori standar",
       tunnelNotInstalled: "CLI cloudflared belum terpasang di komputer ini",
       cliIdleGuidance:
         "Jalankan langsung dari terminal melalui 'agy <perintah>'",
@@ -160,11 +159,11 @@ const id = {
     stopFailed: "Gagal menghentikan server relay: {{error}}",
     mirrorBoundary: {
       title: "Pemberitahuan Cakupan Remote Mirror",
-      badge: "Hanya Desktop & IDE",
+      badge: "Hanya App & IDE",
       description:
-        "Mobile Remote Mirror hanya menayangkan sesi Antigravity IDE dan Aplikasi Desktop Antigravity 2.0. Antigravity CLI (agy) berjalan secara eksklusif di terminal Anda dan tidak dapat ditautkan ke perangkat seluler pendamping.",
+        "Mobile Remote Mirror hanya menayangkan sesi Aplikasi Antigravity dan Antigravity IDE. Antigravity CLI berjalan secara eksklusif di terminal Anda dan tidak dapat ditautkan ke perangkat seluler pendamping.",
       callout:
-        "Terminal CLI (agy) berjalan langsung di host ini dan tidak ditayangkan ke perangkat seluler.",
+        "Antigravity CLI berjalan langsung di host ini dan tidak ditayangkan ke perangkat seluler.",
     },
   },
   tunnel: {
@@ -242,7 +241,7 @@ const id = {
     keyInvalidError:
       "Kunci pairing tidak valid. Silakan periksa kunci aktif di dashboard desktop Anda.",
     platformScopeNotice:
-      "Pendamping seluler hanya menayangkan sesi Antigravity IDE dan Aplikasi Desktop. Terminal CLI (agy) tidak didukung.",
+      "Pendamping seluler hanya menayangkan sesi Aplikasi Antigravity dan Antigravity IDE. Antigravity CLI tidak didukung.",
   },
   sessions: {
     title: "Sesi Ponsel Terhubung",
@@ -321,22 +320,6 @@ const id = {
     switchedTargetDescription:
       "Beralih {{target}} ke {{email}} melalui baki sistem.",
   },
-  editionSelection: {
-    title: "Pilih Edisi Antigravity Anda",
-    description:
-      "Pilih versi Antigravity yang Anda gunakan. Ini membantu Relay terhubung ke aplikasi yang benar.",
-    edition1x: {
-      name: "Antigravity 1.x",
-      description:
-        "Aplikasi Antigravity asli. Pilih ini jika Anda menggunakan versi lama.",
-    },
-    edition20: {
-      name: "Antigravity IDE",
-      description:
-        "Antigravity IDE baru (2.0). Pilih ini jika Anda menggunakan versi IDE terbaru.",
-    },
-    confirm: "Lanjutkan",
-  },
   account: {
     current: "Saat ini",
     lastUsed: "Terakhir digunakan {{time}}",
@@ -393,24 +376,24 @@ const id = {
       description: "Informasi aplikasi.",
     },
     cache: {
-      title: "Cache Antigravity",
+      title: "Cache Antigravity App",
       description:
-        "Hapus direktori cache Antigravity yang diketahui untuk mengatasi masalah masuk atau validasi versi.",
-      clear: "Hapus Cache Antigravity",
-      dialogTitle: "Hapus Cache Antigravity?",
+        "Hapus direktori cache Antigravity App yang diketahui untuk mengatasi masalah masuk atau validasi versi.",
+      clear: "Hapus Cache Antigravity App",
+      dialogTitle: "Hapus Cache Antigravity App?",
       dialogDescription: "Direktori cache yang ada berikut ini akan dihapus.",
       pathsLabel: "Direktori cache",
-      noPaths: "Tidak ada direktori cache Antigravity yang ditemukan.",
+      noPaths: "Tidak ada direktori cache Antigravity App yang ditemukan.",
       warning:
-        "Tutup Antigravity sebelum menghapus cache untuk menghindari file terkunci atau dibuat ulang.",
+        "Tutup Antigravity App sebelum menghapus cache untuk menghindari file terkunci atau dibuat ulang.",
       cancel: "Batal",
       confirm: "Hapus Cache",
       clearing: "Menghapus...",
       clearedTitle: "Cache berhasil dihapus",
       clearedDescription:
-        "{{size}} MB telah dihapus dari direktori cache Antigravity.",
+        "{{size}} MB telah dihapus dari direktori cache Antigravity App.",
       failedTitle: "Gagal menghapus cache",
-      notFoundTitle: "Cache Antigravity tidak ditemukan",
+      notFoundTitle: "Cache Antigravity App tidak ditemukan",
     },
     version: "Versi",
     platform: "Platform",
@@ -432,14 +415,14 @@ const id = {
       auto_refresh_desc: "Segarkan info kuota secara berkala untuk semua akun",
       auto_sync: "Sinkronisasi Otomatis Akun Saat Ini",
       auto_sync_desc: "Sinkronkan informasi akun aktif secara berkala",
-      antigravity_executable: "File eksekusi Antigravity",
+      antigravity_executable: "File eksekusi Antigravity App",
       antigravity_executable_desc:
-        "Jalur opsional untuk menemukan data mode portabel dan meluncurkan Antigravity.",
+        "Jalur opsional untuk menemukan data mode portabel dan meluncurkan Antigravity App.",
       antigravity_executable_placeholder:
         "Contoh: C:\\Program Files\\Antigravity\\Antigravity.exe",
-      antigravity_args: "Argumen peluncuran Antigravity",
+      antigravity_args: "Argumen peluncuran Antigravity App",
       antigravity_args_desc:
-        "Argumen opsional yang diteruskan saat meluncurkan Antigravity, seperti --user-data-dir.",
+        "Argumen opsional yang diteruskan saat meluncurkan Antigravity App, seperti --user-data-dir.",
       antigravity_args_placeholder:
         "Contoh: --user-data-dir D:\\AntigravityProfile",
       detect_antigravity_args: "Deteksi",
@@ -661,7 +644,8 @@ const id = {
       failed: "Gagal {{count}}",
       sources: {
         "antigravity-keyring": "Penyimpanan Kredensial Sistem",
-        "antigravity-classic-db": "Database Antigravity",
+        "antigravity-app-db": "Database Aplikasi Antigravity",
+        "antigravity-classic-db": "Database Aplikasi Antigravity",
         "antigravity-ide-db": "Database IDE Antigravity",
         "legacy-agent": "Data Agent Lama",
         "antigravity-cli-token": "Antigravity CLI",
@@ -700,6 +684,8 @@ const id = {
       },
     },
     target: {
+      app: "Aplikasi Antigravity",
+      appShort: "App",
       classic: "Aplikasi Antigravity",
       classicShort: "App",
       ide: "Antigravity IDE",

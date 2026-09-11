@@ -1,27 +1,27 @@
-import fs from 'fs';
-import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import fs from "fs";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
 import {
   getAccountsFilePath,
   getBackupsDir,
   refreshAntigravityProcessCache,
-} from '@/shared/platform/paths';
-import { logger } from '@/shared/logging/logger';
-import type { Account, AccountBackupData } from '@/modules/account/types';
-import type { AntigravityAppTarget } from '@/shared/platform/antigravityAppTarget';
+} from "@/shared/platform/paths";
+import { logger } from "@/shared/logging/logger";
+import type { Account, AccountBackupData } from "@/modules/account/types";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 import type {
   DeviceProfile,
   DeviceProfilesSnapshot,
   DeviceProfileVersion,
-} from '@/modules/identity-profile/types';
+} from "@/modules/identity-profile/types";
 import {
   backupAccount as dbBackup,
   extractCredentialStoreTokenFromBackup,
   restoreAccount as dbRestore,
   getCurrentAccountInfo,
-} from '@/modules/account/persistence/antigravity-state-database';
-import { CredentialStoreInjectionAdapter } from '@/modules/cloud-account/persistence/credential-store-injection-adapter';
-import { writeAntigravityCredentialStoreToken } from '@/modules/cloud-account/persistence/antigravityCredentialStore';
+} from "@/modules/account/persistence/antigravity-state-database";
+import { CredentialStoreInjectionAdapter } from "@/modules/cloud-account/persistence/credential-store-injection-adapter";
+import { writeAntigravityCredentialStoreToken } from "@/modules/cloud-account/persistence/antigravityCredentialStore";
 import {
   applyDeviceProfile,
   ensureGlobalOriginalFromCurrentStorage,
@@ -31,15 +31,15 @@ import {
   readCurrentDeviceProfile,
   saveGlobalOriginalProfile,
   getStorageDirectoryPath,
-} from '@/modules/identity-profile/ipc/handler';
-import { runWithSwitchGuard } from '@/modules/antigravity-runtime/switch/switchGuard';
-import { executeSwitchFlow } from '@/modules/antigravity-runtime/switch/switchFlow';
+} from "@/modules/identity-profile/ipc/handler";
+import { runWithSwitchGuard } from "@/modules/antigravity-runtime/switch/switchGuard";
+import { executeSwitchFlow } from "@/modules/antigravity-runtime/switch/switchFlow";
 import {
   loadAccountIndex,
   saveAccountIndex,
-} from '@/modules/account/persistence/account-index-store';
-import { shell } from 'electron';
-import { withTimingTrace } from '@/shared/observability/timingTrace';
+} from "@/modules/account/persistence/account-index-store";
+import { shell } from "electron";
+import { withTimingTrace } from "@/shared/observability/timingTrace";
 
 type AccountIndex = Record<string, Account>;
 const SWITCH_EXIT_TIMEOUT_MS = 10000;
@@ -103,8 +103,8 @@ export async function listAccountsData(): Promise<Account[]> {
   const accountList = Object.values(accountIndex);
   // NOTE: Sort by last_used descending
   accountList.sort((leftAccount, rightAccount) => {
-    const leftLastUsed = leftAccount.last_used || '';
-    const rightLastUsed = rightAccount.last_used || '';
+    const leftLastUsed = leftAccount.last_used || "";
+    const rightLastUsed = rightAccount.last_used || "";
     return rightLastUsed.localeCompare(leftLastUsed);
   });
   return accountList;
@@ -116,14 +116,14 @@ export async function listAccountsData(): Promise<Account[]> {
  * @throws {Error} If the account cannot be added.
  */
 export async function addAccountSnapshot(): Promise<Account> {
-  logger.info('Adding account snapshot...');
+  logger.info("Adding account snapshot...");
   await refreshAntigravityProcessCache();
 
   // NOTE Get current account info from DB
   const currentAccountInfo = getCurrentAccountInfo();
   if (!currentAccountInfo.isAuthenticated) {
     const message =
-      'No authenticated account found. Please ensure Antigravity is running and you are logged in.';
+      "No authenticated account found. Please ensure Antigravity is running and you are logged in.";
     logger.error(message);
     throw new Error(message);
   }
@@ -149,7 +149,7 @@ export async function addAccountSnapshot(): Promise<Account> {
 
     // NOTE Preserve custom name: only update if we have a name from DB AND it's not the default email prefix
     // NOTE  if not name or name == email.split("@")[0]: name = existing_account.get("name", name)
-    const defaultName = currentAccountInfo.email.split('@')[0];
+    const defaultName = currentAccountInfo.email.split("@")[0];
     if (!currentAccountInfo.name || currentAccountInfo.name === defaultName) {
       // NOTE Keep the existing custom name
       // (account.name is already set, no change needed)
@@ -161,7 +161,8 @@ export async function addAccountSnapshot(): Promise<Account> {
     account.last_used = now;
 
     // NOTE Use existing backup path if available, otherwise generate new one
-    backupPath = account.backup_file || path.join(getBackupsDir(), `${account.id}.json`);
+    backupPath =
+      account.backup_file || path.join(getBackupsDir(), `${account.id}.json`);
 
     logger.info(`Updating existing account: ${currentAccountInfo.email}`);
   } else {
@@ -171,8 +172,11 @@ export async function addAccountSnapshot(): Promise<Account> {
     let accountName: string;
     if (currentAccountInfo.name) {
       accountName = currentAccountInfo.name;
-    } else if (currentAccountInfo.email && currentAccountInfo.email !== 'Unknown') {
-      accountName = currentAccountInfo.email.split('@')[0];
+    } else if (
+      currentAccountInfo.email &&
+      currentAccountInfo.email !== "Unknown"
+    ) {
+      accountName = currentAccountInfo.email.split("@")[0];
     } else {
       // Edge case: email is "Unknown" or invalid
       accountName = `Account_${Date.now()}`;
@@ -219,16 +223,16 @@ export async function switchAccount(
   accountId: string,
   appTarget?: AntigravityAppTarget,
 ): Promise<void> {
-  await runWithSwitchGuard('local-account-switch', async () => {
+  await runWithSwitchGuard("local-account-switch", async () => {
     logger.info(`Switching to account: ${accountId}`);
     await withTimingTrace(
-      'switch.local.prepare',
+      "switch.local.prepare",
       {
         accountId,
-        appTarget: appTarget || 'classic',
+        appTarget: appTarget || "classic",
       },
       async (trace) => {
-        await trace.phase('refreshProcessCacheMs', async () => {
+        await trace.phase("refreshProcessCacheMs", async () => {
           await refreshAntigravityProcessCache(appTarget);
         });
       },
@@ -241,26 +245,29 @@ export async function switchAccount(
     }
 
     // NOTE Get backup file path from account data
-    const backupPath = account.backup_file || path.join(getBackupsDir(), `${accountId}.json`);
+    const backupPath =
+      account.backup_file || path.join(getBackupsDir(), `${accountId}.json`);
 
     if (!fs.existsSync(backupPath)) {
       throw new Error(`Backup file not found: ${backupPath}`);
     }
 
-    if (appTarget !== 'agy') {
+    if (appTarget !== "agy") {
       ensureGlobalOriginalFromCurrentStorage(appTarget);
     }
     if (!account.deviceProfile) {
       const generated = generateDeviceProfile();
       saveGlobalOriginalProfile(generated);
-      bindDeviceProfileToAccount(account, generated, 'auto_generated', true);
+      bindDeviceProfileToAccount(account, generated, "auto_generated", true);
     }
 
     const usesCredentialStore =
-      CredentialStoreInjectionAdapter.shouldInjectTokenIntoCredentialStore(appTarget);
+      CredentialStoreInjectionAdapter.shouldInjectTokenIntoCredentialStore(
+        appTarget,
+      );
 
     await executeSwitchFlow({
-      scope: 'local',
+      scope: "local",
       appTarget,
       targetProfile: account.deviceProfile || null,
       applyFingerprint: isIdentityProfileApplyEnabled(),
@@ -268,12 +275,12 @@ export async function switchAccount(
       processExitTimeoutMs: SWITCH_EXIT_TIMEOUT_MS,
       performSwitch: async () => {
         // NOTE Load backup file
-        const backupContent = fs.readFileSync(backupPath, 'utf-8');
+        const backupContent = fs.readFileSync(backupPath, "utf-8");
         const backupData: AccountBackupData = JSON.parse(backupContent);
 
         if (usesCredentialStore) {
           const token = extractCredentialStoreTokenFromBackup(backupData);
-          if (appTarget === 'agy') {
+          if (appTarget === "cli" || appTarget === "agy") {
             writeAntigravityCredentialStoreToken(token, {
               email: account.email,
               syncGoogleOAuthFiles: true,
@@ -298,7 +305,9 @@ export async function previewGenerateIdentityProfile(): Promise<DeviceProfile> {
   return generateDeviceProfile();
 }
 
-export async function getIdentityProfiles(accountId: string): Promise<DeviceProfilesSnapshot> {
+export async function getIdentityProfiles(
+  accountId: string,
+): Promise<DeviceProfilesSnapshot> {
   const accounts = loadAccountsIndex();
   const account = accounts[accountId];
   if (!account) {
@@ -309,7 +318,7 @@ export async function getIdentityProfiles(accountId: string): Promise<DeviceProf
   try {
     currentStorage = readCurrentDeviceProfile();
   } catch (error) {
-    logger.warn('Failed to read current storage device profile', error);
+    logger.warn("Failed to read current storage device profile", error);
   }
 
   return {
@@ -322,7 +331,7 @@ export async function getIdentityProfiles(accountId: string): Promise<DeviceProf
 
 export async function bindIdentityProfile(
   accountId: string,
-  mode: 'capture' | 'generate',
+  mode: "capture" | "generate",
 ): Promise<DeviceProfile> {
   const accounts = loadAccountsIndex();
   const account = accounts[accountId];
@@ -331,7 +340,7 @@ export async function bindIdentityProfile(
   }
 
   let profile: DeviceProfile;
-  if (mode === 'capture') {
+  if (mode === "capture") {
     profile = readCurrentDeviceProfile();
   } else {
     profile = generateDeviceProfile();
@@ -358,19 +367,21 @@ export async function bindIdentityProfileWithPayload(
   ensureGlobalOriginalFromCurrentStorage();
   saveGlobalOriginalProfile(profile);
   applyDeviceProfile(profile);
-  bindDeviceProfileToAccount(account, profile, 'generated', true);
+  bindDeviceProfileToAccount(account, profile, "generated", true);
   saveAccountsIndex(accounts);
   return profile;
 }
 
-export async function applyBoundIdentityProfile(accountId: string): Promise<DeviceProfile> {
+export async function applyBoundIdentityProfile(
+  accountId: string,
+): Promise<DeviceProfile> {
   const accounts = loadAccountsIndex();
   const account = accounts[accountId];
   if (!account) {
     throw new Error(`Account not found: ${accountId}`);
   }
   if (!account.deviceProfile) {
-    throw new Error('Account has no bound device profile');
+    throw new Error("Account has no bound device profile");
   }
 
   applyDeviceProfile(account.deviceProfile);
@@ -390,24 +401,24 @@ export async function restoreIdentityProfileRevision(
   }
 
   let targetProfile: DeviceProfile | null = null;
-  if (versionId === 'baseline') {
+  if (versionId === "baseline") {
     targetProfile = loadGlobalOriginalProfile();
     if (!targetProfile) {
-      throw new Error('Global original profile not found');
+      throw new Error("Global original profile not found");
     }
     for (const version of getDeviceHistory(account)) {
       version.isCurrent = false;
     }
-  } else if (versionId === 'current') {
+  } else if (versionId === "current") {
     targetProfile = account.deviceProfile || null;
     if (!targetProfile) {
-      throw new Error('No currently bound profile');
+      throw new Error("No currently bound profile");
     }
   } else {
     const history = getDeviceHistory(account);
     const targetVersion = history.find((version) => version.id === versionId);
     if (!targetVersion) {
-      throw new Error('Device profile version not found');
+      throw new Error("Device profile version not found");
     }
     targetProfile = targetVersion.profile;
     for (const version of history) {
@@ -425,8 +436,8 @@ export async function deleteIdentityProfileRevision(
   accountId: string,
   versionId: string,
 ): Promise<void> {
-  if (versionId === 'baseline') {
-    throw new Error('Original profile cannot be deleted');
+  if (versionId === "baseline") {
+    throw new Error("Original profile cannot be deleted");
   }
 
   const accounts = loadAccountsIndex();
@@ -436,20 +447,24 @@ export async function deleteIdentityProfileRevision(
   }
 
   const history = getDeviceHistory(account);
-  if (history.some((version) => version.id === versionId && version.isCurrent)) {
-    throw new Error('Currently bound profile cannot be deleted');
+  if (
+    history.some((version) => version.id === versionId && version.isCurrent)
+  ) {
+    throw new Error("Currently bound profile cannot be deleted");
   }
 
   const before = history.length;
   account.deviceHistory = history.filter((version) => version.id !== versionId);
   if (account.deviceHistory.length === before) {
-    throw new Error('Historical device profile not found');
+    throw new Error("Historical device profile not found");
   }
 
   saveAccountsIndex(accounts);
 }
 
-export async function restoreBaselineProfile(accountId: string): Promise<DeviceProfile> {
+export async function restoreBaselineProfile(
+  accountId: string,
+): Promise<DeviceProfile> {
   const accounts = loadAccountsIndex();
   const account = accounts[accountId];
   if (!account) {
@@ -458,7 +473,7 @@ export async function restoreBaselineProfile(accountId: string): Promise<DeviceP
 
   const baseline = loadGlobalOriginalProfile();
   if (!baseline) {
-    throw new Error('Global original profile not found');
+    throw new Error("Global original profile not found");
   }
 
   account.deviceProfile = baseline;
@@ -493,7 +508,8 @@ export async function deleteAccount(accountId: string): Promise<void> {
   }
 
   // NOTE Remove backup file using stored path
-  const backupPath = account.backup_file || path.join(getBackupsDir(), `${accountId}.json`);
+  const backupPath =
+    account.backup_file || path.join(getBackupsDir(), `${accountId}.json`);
 
   if (fs.existsSync(backupPath)) {
     try {

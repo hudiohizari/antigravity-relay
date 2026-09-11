@@ -1,14 +1,35 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const AntigravityAppTargetSchema = z.enum(['classic', 'ide', 'agy']);
-export type AntigravityAppTarget = z.infer<typeof AntigravityAppTargetSchema>;
+export const CanonicalAntigravityAppTargetSchema = z.enum([
+  "app",
+  "ide",
+  "cli",
+]);
+export type CanonicalAntigravityAppTarget = z.infer<
+  typeof CanonicalAntigravityAppTargetSchema
+>;
+
+export const AntigravityAppTargetSchema = Object.assign(
+  z.preprocess((val) => {
+    if (val === "classic") return "app";
+    if (val === "agy") return "cli";
+    return val;
+  }, CanonicalAntigravityAppTargetSchema),
+  {
+    options: CanonicalAntigravityAppTargetSchema.options,
+  },
+);
+
+export type LegacyAntigravityAppTarget = "classic" | "agy";
+export type AntigravityAppTarget =
+  CanonicalAntigravityAppTarget | LegacyAntigravityAppTarget;
 
 export function resolveAntigravityAppTarget(
-  target?: AntigravityAppTarget | null,
-): AntigravityAppTarget {
-  if (target === 'ide' || target === 'agy') {
-    return target;
+  target?: AntigravityAppTarget | string | null,
+): CanonicalAntigravityAppTarget {
+  const parsed = AntigravityAppTargetSchema.safeParse(target);
+  if (parsed.success) {
+    return parsed.data;
   }
-
-  return 'classic';
+  return "app";
 }

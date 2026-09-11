@@ -116,7 +116,9 @@ function isAgyCliInstalled(): boolean {
  */
 function resolveAutoSwitchTargets(): AntigravityAppTarget[] {
   return AUTO_SWITCH_CANDIDATE_TARGETS.filter((target) =>
-    target === "agy" ? isAgyCliInstalled() : hasAntigravityStorage(target),
+    target === "cli" || target === ("agy" as any)
+      ? isAgyCliInstalled()
+      : hasAntigravityStorage(target),
   );
 }
 
