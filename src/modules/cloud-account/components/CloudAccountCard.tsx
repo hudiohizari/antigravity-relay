@@ -692,7 +692,10 @@ export function CloudAccountCard({
                 </DropdownMenuTrigger>
               </div>
 
-              <DropdownMenuContent align="end" className="w-56 p-1.5">
+              <DropdownMenuContent
+                align="end"
+                className="w-64 min-w-[16rem] max-w-[calc(100vw-2rem)] p-1.5"
+              >
                 {/* Global Action Item */}
                 <DropdownMenuItem
                   disabled={isSwitching || isAllActive}
@@ -789,31 +792,38 @@ export function CloudAccountCard({
                   disabled={isSwitching || isCliActive || !installedTargets.cli}
                   onSelect={() => onSwitch(account.id, "cli")}
                   className={cn(
-                    "flex items-center justify-between cursor-pointer",
+                    "flex items-center justify-between cursor-pointer min-h-[44px]",
                     (!installedTargets.cli || isCliActive) &&
                       "cursor-not-allowed opacity-60",
                   )}
                   title={
                     !installedTargets.cli
                       ? t("status.tooltips.cliNotInstalled")
-                      : undefined
+                      : t("cloud.switch.cliHint")
                   }
                 >
-                  <span className="flex items-center gap-2 font-mono">
-                    <Terminal className="h-4 w-4 text-emerald-600" />
-                    <span>{t("cloud.target.cli")}</span>
-                    {!installedTargets.cli && (
-                      <span
-                        className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
-                        title={t("status.tooltips.cliNotInstalled")}
-                      />
-                    )}
+                  <span className="flex items-start gap-2">
+                    <Terminal className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600" />
+                    <div className="flex flex-col">
+                      <span className="flex items-center gap-1.5 font-mono text-sm leading-tight">
+                        <span>{t("cloud.target.cli")}</span>
+                        {!installedTargets.cli && (
+                          <span
+                            className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0"
+                            title={t("status.tooltips.cliNotInstalled")}
+                          />
+                        )}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground leading-normal font-sans">
+                        {t("cloud.switch.cliHint")}
+                      </span>
+                    </div>
                   </span>
                   {isSwitching &&
                   (switchingTarget === "cli" || switchingTarget === "agy") ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
                   ) : isCliActive ? (
-                    <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                   ) : null}
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -1263,7 +1273,10 @@ export function CompactCloudAccountCard({
               </DropdownMenuTrigger>
             </div>
 
-            <DropdownMenuContent align="end" className="w-56 p-1.5">
+            <DropdownMenuContent
+              align="end"
+              className="w-64 min-w-[16rem] max-w-[calc(100vw-2rem)] p-1.5"
+            >
               {/* Global Action Item */}
               <DropdownMenuItem
                 disabled={isSwitching || isAllActive}
@@ -1357,31 +1370,38 @@ export function CompactCloudAccountCard({
                 disabled={isSwitching || isCliActive || !installedTargets.cli}
                 onSelect={() => onSwitch(account.id, "cli")}
                 className={cn(
-                  "flex items-center justify-between cursor-pointer",
+                  "flex items-center justify-between cursor-pointer min-h-[44px]",
                   (!installedTargets.cli || isCliActive) &&
                     "cursor-not-allowed opacity-60",
                 )}
                 title={
                   !installedTargets.cli
                     ? t("status.tooltips.cliNotInstalled")
-                    : undefined
+                    : t("cloud.switch.cliHint")
                 }
               >
-                <span className="flex items-center gap-2 font-mono">
-                  <Terminal className="h-4 w-4 text-emerald-600" />
-                  <span>{t("cloud.target.cli")}</span>
-                  {!installedTargets.cli && (
-                    <span
-                      className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
-                      title={t("status.tooltips.cliNotInstalled")}
-                    />
-                  )}
+                <span className="flex items-start gap-2">
+                  <Terminal className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600" />
+                  <div className="flex flex-col">
+                    <span className="flex items-center gap-1.5 font-mono text-sm leading-tight">
+                      <span>{t("cloud.target.cli")}</span>
+                      {!installedTargets.cli && (
+                        <span
+                          className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0"
+                          title={t("status.tooltips.cliNotInstalled")}
+                        />
+                      )}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground leading-normal font-sans">
+                      {t("cloud.switch.cliHint")}
+                    </span>
+                  </div>
                 </span>
                 {isSwitching &&
                 (switchingTarget === "cli" || switchingTarget === "agy") ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
                 ) : isCliActive ? (
-                  <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                 ) : null}
               </DropdownMenuItem>
             </DropdownMenuContent>

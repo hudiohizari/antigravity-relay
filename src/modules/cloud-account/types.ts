@@ -251,3 +251,20 @@ export const CloudAccountExportSchema = z.object({
 });
 
 export type CloudAccountExport = z.infer<typeof CloudAccountExportSchema>;
+
+export type CloudAccountSwitchNoticeVariant =
+  | "cli_updated"
+  | "restarted"
+  | "injected_on_disk"
+  | "batch_mixed"
+  | "batch_all_restarted"
+  | "batch_all_injected"
+  | "failed";
+
+export interface CloudAccountSwitchNoticePayload {
+  account_id: string;
+  app_target: "all" | "app" | "ide" | "cli";
+  restarted: boolean | string[];
+  notice_variant: CloudAccountSwitchNoticeVariant;
+  status: "success" | "partial" | "failed";
+}

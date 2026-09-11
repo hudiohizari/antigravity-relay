@@ -243,9 +243,18 @@ export const cloudRouter = os.router({
         results: z
           .record(
             z.string(),
-            z.object({ success: z.boolean(), error: z.string().optional() }),
+            z.object({
+              success: z.boolean(),
+              error: z.string().optional(),
+              restarted: z.boolean().optional(),
+              wasRunning: z.boolean().optional(),
+            }),
           )
           .optional(),
+        restarted: z.boolean().optional(),
+        wasRunning: z.boolean().optional(),
+        restartedTargets: z.array(AntigravityAppTargetSchema).optional(),
+        injectedTargets: z.array(AntigravityAppTargetSchema).optional(),
         switchedAt: z.number(),
       }),
     )

@@ -42,7 +42,10 @@ import {
   refreshAntigravityProcessCache,
 } from "@/shared/platform/paths";
 import { runWithSwitchGuard } from "@/modules/antigravity-runtime/switch/switchGuard";
-import { executeSwitchFlow } from "@/modules/antigravity-runtime/switch/switchFlow";
+import {
+  executeSwitchFlow,
+  type SwitchFlowResult,
+} from "@/modules/antigravity-runtime/switch/switchFlow";
 import { getCurrentAccountInfo } from "@/modules/account/public";
 import {
   type AntigravityAppTarget,
@@ -795,15 +798,27 @@ export interface SwitchCloudAccountResult {
   succeededTargets: AntigravityAppTarget[];
   failedTargets: FailedTargetReport[];
   results?: Partial<
-    Record<AntigravityAppTarget, { success: boolean; error?: string }>
+    Record<
+      AntigravityAppTarget,
+      {
+        success: boolean;
+        error?: string;
+        restarted?: boolean;
+        wasRunning?: boolean;
+      }
+    >
   >;
+  restarted?: boolean;
+  wasRunning?: boolean;
+  restartedTargets?: AntigravityAppTarget[];
+  injectedTargets?: AntigravityAppTarget[];
   switchedAt: number;
 }
 
 async function executeSingleTargetSwitch(
   account: CloudAccount,
   appTarget: AntigravityAppTarget,
-): Promise<void> {
+): Promise<SwitchFlowResult> {
   const usesCredentialStore =
     CredentialStoreInjectionAdapter.shouldInjectTokenIntoCredentialStore(
       appTarget,
@@ -838,7 +853,7 @@ async function executeSingleTargetSwitch(
     },
   );
 
-  await executeSwitchFlow({
+  return await executeSwitchFlow({
     scope: "cloud",
     appTarget,
     targetProfile: account.device_profile || null,
@@ -961,14 +976,39 @@ export async function switchCloudAccount(
         const succeededTargets: AntigravityAppTarget[] = [];
         const failedTargets: FailedTargetReport[] = [];
         const results: Partial<
-          Record<AntigravityAppTarget, { success: boolean; error?: string }>
+          Record<
+            AntigravityAppTarget,
+            {
+              success: boolean;
+              error?: string;
+              restarted?: boolean;
+              wasRunning?: boolean;
+            }
+          >
         > = {};
+        const restartedTargets: AntigravityAppTarget[] = [];
+        const injectedTargets: AntigravityAppTarget[] = [];
 
         for (const target of targetsToSwitch) {
           try {
-            await executeSingleTargetSwitch(account, target);
+            const flowResult = await executeSingleTargetSwitch(account, target);
             succeededTargets.push(target);
-            results[target] = { success: true };
+            const isRestarted =
+              target !== "cli" &&
+              target !== ("agy" as any) &&
+              Boolean(flowResult?.restarted);
+
+            results[target] = {
+              success: true,
+              restarted: flowResult?.restarted ?? false,
+              wasRunning: flowResult?.wasRunning ?? false,
+            };
+
+            if (isRestarted) {
+              restartedTargets.push(target);
+            } else {
+              injectedTargets.push(target);
+            }
           } catch (error) {
             const errorMsg =
               error instanceof Error ? error.message : "Unknown error";
@@ -1005,6 +1045,8 @@ export async function switchCloudAccount(
           succeededTargets,
           failedTargets,
           results,
+          restartedTargets,
+          injectedTargets,
           switchedAt: Date.now(),
         };
       }
@@ -1017,7 +1059,7 @@ export async function switchCloudAccount(
         );
       }
 
-      await executeSingleTargetSwitch(account, singleTarget);
+      const flowResult = await executeSingleTargetSwitch(account, singleTarget);
 
       CloudAccountRepo.updateLastUsed(account.id);
       CloudAccountRepo.syncActiveFlags();
@@ -1034,7 +1076,15 @@ export async function switchCloudAccount(
         accountId: account.id,
         succeededTargets: [singleTarget],
         failedTargets: [],
-        results: { [singleTarget]: { success: true } },
+        results: {
+          [singleTarget]: {
+            success: true,
+            restarted: flowResult?.restarted ?? false,
+            wasRunning: flowResult?.wasRunning ?? false,
+          },
+        },
+        restarted: flowResult?.restarted ?? false,
+        wasRunning: flowResult?.wasRunning ?? false,
         switchedAt: Date.now(),
       };
     } catch (error) {

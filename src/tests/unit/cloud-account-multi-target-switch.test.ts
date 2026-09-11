@@ -21,7 +21,11 @@ const mocks = vi.hoisted(() => {
       access_token: "new-access-token",
       expires_in: 3600,
     })),
-    executeSwitchFlow: vi.fn(async (_options?: any) => ({ restarted: true })),
+    executeSwitchFlow: vi.fn(async (_options?: any) => ({
+      target: "app" as AntigravityAppTarget,
+      wasRunning: false,
+      restarted: true,
+    })),
     isAntigravityTargetInstalled: vi.fn(
       (_target: AntigravityAppTarget) => true,
     ),
@@ -181,7 +185,11 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
       delete mocks.settings[key];
     }
     mocks.isAntigravityTargetInstalled.mockReturnValue(true);
-    mocks.executeSwitchFlow.mockResolvedValue({ restarted: true });
+    mocks.executeSwitchFlow.mockResolvedValue({
+      target: "app",
+      wasRunning: true,
+      restarted: true,
+    });
 
     const handler = await import("@/modules/cloud-account/ipc/handler");
     switchCloudAccount = handler.switchCloudAccount;
@@ -195,8 +203,13 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
     expect(result.succeededTargets).toEqual(["app", "ide", "cli"]);
     expect(result.failedTargets).toEqual([]);
     expect(result.results?.app?.success).toBe(true);
+    expect(result.results?.app?.restarted).toBe(true);
     expect(result.results?.ide?.success).toBe(true);
+    expect(result.results?.ide?.restarted).toBe(true);
     expect(result.results?.cli?.success).toBe(true);
+    expect(result.results?.cli?.restarted).toBe(true);
+    expect(result.restartedTargets).toEqual(["app", "ide"]);
+    expect(result.injectedTargets).toEqual(["cli"]);
     expect(mocks.syncActiveFlags).toHaveBeenCalled();
   });
 
@@ -205,7 +218,11 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
       if (options.appTarget === "ide") {
         throw new Error("SQLITE_BUSY: database is locked");
       }
-      return { restarted: true };
+      return {
+        target: options.appTarget,
+        wasRunning: true,
+        restarted: true,
+      };
     });
 
     const result = await switchCloudAccount("acc-1", "all");
@@ -220,6 +237,8 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
     expect(result.results?.ide?.success).toBe(false);
     expect(result.results?.ide?.error).toContain("SQLITE_BUSY");
     expect(result.results?.cli?.success).toBe(true);
+    expect(result.restartedTargets).toEqual(["app"]);
+    expect(result.injectedTargets).toEqual(["cli"]);
 
     // Active flags must still be synced so successful targets remain active
     expect(mocks.syncActiveFlags).toHaveBeenCalled();
@@ -246,15 +265,61 @@ describe("Multi-Target Cloud Account Switch & Option B Partial Failure", () => {
     );
   });
 
-  it("switches a single installed target successfully", async () => {
+  it("switches a single installed target successfully with restarted metadata", async () => {
     mocks.isAntigravityTargetInstalled.mockReturnValue(true);
+    mocks.executeSwitchFlow.mockResolvedValue({
+      target: "app",
+      wasRunning: true,
+      restarted: true,
+    });
 
     const result = await switchCloudAccount("acc-1", "app");
 
     expect(result.overall).toBe("success");
     expect(result.succeededTargets).toEqual(["app"]);
     expect(result.failedTargets).toEqual([]);
+    expect(result.restarted).toBe(true);
+    expect(result.wasRunning).toBe(true);
+    expect(result.results?.app?.success).toBe(true);
+    expect(result.results?.app?.restarted).toBe(true);
+    expect(result.results?.app?.wasRunning).toBe(true);
     expect(mocks.syncActiveFlags).toHaveBeenCalled();
+  });
+
+  it("switches single CLI target with non-restarted status", async () => {
+    mocks.isAntigravityTargetInstalled.mockReturnValue(true);
+    mocks.executeSwitchFlow.mockResolvedValue({
+      target: "cli",
+      wasRunning: false,
+      restarted: false,
+    });
+
+    const result = await switchCloudAccount("acc-1", "cli");
+
+    expect(result.overall).toBe("success");
+    expect(result.succeededTargets).toEqual(["cli"]);
+    expect(result.restarted).toBe(false);
+    expect(result.wasRunning).toBe(false);
+    expect(result.results?.cli?.success).toBe(true);
+    expect(result.results?.cli?.restarted).toBe(false);
+    expect(result.results?.cli?.wasRunning).toBe(false);
+  });
+
+  it("switches stopped GUI target with injected on disk status", async () => {
+    mocks.isAntigravityTargetInstalled.mockReturnValue(true);
+    mocks.executeSwitchFlow.mockResolvedValue({
+      target: "ide",
+      wasRunning: false,
+      restarted: false,
+    });
+
+    const result = await switchCloudAccount("acc-1", "ide");
+
+    expect(result.overall).toBe("success");
+    expect(result.succeededTargets).toEqual(["ide"]);
+    expect(result.restarted).toBe(false);
+    expect(result.wasRunning).toBe(false);
+    expect(result.results?.ide?.restarted).toBe(false);
   });
 
   it("evicts missing target settings on listCloudAccounts and maps is_active_cli and is_active_agy", async () => {

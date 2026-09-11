@@ -21,8 +21,14 @@ import {
 import { CloudAccountDivergedBanner } from "@/modules/cloud-account/components/CloudAccountDivergedBanner";
 import { evaluateDivergedState } from "@/modules/cloud-account/utils/divergedState";
 import { IdentityProfileDialog } from "@/modules/identity-profile/components/IdentityProfileDialog";
-import { CloudAccount } from "@/modules/cloud-account/types";
-import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import {
+  CloudAccount,
+  type CloudAccountSwitchNoticePayload,
+} from "@/modules/cloud-account/types";
+import {
+  resolveAntigravityAppTarget,
+  type AntigravityAppTarget,
+} from "@/shared/platform/antigravityAppTarget";
 import { useToast } from "@/components/ui/use-toast";
 import {
   useState,
@@ -407,13 +413,81 @@ export function CloudAccountList() {
           const email = targetAccount?.email ?? id;
 
           if (appTarget === "all") {
+            const rawRestarted = (result?.restartedTargets ??
+              (result?.succeededTargets || []).filter(
+                (target: string) =>
+                  target !== "cli" &&
+                  target !== "agy" &&
+                  Boolean(result?.results?.[target]?.restarted),
+              )) as AntigravityAppTarget[];
+
+            const rawInjected = (result?.injectedTargets ??
+              (result?.succeededTargets || []).filter(
+                (target: string) =>
+                  target === "cli" ||
+                  target === "agy" ||
+                  !result?.results?.[target]?.restarted,
+              )) as AntigravityAppTarget[];
+
+            const restartedList = rawRestarted.filter(
+              (t) => t !== "cli" && t !== ("agy" as any),
+            );
+            const injectedList = Array.from(
+              new Set([
+                ...rawInjected,
+                ...rawRestarted.filter(
+                  (t) => t === "cli" || t === ("agy" as any),
+                ),
+              ]),
+            );
+
             if (result?.overall === "success") {
+              let description = "";
+              let noticeVariant: CloudAccountSwitchNoticePayload["notice_variant"] =
+                "batch_all_injected";
+              if (restartedList.length > 0 && injectedList.length === 0) {
+                description = t("cloud.switch.noticeBatchAllRestarted");
+                noticeVariant = "batch_all_restarted";
+              } else if (
+                restartedList.length === 0 &&
+                injectedList.length > 0
+              ) {
+                description = t("cloud.switch.noticeBatchAllInjected");
+                noticeVariant = "batch_all_injected";
+              } else if (restartedList.length > 0 && injectedList.length > 0) {
+                const restartedNames = restartedList
+                  .map((target) => t(`cloud.target.${target}`))
+                  .join(", ");
+                const injectedNames = injectedList
+                  .map((target) => t(`cloud.target.${target}`))
+                  .join(", ");
+                description = t("cloud.switch.noticeBatchMixed", {
+                  restartedTargets: restartedNames,
+                  injectedTargets: injectedNames,
+                });
+                noticeVariant = "batch_mixed";
+              } else {
+                description = t("cloud.switch.successAllToast.description", {
+                  email,
+                });
+                noticeVariant = "batch_all_injected";
+              }
+
               toast({
                 title: t("cloud.switch.successAllToast.title"),
-                description: t("cloud.switch.successAllToast.description", {
-                  email,
-                }),
+                description,
               });
+              window.dispatchEvent(
+                new CustomEvent("cloud_account_switch_notice", {
+                  detail: {
+                    account_id: id,
+                    app_target: "all",
+                    restarted: restartedList,
+                    notice_variant: noticeVariant,
+                    status: "success",
+                  } satisfies CloudAccountSwitchNoticePayload,
+                }),
+              );
             } else if (result?.overall === "partial") {
               const failedTargetsList = (result?.failedTargets || [])
                 .map((f: any) => t(`cloud.target.${f.target}`))
@@ -432,6 +506,17 @@ export function CloudAccountList() {
                 }),
                 variant: "destructive",
               });
+              window.dispatchEvent(
+                new CustomEvent("cloud_account_switch_notice", {
+                  detail: {
+                    account_id: id,
+                    app_target: "all",
+                    restarted: restartedList,
+                    notice_variant: "failed",
+                    status: "partial",
+                  } satisfies CloudAccountSwitchNoticePayload,
+                }),
+              );
             } else if (result?.overall === "failed") {
               const firstError = result?.failedTargets?.[0]?.error ?? "";
               toast({
@@ -441,6 +526,17 @@ export function CloudAccountList() {
                 }),
                 variant: "destructive",
               });
+              window.dispatchEvent(
+                new CustomEvent("cloud_account_switch_notice", {
+                  detail: {
+                    account_id: id,
+                    app_target: "all",
+                    restarted: [],
+                    notice_variant: "failed",
+                    status: "failed",
+                  } satisfies CloudAccountSwitchNoticePayload,
+                }),
+              );
             } else {
               toast({
                 title: t("cloud.switch.successAllToast.title"),
@@ -448,8 +544,20 @@ export function CloudAccountList() {
                   email,
                 }),
               });
+              window.dispatchEvent(
+                new CustomEvent("cloud_account_switch_notice", {
+                  detail: {
+                    account_id: id,
+                    app_target: "all",
+                    restarted: [],
+                    notice_variant: "batch_all_injected",
+                    status: "success",
+                  } satisfies CloudAccountSwitchNoticePayload,
+                }),
+              );
             }
           } else {
+            const canonicalTarget = resolveAntigravityAppTarget(appTarget);
             const targetName = appTarget
               ? t(`cloud.target.${appTarget}`)
               : t("cloud.target.classic");
@@ -464,22 +572,85 @@ export function CloudAccountList() {
                   }),
                 variant: "destructive",
               });
+              window.dispatchEvent(
+                new CustomEvent("cloud_account_switch_notice", {
+                  detail: {
+                    account_id: id,
+                    app_target: canonicalTarget,
+                    restarted: false,
+                    notice_variant: "failed",
+                    status: "failed",
+                  } satisfies CloudAccountSwitchNoticePayload,
+                }),
+              );
             } else {
+              let description = "";
+              let noticeVariant: CloudAccountSwitchNoticePayload["notice_variant"] =
+                "injected_on_disk";
+              let isRestarted = false;
+
+              if (canonicalTarget === "cli") {
+                description = t("cloud.switch.noticeCliUpdated");
+                noticeVariant = "cli_updated";
+                isRestarted = false;
+              } else if (
+                result?.restarted ||
+                result?.results?.[canonicalTarget]?.restarted ||
+                result?.results?.[appTarget as string]?.restarted
+              ) {
+                description = t("cloud.switch.noticeRestarted", {
+                  target: targetName,
+                });
+                noticeVariant = "restarted";
+                isRestarted = true;
+              } else {
+                description = t("cloud.switch.noticeInjectedOnDisk", {
+                  target: targetName,
+                });
+                noticeVariant = "injected_on_disk";
+                isRestarted = false;
+              }
+
               toast({
                 title: t("cloud.toast.switched.title"),
-                description: t("cloud.switch.noticeRestarted", {
-                  target: targetName,
-                }),
+                description,
               });
+              window.dispatchEvent(
+                new CustomEvent("cloud_account_switch_notice", {
+                  detail: {
+                    account_id: id,
+                    app_target: canonicalTarget,
+                    restarted: isRestarted,
+                    notice_variant: noticeVariant,
+                    status: "success",
+                  } satisfies CloudAccountSwitchNoticePayload,
+                }),
+              );
             }
           }
         },
-        onError: (err) =>
+        onError: (err) => {
           toast({
             title: t("cloud.toast.switchFailed"),
             description: getLocalizedErrorMessage(err, t),
             variant: "destructive",
-          }),
+          });
+          const canonicalTarget =
+            appTarget === "all"
+              ? "all"
+              : resolveAntigravityAppTarget(appTarget);
+          window.dispatchEvent(
+            new CustomEvent("cloud_account_switch_notice", {
+              detail: {
+                account_id: id,
+                app_target: canonicalTarget,
+                restarted: appTarget === "all" ? [] : false,
+                notice_variant: "failed",
+                status: "failed",
+              } satisfies CloudAccountSwitchNoticePayload,
+            }),
+          );
+        },
       },
     );
   };

@@ -28,3 +28,28 @@ describe("cloud account validation translations", () => {
     },
   );
 });
+
+const switchLocales = [
+  { code: "en", switchStrings: en.cloud.switch },
+  { code: "zh-CN", switchStrings: zhCn.cloud.switch },
+  { code: "ru", switchStrings: ru.cloud.switch },
+  { code: "vi", switchStrings: vi.cloud.switch },
+  { code: "tr", switchStrings: tr.cloud.switch },
+  { code: "fr", switchStrings: fr.cloud.switch },
+  { code: "id", switchStrings: id.cloud.switch },
+];
+
+describe("cloud account switch translations", () => {
+  it.each(switchLocales)(
+    "defines CLI hints and accurate switch notices in $code",
+    ({ switchStrings }) => {
+      expect(switchStrings.cliHint.trim()).not.toBe("");
+      expect(switchStrings.noticeCliUpdated.trim()).not.toBe("");
+      expect(switchStrings.noticeRestarted.trim()).not.toBe("");
+      expect(switchStrings.noticeInjectedOnDisk.trim()).not.toBe("");
+      expect(switchStrings.noticeBatchAllRestarted.trim()).not.toBe("");
+      expect(switchStrings.noticeBatchAllInjected.trim()).not.toBe("");
+      expect(switchStrings.noticeBatchMixed.trim()).not.toBe("");
+    },
+  );
+});
