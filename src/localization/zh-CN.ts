@@ -406,6 +406,9 @@ const zhCn = {
       clear: "清除",
       detect: "检测",
       detecting: "检测中...",
+      auto_detect_all: "自动检测全部",
+      auto_detect_all_aria: "自动检测所有已安装的 Antigravity 可执行文件",
+      detect_exec: "检测",
       app: {
         title: "Antigravity App",
         executable: "Antigravity App 可执行文件",
@@ -421,6 +424,7 @@ const zhCn = {
         clear_args_aria: "清除 Antigravity App 启动参数",
         detect_args: "检测",
         detect_args_aria: "从正在运行的 Antigravity App 检测启动参数",
+        detect_exec_aria: "检测已安装的 Antigravity App 可执行文件",
       },
       ide: {
         title: "Antigravity IDE",
@@ -439,6 +443,7 @@ const zhCn = {
         clear_args_aria: "清除 Antigravity IDE 启动参数",
         detect_args: "检测",
         detect_args_aria: "从正在运行的 Antigravity IDE 检测启动参数",
+        detect_exec_aria: "检测已安装的 Antigravity IDE 可执行文件",
       },
       cli: {
         title: "Antigravity CLI (agy)",
@@ -448,6 +453,7 @@ const zhCn = {
         executable_placeholder: "例如：/usr/local/bin/agy 或 ~/.local/bin/agy",
         browse_aria: "浏览 Antigravity CLI 可执行文件",
         clear_path_aria: "清除 Antigravity CLI 可执行文件路径",
+        detect_exec_aria: "检测已安装的 Antigravity CLI (agy) 可执行文件",
       },
       toast: {
         success_title: "已检测到参数",
@@ -459,6 +465,31 @@ const zhCn = {
           "未检测到正在运行的 {{target}} 进程。已保留现有参数。",
         error_title: "检测失败",
         error_desc: "无法读取 {{target}} 运行进程的启动参数。",
+        exec_detected_title: "已检测到可执行文件",
+        exec_detected_desc: "已成功检测并配置 {{target}}，路径为 {{path}}。",
+        exec_not_found_title: "未找到可执行文件",
+        exec_not_found_desc:
+          "在您的系统上未找到已安装的 {{target}} 可执行文件。",
+        exec_already_set_title: "已完成配置",
+        exec_already_set_desc: "{{target}} 已设置为检测到的路径。",
+        exec_preserved_title: "已保留现有路径",
+        exec_preserved_desc: "已保留现有的 {{target}} 路径。",
+        exec_bulk_summary_title: "自动检测完成",
+        exec_bulk_summary_desc: "已成功配置 {{count}} 个运行程序可执行文件。",
+        exec_bulk_unchanged_desc: "所有已安装的运行程序均已完成配置。",
+        exec_bulk_none_desc:
+          "未在此系统上检测到已安装的 Antigravity 可执行文件。",
+      },
+      dialog: {
+        replace_title: "替换可执行文件路径？",
+        replace_desc: "是否将 {{target}} 的已配置路径替换为检测到的路径？",
+        batch_title: "可执行文件路径冲突",
+        batch_desc: "检测到的路径与现有配置不同。请选择要替换的路径。",
+        current_label: "当前路径",
+        detected_label: "检测到的路径",
+        replace_all: "全部替换",
+        replace_selected: "替换所选项",
+        keep_current: "保留当前设置",
       },
     },
     startup: {
@@ -740,6 +771,7 @@ const zhCn = {
       currentlyActiveAria: "{{target}} 当前处于活动状态",
       switching: "切换中...",
       targetNotInstalled: "系统尚未安装 {{target}}",
+      cliHint: "终端工具：应用于新会话",
       successAllToast: {
         title: "所有环境已切换",
         description: "已将所有环境切换到 {{email}}。",

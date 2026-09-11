@@ -8,8 +8,26 @@ import type {
   AntigravityAppTarget,
   CanonicalAntigravityAppTarget,
 } from "@/shared/platform/antigravityAppTarget";
-import { resolveAntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import {
+  CanonicalAntigravityAppTargetSchema,
+  resolveAntigravityAppTarget,
+} from "@/shared/platform/antigravityAppTarget";
 import { detectAgyCliExecutablePath } from "@/modules/antigravity-runtime/binary-patch/agyCliPathDetection";
+
+export const ExecutableDetectionResultSchema = z.object({
+  target: CanonicalAntigravityAppTargetSchema,
+  detectedPath: z.string().nullable(),
+  source: z.string(),
+  configuredPath: z.string().nullable(),
+  configuredPathExists: z.boolean().optional(),
+  alreadySet: z.boolean(),
+  status: z.enum(["detected", "already_set", "not_found"]),
+});
+
+export type ExecutableDetectionResult = z.infer<
+  typeof ExecutableDetectionResultSchema
+>;
+export type DetectedExecutableResult = ExecutableDetectionResult;
 
 type PathApi = Pick<typeof path, "dirname" | "join" | "normalize" | "resolve">;
 
@@ -57,11 +75,15 @@ function resolveIsWsl(options?: PathResolutionOptions): boolean {
 
 let cachedWindowsUser: string | null = null;
 
+export function clearCachedWindowsUser(): void {
+  cachedWindowsUser = null;
+}
+
 /**
  * Gets the Windows username.
  * @returns {string} The Windows username.
  */
-function getWindowsUser(): string {
+export function getWindowsUser(): string {
   if (cachedWindowsUser) {
     return cachedWindowsUser;
   }
@@ -120,6 +142,94 @@ function getWindowsUser(): string {
   }
 
   return "User"; // Fallback
+}
+
+/**
+ * Validates whether a candidate path points to an existing, executable binary file.
+ * Wraps permission checks in try/catch to absorb EACCES/EPERM errors gracefully.
+ */
+export function validateExecutableBinary(
+  candidatePath: string,
+  options?: PathResolutionOptions,
+): boolean {
+  if (!candidatePath || typeof candidatePath !== "string") {
+    return false;
+  }
+  try {
+    if (!fs.existsSync(candidatePath)) {
+      return false;
+    }
+    try {
+      const stat = fs.statSync(candidatePath);
+      if (stat && typeof stat.isFile === "function" && !stat.isFile()) {
+        return false;
+      }
+    } catch (statErr: any) {
+      if (statErr?.code === "ENOENT") {
+        // mock test environment or transient race condition
+      } else {
+        return false;
+      }
+    }
+
+    const platform = options?.platform ?? process.platform;
+    if (platform !== "win32") {
+      try {
+        fs.accessSync(candidatePath, fs.constants.X_OK);
+      } catch (accessErr: any) {
+        if (accessErr?.code !== "ENOENT") {
+          return false;
+        }
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks if a candidate path is inside a versioned Squirrel app subdirectory (e.g. app-1.2.3/).
+ */
+export function isSquirrelVersionedPath(candidatePath: string): boolean {
+  if (!candidatePath || typeof candidatePath !== "string") {
+    return false;
+  }
+  return /[\\/]app-\d[^\\/]*[\\/]/.test(candidatePath);
+}
+
+/**
+ * Resolves a Squirrel root launcher path from a versioned app-x.y.z/ subdirectory path
+ * if the root launcher exists in the parent directory.
+ */
+export function resolveSquirrelRootLauncher(candidatePath: string): string {
+  if (!candidatePath || typeof candidatePath !== "string") {
+    return candidatePath;
+  }
+  const match = candidatePath.match(/^(.*)[\\/]app-\d[^\\/]*[\\/]([^\\/]+)$/i);
+  if (match) {
+    const parentDir = match[1];
+    const binaryName = match[2];
+    const rootLauncher = path.win32.join(parentDir, binaryName);
+    if (fs.existsSync(rootLauncher)) {
+      return rootLauncher;
+    }
+  }
+  return candidatePath;
+}
+
+/**
+ * Sanitizes file paths for telemetry and logs, masking usernames to prevent PII leakage.
+ */
+export function maskUserPath(
+  rawPath: string | null | undefined,
+): string | null {
+  if (!rawPath || typeof rawPath !== "string") {
+    return null;
+  }
+  return rawPath
+    .replace(/(Users[\\/])([^\\/]+)/gi, "$1***")
+    .replace(/(home[\\/])([^\\/]+)/gi, "$1***");
 }
 
 function getAntigravityAppFolderName(
@@ -700,6 +810,116 @@ export async function refreshAntigravityProcessCache(
     target: resolvedTarget,
     checkedAt: Date.now(),
     processes: Array.from(processMap.values()),
+  });
+}
+
+const FAST_PROCESS_SCAN_TIMEOUT_MS = 1500;
+
+/**
+ * Performs a single-pass process inspection snapshot across all targets (app, ide, cli),
+ * updating their respective runningProcessCache entries with a strict 1.5s timeout.
+ */
+export async function refreshAllAntigravityProcessCaches(
+  options: RefreshProcessCacheOptions = {},
+): Promise<void> {
+  const currentPlatform = getCurrentPlatform(options);
+  const searchNames = [
+    "Antigravity IDE",
+    "antigravity-ide",
+    "Antigravity",
+    "antigravity",
+    "agy",
+    "agy.exe",
+  ];
+  if (options.includeAllProcesses) {
+    searchNames.push("");
+  }
+
+  const appProcesses = new Map<number, RunningAntigravityProcess>();
+  const ideProcesses = new Map<number, RunningAntigravityProcess>();
+  const cliProcesses = new Map<number, RunningAntigravityProcess>();
+  const startTime = Date.now();
+
+  try {
+    await withTimeout(
+      (async () => {
+        for (const searchName of searchNames) {
+          const elapsed = Date.now() - startTime;
+          const remaining = FAST_PROCESS_SCAN_TIMEOUT_MS - elapsed;
+          if (remaining <= 0) {
+            break;
+          }
+
+          try {
+            const matches = await withTimeout(
+              findProcess("name", searchName, {
+                strict: false,
+                logLevel: "error",
+              }),
+              remaining,
+            );
+
+            for (const processInfo of matches) {
+              const runningProcess = processInfoToRunningProcess(processInfo);
+              if (runningProcess.pid <= 0) continue;
+
+              if (
+                isTargetAntigravityProcessCandidate(
+                  runningProcess,
+                  "ide",
+                  options,
+                )
+              ) {
+                ideProcesses.set(runningProcess.pid, runningProcess);
+              }
+              if (
+                isTargetAntigravityProcessCandidate(
+                  runningProcess,
+                  "app",
+                  options,
+                )
+              ) {
+                appProcesses.set(runningProcess.pid, runningProcess);
+              }
+              if (
+                isTargetAntigravityProcessCandidate(
+                  runningProcess,
+                  "cli",
+                  options,
+                )
+              ) {
+                cliProcesses.set(runningProcess.pid, runningProcess);
+              }
+            }
+          } catch {
+            // Process discovery is opportunistic. Standard and portable path fallbacks still apply.
+          }
+        }
+      })(),
+      FAST_PROCESS_SCAN_TIMEOUT_MS,
+    );
+  } catch {
+    // Process discovery is opportunistic. Standard and portable path fallbacks still apply.
+  }
+
+  const now = Date.now();
+  runningProcessCache.set("app", {
+    platform: currentPlatform,
+    target: "app",
+    checkedAt: now,
+    processes: Array.from(appProcesses.values()),
+  });
+  runningProcessCache.set("ide", {
+    platform: currentPlatform,
+    target: "ide",
+    checkedAt: now,
+    processes: Array.from(ideProcesses.values()),
+  });
+  runningProcessCache.set("cli", {
+    platform: currentPlatform,
+    target: "cli",
+    checkedAt: now,
+    processes: Array.from(cliProcesses.values()),
   });
 }
 
@@ -1401,6 +1621,116 @@ function getWslPossibleExecutablePaths(
   return candidates;
 }
 
+export function getDarwinPossibleExecutablePaths(
+  target: AntigravityAppTarget,
+): string[] {
+  const executableName = getAntigravityAppFolderName(target);
+  const home = os.homedir();
+  const candidates = [
+    `/Applications/${executableName}.app/Contents/MacOS/${executableName}`,
+    path.posix.join(
+      home,
+      "Applications",
+      `${executableName}.app`,
+      "Contents",
+      "MacOS",
+      executableName,
+    ),
+  ];
+  if (resolveAntigravityAppTarget(target) === "ide") {
+    candidates.push(
+      "/Applications/Antigravity IDE.app/Contents/MacOS/antigravity-ide",
+      path.posix.join(
+        home,
+        "Applications",
+        "Antigravity IDE.app",
+        "Contents",
+        "MacOS",
+        "antigravity-ide",
+      ),
+    );
+  }
+  return candidates;
+}
+
+export function getLinuxPossibleExecutablePaths(
+  target: AntigravityAppTarget,
+): string[] {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  const home = os.homedir();
+  if (resolvedTarget === "ide") {
+    return [
+      "/usr/bin/antigravity-ide",
+      "/usr/local/bin/antigravity-ide",
+      "/opt/Antigravity IDE/antigravity-ide",
+      "/opt/antigravity-ide/antigravity-ide",
+      path.posix.join(
+        home,
+        ".local",
+        "share",
+        "antigravity-ide",
+        "antigravity-ide",
+      ),
+    ];
+  }
+  return [
+    "/usr/bin/antigravity",
+    "/usr/local/bin/antigravity",
+    "/usr/share/antigravity/antigravity",
+    "/opt/Antigravity/antigravity",
+    "/opt/antigravity/antigravity",
+    path.posix.join(home, ".local", "share", "antigravity", "antigravity"),
+  ];
+}
+
+function getPosixPathEnvironmentExecutable(
+  target: AntigravityAppTarget,
+  options?: PathResolutionOptions,
+): string | null {
+  const pathValue = process.env.PATH;
+  if (!pathValue) {
+    return null;
+  }
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  const binaryNames =
+    resolvedTarget === "ide"
+      ? ["antigravity-ide", "Antigravity IDE"]
+      : ["antigravity", "Antigravity"];
+
+  const pathDirs = pathValue.split(":");
+  for (const dir of pathDirs) {
+    const trimmedDir = dir.trim();
+    if (!trimmedDir) {
+      continue;
+    }
+    for (const binaryName of binaryNames) {
+      const candidate = path.posix.join(trimmedDir, binaryName);
+      if (validateExecutableBinary(candidate, options)) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
+function isCandidateInPathEnv(
+  candidatePath: string,
+  options?: PathResolutionOptions,
+): boolean {
+  const pathEnv = process.env.PATH;
+  if (!pathEnv || !candidatePath) {
+    return false;
+  }
+  const platform = getCurrentPlatform(options);
+  const delimiter = platform === "win32" ? ";" : ":";
+  const pathApi = getCurrentPlatformPathApi(options);
+  const candidateDir = pathApi.dirname(candidatePath).toLowerCase();
+  return pathEnv
+    .split(delimiter)
+    .filter(Boolean)
+    .some((dir) => pathApi.normalize(dir).toLowerCase() === candidateDir);
+}
+
 export function getAntigravityExecutablePath(
   target?: AntigravityAppTarget | null,
   options?: PathResolutionOptions,
@@ -1413,16 +1743,23 @@ export function getAntigravityExecutablePath(
       detectAgyCliExecutablePath({
         platform: getCurrentPlatform(options),
         configuredPath,
+        isWsl: resolveIsWsl(options),
+        windowsUser: getWindowsUser(),
       }) ?? ""
     );
   }
   const executableName = getAntigravityAppFolderName(target);
-  const runningExecutablePath = getExecutablePathFromRunningProcess(
+  let runningExecutablePath = getExecutablePathFromRunningProcess(
     target,
     options,
   );
 
   if (runningExecutablePath) {
+    if (getCurrentPlatform(options) === "win32" || resolveIsWsl(options)) {
+      runningExecutablePath = resolveSquirrelRootLauncher(
+        runningExecutablePath,
+      );
+    }
     rememberRunningExecutablePath(resolvedTarget, runningExecutablePath);
     return runningExecutablePath;
   }
@@ -1457,10 +1794,19 @@ export function getAntigravityExecutablePath(
   }
 
   switch (getCurrentPlatform(options)) {
-    case "darwin":
-      return `/Applications/${executableName}.app/Contents/MacOS/${executableName}`;
+    case "darwin": {
+      const candidates = getDarwinPossibleExecutablePaths(resolvedTarget);
+      for (const candidate of candidates) {
+        if (validateExecutableBinary(candidate, options)) {
+          return candidate;
+        }
+      }
+      return "";
+    }
     case "win32": {
-      const possiblePaths = getWindowsPossibleExecutablePaths(resolvedTarget);
+      const possiblePaths = getWindowsPossibleExecutablePaths(
+        resolvedTarget,
+      ).filter((c) => !isSquirrelVersionedPath(c));
       for (const possiblePath of possiblePaths) {
         if (fs.existsSync(possiblePath)) {
           return possiblePath;
@@ -1477,37 +1823,10 @@ export function getAntigravityExecutablePath(
     }
     case "linux": {
       const possibleLinuxPaths =
-        resolvedTarget === "ide"
-          ? [
-              "/usr/bin/antigravity-ide",
-              "/usr/local/bin/antigravity-ide",
-              "/opt/Antigravity IDE/antigravity-ide",
-              "/opt/antigravity-ide/antigravity-ide",
-              path.posix.join(
-                os.homedir(),
-                ".local",
-                "share",
-                "antigravity-ide",
-                "antigravity-ide",
-              ),
-            ]
-          : [
-              "/usr/bin/antigravity",
-              "/usr/local/bin/antigravity",
-              "/usr/share/antigravity/antigravity",
-              "/opt/Antigravity/antigravity",
-              "/opt/antigravity/antigravity",
-              path.posix.join(
-                os.homedir(),
-                ".local",
-                "share",
-                "antigravity",
-                "antigravity",
-              ),
-            ];
+        getLinuxPossibleExecutablePaths(resolvedTarget);
 
       for (const possiblePath of possibleLinuxPaths) {
-        if (fs.existsSync(possiblePath)) {
+        if (validateExecutableBinary(possiblePath, options)) {
           return possiblePath;
         }
       }
@@ -1517,7 +1836,9 @@ export function getAntigravityExecutablePath(
         resolvedTarget === "ide" ? "antigravity-ide" : "antigravity";
       const fromPath = process.env.PATH?.split(":")
         .map((dir) => path.posix.join(dir, binaryName))
-        .find((possiblePath) => fs.existsSync(possiblePath));
+        .find((possiblePath) =>
+          validateExecutableBinary(possiblePath, options),
+        );
       if (fromPath) {
         return fromPath;
       }
@@ -1528,6 +1849,202 @@ export function getAntigravityExecutablePath(
     default:
       return "";
   }
+}
+
+export interface DetectExecutableOptions extends PathResolutionOptions {
+  bypassConfig?: boolean;
+  skipProcessRefresh?: boolean;
+}
+
+export async function detectAntigravityExecutablePath(
+  target?: AntigravityAppTarget | null,
+  options: DetectExecutableOptions = {},
+): Promise<DetectedExecutableResult> {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  const configuredPath = getConfiguredAntigravityExecutablePath(
+    resolvedTarget,
+    false,
+    options,
+  );
+  const configuredPathExists = configuredPath
+    ? validateExecutableBinary(configuredPath, options)
+    : false;
+  const bypassConfig = options.bypassConfig ?? true;
+
+  // 1. If bypassConfig is false, check currently configured path
+  if (!bypassConfig && configuredPath && configuredPathExists) {
+    return {
+      target: resolvedTarget,
+      detectedPath: configuredPath,
+      source: "config",
+      configuredPath,
+      configuredPathExists,
+      alreadySet: true,
+      status: "already_set",
+    };
+  }
+
+  // 2. Refresh process cache if not skipped
+  if (!options.skipProcessRefresh) {
+    await refreshAntigravityProcessCache(resolvedTarget, options);
+  }
+
+  // 3. Inspect running processes
+  let runningExecutablePath = getExecutablePathFromRunningProcess(
+    resolvedTarget,
+    options,
+  );
+  if (runningExecutablePath) {
+    if (getCurrentPlatform(options) === "win32" || resolveIsWsl(options)) {
+      runningExecutablePath = resolveSquirrelRootLauncher(
+        runningExecutablePath,
+      );
+    }
+    if (validateExecutableBinary(runningExecutablePath, options)) {
+      rememberRunningExecutablePath(resolvedTarget, runningExecutablePath);
+      const alreadySet =
+        configuredPath !== null &&
+        areExecutablePathsEquivalent(
+          configuredPath,
+          runningExecutablePath,
+          options,
+        );
+      return {
+        target: resolvedTarget,
+        detectedPath: runningExecutablePath,
+        source: "process",
+        configuredPath,
+        configuredPathExists,
+        alreadySet,
+        status: alreadySet ? "already_set" : "detected",
+      };
+    }
+  }
+
+  // 4. Candidate directories based on target and platform
+  if (resolvedTarget === "cli") {
+    const cliDetected = detectAgyCliExecutablePath({
+      bypassConfig,
+      configuredPath,
+      platform: getCurrentPlatform(options),
+      isWsl: resolveIsWsl(options),
+      windowsUser: getWindowsUser(),
+    });
+    if (cliDetected && validateExecutableBinary(cliDetected, options)) {
+      const alreadySet =
+        configuredPath !== null &&
+        areExecutablePathsEquivalent(configuredPath, cliDetected, options);
+      const source = isCandidateInPathEnv(cliDetected, options)
+        ? "path"
+        : "filesystem";
+      return {
+        target: "cli",
+        detectedPath: cliDetected,
+        source,
+        configuredPath,
+        configuredPathExists,
+        alreadySet,
+        status: alreadySet ? "already_set" : "detected",
+      };
+    }
+  } else {
+    const candidates: string[] = [];
+    if (resolveIsWsl(options)) {
+      const winUser = getWindowsUser();
+      candidates.push(
+        ...getWslPossibleExecutablePaths(winUser, resolvedTarget),
+      );
+      candidates.push(...getLinuxPossibleExecutablePaths(resolvedTarget));
+    } else {
+      switch (getCurrentPlatform(options)) {
+        case "darwin":
+          candidates.push(...getDarwinPossibleExecutablePaths(resolvedTarget));
+          break;
+        case "win32":
+          candidates.push(...getWindowsPossibleExecutablePaths(resolvedTarget));
+          break;
+        case "linux":
+          candidates.push(...getLinuxPossibleExecutablePaths(resolvedTarget));
+          break;
+      }
+    }
+
+    const filteredCandidates = candidates.filter(
+      (c) => !isSquirrelVersionedPath(c),
+    );
+    for (const candidate of filteredCandidates) {
+      if (validateExecutableBinary(candidate, options)) {
+        const alreadySet =
+          configuredPath !== null &&
+          areExecutablePathsEquivalent(configuredPath, candidate, options);
+        return {
+          target: resolvedTarget,
+          detectedPath: candidate,
+          source: "filesystem",
+          configuredPath,
+          configuredPathExists,
+          alreadySet,
+          status: alreadySet ? "already_set" : "detected",
+        };
+      }
+    }
+
+    // 5. System PATH lookup for desktop app and ide
+    let pathCandidate: string | null = null;
+    if (getCurrentPlatform(options) === "win32") {
+      pathCandidate = getWindowsPathEnvironmentExecutable(resolvedTarget);
+    } else {
+      pathCandidate = getPosixPathEnvironmentExecutable(
+        resolvedTarget,
+        options,
+      );
+    }
+
+    if (pathCandidate && validateExecutableBinary(pathCandidate, options)) {
+      const alreadySet =
+        configuredPath !== null &&
+        areExecutablePathsEquivalent(configuredPath, pathCandidate, options);
+      return {
+        target: resolvedTarget,
+        detectedPath: pathCandidate,
+        source: "path",
+        configuredPath,
+        configuredPathExists,
+        alreadySet,
+        status: alreadySet ? "already_set" : "detected",
+      };
+    }
+  }
+
+  // 6. Not found
+  return {
+    target: resolvedTarget,
+    detectedPath: null,
+    source: "none",
+    configuredPath,
+    configuredPathExists,
+    alreadySet: false,
+    status: "not_found",
+  };
+}
+
+export async function detectAllAntigravityExecutablePaths(
+  options: DetectExecutableOptions = {},
+): Promise<DetectedExecutableResult[]> {
+  await refreshAllAntigravityProcessCaches(options);
+
+  const targets: CanonicalAntigravityAppTarget[] = ["app", "ide", "cli"];
+  const results: DetectedExecutableResult[] = [];
+
+  for (const target of targets) {
+    const result = await detectAntigravityExecutablePath(target, {
+      ...options,
+      skipProcessRefresh: true,
+    });
+    results.push(result);
+  }
+
+  return results;
 }
 
 const INSTALLATION_CACHE_TTL_MS = 30_000;

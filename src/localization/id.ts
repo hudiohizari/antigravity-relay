@@ -438,6 +438,10 @@ const id = {
       clear: "Bersihkan",
       detect: "Deteksi",
       detecting: "Mendeteksi...",
+      auto_detect_all: "Deteksi Otomatis Semua",
+      auto_detect_all_aria:
+        "Deteksi otomatis semua file eksekusi Antigravity yang terinstal",
+      detect_exec: "Deteksi",
       app: {
         title: "Antigravity App",
         executable: "File Eksekusi Antigravity App",
@@ -455,6 +459,8 @@ const id = {
         detect_args: "Deteksi",
         detect_args_aria:
           "Deteksi argumen peluncuran dari Antigravity App yang sedang berjalan",
+        detect_exec_aria:
+          "Deteksi file eksekusi Antigravity App yang terinstal",
       },
       ide: {
         title: "Antigravity IDE",
@@ -474,6 +480,8 @@ const id = {
         detect_args: "Deteksi",
         detect_args_aria:
           "Deteksi argumen peluncuran dari Antigravity IDE yang sedang berjalan",
+        detect_exec_aria:
+          "Deteksi file eksekusi Antigravity IDE yang terinstal",
       },
       cli: {
         title: "Antigravity CLI (agy)",
@@ -484,6 +492,8 @@ const id = {
           "Contoh: /usr/local/bin/agy atau ~/.local/bin/agy",
         browse_aria: "Telusuri file eksekusi Antigravity CLI",
         clear_path_aria: "Hapus jalur file eksekusi Antigravity CLI",
+        detect_exec_aria:
+          "Deteksi file eksekusi Antigravity CLI (agy) yang terinstal",
       },
       toast: {
         success_title: "Argumen Terdeteksi",
@@ -498,6 +508,37 @@ const id = {
         error_title: "Gagal Mendeteksi",
         error_desc:
           "Tidak dapat memeriksa argumen proses yang sedang berjalan untuk {{target}}.",
+        exec_detected_title: "File Eksekusi Terdeteksi",
+        exec_detected_desc:
+          "Berhasil mendeteksi dan mengonfigurasi {{target}} di {{path}}.",
+        exec_not_found_title: "File Eksekusi Tidak Ditemukan",
+        exec_not_found_desc:
+          "Tidak ditemukan file eksekusi {{target}} yang terinstal di sistem Anda.",
+        exec_already_set_title: "Sudah Dikonfigurasi",
+        exec_already_set_desc:
+          "{{target}} sudah diatur ke jalur yang terdeteksi.",
+        exec_preserved_title: "Jalur Dipertahankan",
+        exec_preserved_desc: "Jalur {{target}} saat ini tetap dipertahankan.",
+        exec_bulk_summary_title: "Deteksi Otomatis Selesai",
+        exec_bulk_summary_desc:
+          "Berhasil mengonfigurasi {{count}} file eksekusi runtime.",
+        exec_bulk_unchanged_desc:
+          "Semua runtime yang terinstal sudah dikonfigurasi.",
+        exec_bulk_none_desc:
+          "Tidak ada file eksekusi Antigravity yang terdeteksi di sistem ini.",
+      },
+      dialog: {
+        replace_title: "Ganti Jalur File Eksekusi?",
+        replace_desc:
+          "Ganti jalur yang telah dikonfigurasi untuk {{target}} dengan jalur yang terdeteksi?",
+        batch_title: "Konflik Jalur File Eksekusi",
+        batch_desc:
+          "Jalur yang terdeteksi berbeda dari konfigurasi saat ini. Pilih jalur yang ingin diganti.",
+        current_label: "Jalur Saat Ini",
+        detected_label: "Jalur Terdeteksi",
+        replace_all: "Ganti Semua",
+        replace_selected: "Ganti yang Dipilih",
+        keep_current: "Pertahankan Saat Ini",
       },
     },
     startup: {
@@ -798,6 +839,7 @@ const id = {
       currentlyActiveAria: "{{target}} sedang aktif",
       switching: "Beralih...",
       targetNotInstalled: "{{target}} belum terpasang di sistem ini",
+      cliHint: "Alat terminal: berlaku untuk sesi baru",
       successAllToast: {
         title: "Semua Lingkungan Dialihkan",
         description: "Berhasil beralih semua lingkungan ke {{email}}.",

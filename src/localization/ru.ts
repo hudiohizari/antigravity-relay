@@ -435,6 +435,10 @@ const ru = {
       clear: "Очистить",
       detect: "Найти",
       detecting: "Поиск...",
+      auto_detect_all: "Найти все",
+      auto_detect_all_aria:
+        "Автоматически найти все установленные исполняемые файлы Antigravity",
+      detect_exec: "Найти",
       app: {
         title: "Antigravity App",
         executable: "Файл запуска Antigravity App",
@@ -452,6 +456,8 @@ const ru = {
         detect_args: "Найти",
         detect_args_aria:
           "Найти аргументы запуска из запущенного Antigravity App",
+        detect_exec_aria:
+          "Найти установленный исполняемый файл Antigravity App",
       },
       ide: {
         title: "Antigravity IDE",
@@ -471,6 +477,8 @@ const ru = {
         detect_args: "Найти",
         detect_args_aria:
           "Найти аргументы запуска из запущенного Antigravity IDE",
+        detect_exec_aria:
+          "Найти установленный исполняемый файл Antigravity IDE",
       },
       cli: {
         title: "Antigravity CLI (agy)",
@@ -481,6 +489,8 @@ const ru = {
           "Например: /usr/local/bin/agy или ~/.local/bin/agy",
         browse_aria: "Выбрать файл запуска Antigravity CLI",
         clear_path_aria: "Очистить путь к файлу запуска Antigravity CLI",
+        detect_exec_aria:
+          "Найти установленный исполняемый файл Antigravity CLI (agy)",
       },
       toast: {
         success_title: "Аргументы обнаружены",
@@ -495,6 +505,37 @@ const ru = {
         error_title: "Сбой обнаружения",
         error_desc:
           "Не удалось получить аргументы запущенного процесса для {{target}}.",
+        exec_detected_title: "Файл обнаружен",
+        exec_detected_desc:
+          "Успешно обнаружен и настроен {{target}} по пути {{path}}.",
+        exec_not_found_title: "Файл не найден",
+        exec_not_found_desc:
+          "Установленный исполняемый файл {{target}} не найден в вашей системе.",
+        exec_already_set_title: "Уже настроено",
+        exec_already_set_desc:
+          "Для {{target}} уже установлен обнаруженный путь.",
+        exec_preserved_title: "Путь сохранен",
+        exec_preserved_desc:
+          "Текущий путь для {{target}} сохранен без изменений.",
+        exec_bulk_summary_title: "Поиск завершен",
+        exec_bulk_summary_desc: "Настроено исполняемых файлов: {{count}}.",
+        exec_bulk_unchanged_desc:
+          "Все установленные среды выполнения уже настроены.",
+        exec_bulk_none_desc:
+          "В этой системе не найдено установленных исполняемых файлов Antigravity.",
+      },
+      dialog: {
+        replace_title: "Заменить путь к файлу?",
+        replace_desc:
+          "Заменить настроенный путь для {{target}} на обнаруженный путь?",
+        batch_title: "Конфликт путей к файлам",
+        batch_desc:
+          "Обнаруженные пути отличаются от текущих настроек. Выберите пути для замены.",
+        current_label: "Текущий путь",
+        detected_label: "Обнаруженный путь",
+        replace_all: "Заменить все",
+        replace_selected: "Заменить выбранные",
+        keep_current: "Оставить текущие",
       },
     },
     startup: {
@@ -794,6 +835,7 @@ const ru = {
       currentlyActiveAria: "{{target}} в настоящее время активен",
       switching: "Переключение...",
       targetNotInstalled: "{{target}} не установлен в этой системе",
+      cliHint: "Терминальная утилита: применяется к новым сессиям",
       successAllToast: {
         title: "Все среды переключены",
         description: "Все среды успешно переключены на {{email}}.",

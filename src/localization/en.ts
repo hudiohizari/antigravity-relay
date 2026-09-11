@@ -433,6 +433,9 @@ const en = {
       clear: "Clear",
       detect: "Detect",
       detecting: "Detecting...",
+      auto_detect_all: "Auto-Detect All",
+      auto_detect_all_aria: "Auto-detect all installed Antigravity executables",
+      detect_exec: "Detect",
       app: {
         title: "Antigravity App",
         executable: "Antigravity App Executable",
@@ -450,6 +453,7 @@ const en = {
         detect_args: "Detect",
         detect_args_aria:
           "Detect launch arguments from running Antigravity App",
+        detect_exec_aria: "Detect installed Antigravity App executable",
       },
       ide: {
         title: "Antigravity IDE",
@@ -469,6 +473,7 @@ const en = {
         detect_args: "Detect",
         detect_args_aria:
           "Detect launch arguments from running Antigravity IDE",
+        detect_exec_aria: "Detect installed Antigravity IDE executable",
       },
       cli: {
         title: "Antigravity CLI (agy)",
@@ -479,6 +484,7 @@ const en = {
           "Example: /usr/local/bin/agy or ~/.local/bin/agy",
         browse_aria: "Browse for Antigravity CLI executable",
         clear_path_aria: "Clear Antigravity CLI executable path",
+        detect_exec_aria: "Detect installed Antigravity CLI (agy) executable",
       },
       toast: {
         success_title: "Arguments Detected",
@@ -493,6 +499,35 @@ const en = {
         error_title: "Detection Failed",
         error_desc:
           "Could not inspect running process arguments for {{target}}.",
+        exec_detected_title: "Executable Detected",
+        exec_detected_desc: "Detected and configured {{target}} at {{path}}.",
+        exec_not_found_title: "Executable Not Found",
+        exec_not_found_desc:
+          "No installed {{target}} executable found on your system.",
+        exec_already_set_title: "Already Configured",
+        exec_already_set_desc:
+          "{{target}} is already set to the detected path.",
+        exec_preserved_title: "Path Preserved",
+        exec_preserved_desc: "Existing {{target}} path preserved.",
+        exec_bulk_summary_title: "Auto-Detection Complete",
+        exec_bulk_summary_desc: "Configured {{count}} runtime executable(s).",
+        exec_bulk_unchanged_desc:
+          "All installed runtimes are already configured.",
+        exec_bulk_none_desc:
+          "No installed Antigravity executables detected on this system.",
+      },
+      dialog: {
+        replace_title: "Replace Executable Path?",
+        replace_desc:
+          "Replace the configured path for {{target}} with the detected path?",
+        batch_title: "Conflicting Executable Paths",
+        batch_desc:
+          "Detected paths differ from existing configurations. Select the paths you want to replace.",
+        current_label: "Current Path",
+        detected_label: "Detected Path",
+        replace_all: "Replace All",
+        replace_selected: "Replace Selected",
+        keep_current: "Keep Current",
       },
     },
     startup: {
@@ -792,6 +827,7 @@ const en = {
       currentlyActiveAria: "{{target}} is currently active",
       switching: "Switching...",
       targetNotInstalled: "{{target}} is not installed on this system",
+      cliHint: "Terminal tool: applies to new sessions",
       successAllToast: {
         title: "All Environments Switched",
         description: "Switched all environments to {{email}}.",

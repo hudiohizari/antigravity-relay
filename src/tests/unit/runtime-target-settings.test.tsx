@@ -18,12 +18,18 @@ import type { AppConfig } from "@/modules/config/types";
 
 const mockSelectAntigravityExecutable = vi.fn();
 const mockGetAntigravityArgs = vi.fn();
+const mockDetectAntigravityExecutable = vi.fn();
+const mockDetectAllAntigravityExecutables = vi.fn();
 const mockToast = vi.fn();
 
 vi.mock("@/modules/antigravity-runtime/actions/system", () => ({
   selectAntigravityExecutable: (...args: unknown[]) =>
     mockSelectAntigravityExecutable(...args),
   getAntigravityArgs: (...args: unknown[]) => mockGetAntigravityArgs(...args),
+  detectAntigravityExecutable: (...args: unknown[]) =>
+    mockDetectAntigravityExecutable(...args),
+  detectAllAntigravityExecutables: (...args: unknown[]) =>
+    mockDetectAllAntigravityExecutables(...args),
 }));
 
 vi.mock("@/modules/config/hooks/useAppConfig", () => ({

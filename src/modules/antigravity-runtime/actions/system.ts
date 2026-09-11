@@ -12,3 +12,16 @@ export function selectAntigravityExecutable(target?: AntigravityAppTarget) {
 export function getAntigravityArgs(target?: AntigravityAppTarget) {
   return ipc.client.system.getAntigravityArgs({ target });
 }
+
+export function detectAntigravityExecutable(params?: {
+  target?: AntigravityAppTarget;
+  bypassConfig?: boolean;
+}) {
+  return ipc.client.system.detectAntigravityExecutable(params);
+}
+
+export function detectAllAntigravityExecutables(params?: {
+  bypassConfig?: boolean;
+}) {
+  return ipc.client.system.detectAllAntigravityExecutables(params);
+}

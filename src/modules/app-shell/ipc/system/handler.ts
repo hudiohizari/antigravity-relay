@@ -7,6 +7,10 @@ import {
   getAntigravityLaunchArgsFromRunningProcess,
   getRunningAntigravityProcesses,
   refreshAntigravityProcessCache,
+  detectAntigravityExecutablePath,
+  detectAllAntigravityExecutablePaths,
+  ExecutableDetectionResultSchema,
+  type ExecutableDetectionResult,
 } from "@/shared/platform/paths";
 import {
   AntigravityAppTargetSchema,
@@ -38,6 +42,7 @@ export const IpInfoSchema = z.object({
 });
 
 export type { IpInfo };
+export { ExecutableDetectionResultSchema, type ExecutableDetectionResult };
 
 export const systemHandler = os.router({
   // Get all available local IPs with their adapter names
@@ -96,5 +101,35 @@ export const systemHandler = os.router({
         running: runningProcesses.length > 0,
         args: getAntigravityLaunchArgsFromRunningProcess(target),
       };
+    }),
+
+  detectAntigravityExecutable: os
+    .input(
+      z
+        .object({
+          target: AntigravityAppTargetSchema.optional(),
+          bypassConfig: z.boolean().optional(),
+        })
+        .optional(),
+    )
+    .output(ExecutableDetectionResultSchema)
+    .handler(async ({ input }) => {
+      const target = resolveAntigravityAppTarget(input?.target);
+      const bypassConfig = input?.bypassConfig ?? true;
+      return detectAntigravityExecutablePath(target, { bypassConfig });
+    }),
+
+  detectAllAntigravityExecutables: os
+    .input(
+      z
+        .object({
+          bypassConfig: z.boolean().optional(),
+        })
+        .optional(),
+    )
+    .output(z.array(ExecutableDetectionResultSchema))
+    .handler(async ({ input }) => {
+      const bypassConfig = input?.bypassConfig ?? true;
+      return detectAllAntigravityExecutablePaths({ bypassConfig });
     }),
 });

@@ -454,6 +454,10 @@ const fr = {
       clear: "Effacer",
       detect: "Detecter",
       detecting: "Detection...",
+      auto_detect_all: "Tout auto-detecter",
+      auto_detect_all_aria:
+        "Detecter automatiquement tous les executables Antigravity installes",
+      detect_exec: "Detecter",
       app: {
         title: "Antigravity App",
         executable: "Executable Antigravity App",
@@ -471,6 +475,7 @@ const fr = {
         detect_args: "Detecter",
         detect_args_aria:
           "Detecter les arguments de lancement depuis Antigravity App en cours d execution",
+        detect_exec_aria: "Detecter l executable Antigravity App installe",
       },
       ide: {
         title: "Antigravity IDE",
@@ -490,6 +495,7 @@ const fr = {
         detect_args: "Detecter",
         detect_args_aria:
           "Detecter les arguments de lancement depuis Antigravity IDE en cours d execution",
+        detect_exec_aria: "Detecter l executable Antigravity IDE installe",
       },
       cli: {
         title: "Antigravity CLI (agy)",
@@ -500,6 +506,8 @@ const fr = {
           "Exemple : /usr/local/bin/agy ou ~/.local/bin/agy",
         browse_aria: "Parcourir pour trouver l executable Antigravity CLI",
         clear_path_aria: "Effacer le chemin de l executable Antigravity CLI",
+        detect_exec_aria:
+          "Detecter l executable Antigravity CLI (agy) installe",
       },
       toast: {
         success_title: "Arguments detectes",
@@ -514,6 +522,36 @@ const fr = {
         error_title: "Echec de la detection",
         error_desc:
           "Impossible d inspecter les arguments du processus en cours d execution pour {{target}}.",
+        exec_detected_title: "Executable detecte",
+        exec_detected_desc: "{{target}} detecte et configure sur {{path}}.",
+        exec_not_found_title: "Executable introuvable",
+        exec_not_found_desc:
+          "Aucun executable {{target}} installe n a ete trouve sur votre systeme.",
+        exec_already_set_title: "Deja configure",
+        exec_already_set_desc:
+          "{{target}} est deja configure avec le chemin detecte.",
+        exec_preserved_title: "Chemin conserve",
+        exec_preserved_desc: "Le chemin actuel de {{target}} a ete conserve.",
+        exec_bulk_summary_title: "Auto-detection terminee",
+        exec_bulk_summary_desc:
+          "{{count}} executable(s) d environnement configure(s).",
+        exec_bulk_unchanged_desc:
+          "Tous les environnements installes sont deja configures.",
+        exec_bulk_none_desc:
+          "Aucun executable Antigravity installe n a ete detecte sur ce systeme.",
+      },
+      dialog: {
+        replace_title: "Remplacer le chemin de l executable ?",
+        replace_desc:
+          "Remplacer le chemin configure pour {{target}} par le chemin detecte ?",
+        batch_title: "Conflits de chemins d executables",
+        batch_desc:
+          "Les chemins detectes different de vos configurations actuelles. Selectionnez les chemins a remplacer.",
+        current_label: "Chemin actuel",
+        detected_label: "Chemin detecte",
+        replace_all: "Tout remplacer",
+        replace_selected: "Remplacer la selection",
+        keep_current: "Conserver l existant",
       },
     },
     startup: {
@@ -751,6 +789,7 @@ const fr = {
       currentlyActiveAria: "{{target}} est actuellement actif",
       switching: "Bascule en cours...",
       targetNotInstalled: "{{target}} n est pas installe sur ce systeme",
+      cliHint: "Outil terminal : s'applique aux nouvelles sessions",
       successAllToast: {
         title: "Tous les environnements bascules",
         description: "Tous les environnements ont ete bascules vers {{email}}.",

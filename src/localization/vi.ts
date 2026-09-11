@@ -435,6 +435,10 @@ const vi = {
       clear: "Xóa",
       detect: "Phát hiện",
       detecting: "Đang phát hiện...",
+      auto_detect_all: "Tự động phát hiện tất cả",
+      auto_detect_all_aria:
+        "Tự động phát hiện tất cả tệp thực thi Antigravity đã cài đặt",
+      detect_exec: "Phát hiện",
       app: {
         title: "Antigravity App",
         executable: "Tệp chạy Antigravity App",
@@ -452,6 +456,7 @@ const vi = {
         detect_args: "Phát hiện",
         detect_args_aria:
           "Phát hiện tham số khởi chạy từ Antigravity App đang chạy",
+        detect_exec_aria: "Phát hiện tệp thực thi Antigravity App đã cài đặt",
       },
       ide: {
         title: "Antigravity IDE",
@@ -471,6 +476,7 @@ const vi = {
         detect_args: "Phát hiện",
         detect_args_aria:
           "Phát hiện tham số khởi chạy từ Antigravity IDE đang chạy",
+        detect_exec_aria: "Phát hiện tệp thực thi Antigravity IDE đã cài đặt",
       },
       cli: {
         title: "Antigravity CLI (agy)",
@@ -481,6 +487,8 @@ const vi = {
           "Ví dụ: /usr/local/bin/agy hoặc ~/.local/bin/agy",
         browse_aria: "Duyệt tìm tệp chạy Antigravity CLI",
         clear_path_aria: "Xóa đường dẫn tệp chạy Antigravity CLI",
+        detect_exec_aria:
+          "Phát hiện tệp thực thi Antigravity CLI (agy) đã cài đặt",
       },
       toast: {
         success_title: "Đã phát hiện tham số",
@@ -495,6 +503,37 @@ const vi = {
         error_title: "Phát hiện thất bại",
         error_desc:
           "Không thể kiểm tra tham số tiến trình đang chạy của {{target}}.",
+        exec_detected_title: "Đã phát hiện tệp thực thi",
+        exec_detected_desc: "Đã phát hiện và cấu hình {{target}} tại {{path}}.",
+        exec_not_found_title: "Không tìm thấy tệp thực thi",
+        exec_not_found_desc:
+          "Không tìm thấy tệp thực thi {{target}} đã cài đặt trên hệ thống của bạn.",
+        exec_already_set_title: "Đã được cấu hình",
+        exec_already_set_desc:
+          "{{target}} đã được đặt theo đường dẫn được phát hiện.",
+        exec_preserved_title: "Đã giữ nguyên đường dẫn",
+        exec_preserved_desc:
+          "Đường dẫn hiện tại của {{target}} đã được giữ nguyên.",
+        exec_bulk_summary_title: "Tự động phát hiện hoàn tất",
+        exec_bulk_summary_desc:
+          "Đã cấu hình {{count}} tệp thực thi môi trường.",
+        exec_bulk_unchanged_desc:
+          "Tất cả môi trường thực thi đã cài đặt đều đã được cấu hình.",
+        exec_bulk_none_desc:
+          "Không phát hiện thấy tệp thực thi Antigravity nào được cài đặt trên hệ thống này.",
+      },
+      dialog: {
+        replace_title: "Thay thế đường dẫn tệp thực thi?",
+        replace_desc:
+          "Thay thế đường dẫn đã cấu hình cho {{target}} bằng đường dẫn được phát hiện?",
+        batch_title: "Xung đột đường dẫn tệp thực thi",
+        batch_desc:
+          "Các đường dẫn được phát hiện khác với cấu hình hiện tại. Chọn các đường dẫn bạn muốn thay thế.",
+        current_label: "Đường dẫn hiện tại",
+        detected_label: "Đường dẫn được phát hiện",
+        replace_all: "Thay thế tất cả",
+        replace_selected: "Thay thế mục đã chọn",
+        keep_current: "Giữ nguyên hiện tại",
       },
     },
     startup: {
@@ -790,6 +829,7 @@ const vi = {
       currentlyActiveAria: "{{target}} hiện đang hoạt động",
       switching: "Đang chuyển...",
       targetNotInstalled: "{{target}} chưa được cài đặt trên hệ thống này",
+      cliHint: "Công cụ dòng lệnh: áp dụng cho các phiên mới",
       successAllToast: {
         title: "Đã chuyển tất cả môi trường",
         description: "Đã chuyển tất cả môi trường sang {{email}}.",

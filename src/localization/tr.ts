@@ -436,6 +436,10 @@ const tr = {
       clear: "Temizle",
       detect: "Algıla",
       detecting: "Algılanıyor...",
+      auto_detect_all: "Tümünü Otomatik Algıla",
+      auto_detect_all_aria:
+        "Yüklü tüm Antigravity çalıştırılabilir dosyalarını otomatik algıla",
+      detect_exec: "Algıla",
       app: {
         title: "Antigravity App",
         executable: "Antigravity App Çalıştırılabilir Dosyası",
@@ -454,6 +458,8 @@ const tr = {
         detect_args: "Algıla",
         detect_args_aria:
           "Çalışan Antigravity App üzerinden başlatma argümanlarını algıla",
+        detect_exec_aria:
+          "Yüklü Antigravity App çalıştırılabilir dosyasını algıla",
       },
       ide: {
         title: "Antigravity IDE",
@@ -474,6 +480,8 @@ const tr = {
         detect_args: "Algıla",
         detect_args_aria:
           "Çalışan Antigravity IDE üzerinden başlatma argümanlarını algıla",
+        detect_exec_aria:
+          "Yüklü Antigravity IDE çalıştırılabilir dosyasını algıla",
       },
       cli: {
         title: "Antigravity CLI (agy)",
@@ -485,6 +493,8 @@ const tr = {
         browse_aria: "Antigravity CLI çalıştırılabilir dosyasına gözat",
         clear_path_aria:
           "Antigravity CLI çalıştırılabilir dosya yolunu temizle",
+        detect_exec_aria:
+          "Yüklü Antigravity CLI (agy) çalıştırılabilir dosyasını algıla",
       },
       toast: {
         success_title: "Argümanlar Algılandı",
@@ -498,6 +508,36 @@ const tr = {
           "Çalışan bir {{target}} işlemi algılanmadı. Mevcut argümanlar korundu.",
         error_title: "Algılama Başarısız",
         error_desc: "{{target}} için çalışan işlem argümanları incelenemedi.",
+        exec_detected_title: "Çalıştırılabilir Dosya Algılandı",
+        exec_detected_desc:
+          "{{target}} algılandı ve {{path}} konumunda yapılandırıldı.",
+        exec_not_found_title: "Çalıştırılabilir Dosya Bulunamadı",
+        exec_not_found_desc:
+          "Sisteminizde yüklü bir {{target}} çalıştırılabilir dosyası bulunamadı.",
+        exec_already_set_title: "Zaten Yapılandırıldı",
+        exec_already_set_desc: "{{target}} zaten algılanan yola ayarlanmış.",
+        exec_preserved_title: "Yol Korundu",
+        exec_preserved_desc: "Mevcut {{target}} yolu korundu.",
+        exec_bulk_summary_title: "Otomatik Algılama Tamamlandı",
+        exec_bulk_summary_desc:
+          "{{count}} çalışma zamanı çalıştırılabilir dosyası yapılandırıldı.",
+        exec_bulk_unchanged_desc:
+          "Yüklü tüm çalışma zamanları zaten yapılandırılmış durumda.",
+        exec_bulk_none_desc:
+          "Bu sistemde yüklü Antigravity çalıştırılabilir dosyası algılanmadı.",
+      },
+      dialog: {
+        replace_title: "Çalıştırılabilir Dosya Yolu Değiştirilsin mi?",
+        replace_desc:
+          "{{target}} için yapılandırılmış yol algılanan yol ile değiştirilsin mi?",
+        batch_title: "Çakışan Çalıştırılabilir Dosya Yolları",
+        batch_desc:
+          "Algılanan yollar mevcut yapılandırmalardan farklı. Değiştirmek istediğiniz yolları seçin.",
+        current_label: "Mevcut Yol",
+        detected_label: "Algılanan Yol",
+        replace_all: "Tümünü Değiştir",
+        replace_selected: "Seçilenleri Değiştir",
+        keep_current: "Mevcut Olanı Koru",
       },
     },
     startup: {
@@ -796,6 +836,7 @@ const tr = {
       currentlyActiveAria: "{{target}} şu anda etkin",
       switching: "Değiştiriliyor...",
       targetNotInstalled: "{{target}} bu sistemde yüklü değil",
+      cliHint: "Terminal aracı: yeni oturumlara uygulanır",
       successAllToast: {
         title: "Tüm Ortamlar Değiştirildi",
         description: "Tüm ortamlar başarıyla {{email}} hesabına geçirildi.",
