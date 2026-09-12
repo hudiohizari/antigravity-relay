@@ -20,6 +20,7 @@ import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandl
 import { initDatabase } from "@/modules/account/public";
 import { CloudMonitorService } from "@/modules/cloud-account/services/CloudMonitorService";
 import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
+import { chatResumeEvents } from "@/modules/chat-resume/telemetry";
 import { RelayController } from "@/modules/relay/relay-controller";
 
 // Static Imports to fix Bundle Resolution Errors
@@ -162,6 +163,15 @@ cloudAccountEvents.on("account:switched", (payload) => {
 cloudAccountEvents.on("account:quota_updated", (payload) => {
   if (globalMainWindow && !globalMainWindow.isDestroyed()) {
     globalMainWindow.webContents.send("accounts-updated", payload);
+  }
+});
+
+chatResumeEvents.on("resumption-status", (payload) => {
+  if (globalMainWindow && !globalMainWindow.isDestroyed()) {
+    globalMainWindow.webContents.send(
+      "chat-session:resumption-status",
+      payload,
+    );
   }
 });
 

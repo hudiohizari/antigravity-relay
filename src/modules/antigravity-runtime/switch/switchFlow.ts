@@ -22,6 +22,14 @@ import {
   recordSwitchSuccess,
 } from "@/modules/antigravity-runtime/switch/switchMetrics";
 import { withTimingTrace } from "@/shared/observability/timingTrace";
+import { ConfigManager } from "@/modules/config/ipc/manager";
+import { checkpointStateDatabases } from "@/modules/chat-resume/walCheckpoint";
+import { captureAndBufferActiveTurn } from "@/modules/chat-resume/activeTurnDetector";
+import { chatResumeDispatcher } from "@/modules/chat-resume/ChatResumeDispatcher";
+import type {
+  ActiveTurnSnapshot,
+  ChatResumeSwitchSource,
+} from "@/modules/chat-resume/types";
 
 export interface SwitchFlowOptions {
   scope: "local" | "cloud";
@@ -33,6 +41,12 @@ export interface SwitchFlowOptions {
   skipRefreshProcessCache?: boolean;
   performSwitch: () => Promise<void>;
   afterSwitchSuccess?: () => Promise<void>;
+  accountEmail?: string;
+  source?: ChatResumeSwitchSource;
+  activeTurnDetector?: (
+    target: AntigravityAppTarget,
+  ) => Promise<ActiveTurnSnapshot | null>;
+  walCheckpoint?: (target: AntigravityAppTarget) => Promise<unknown>;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -195,6 +209,56 @@ export async function executeSwitchFlow(
             rememberRunningExecutablePath(appTarget, preResolvedExecutablePath);
           }
 
+          if (!isCliTarget) {
+            let autoResumeEnabled = true;
+            try {
+              const config = ConfigManager.loadConfig();
+              autoResumeEnabled = config.auto_resume_active_chat !== false;
+            } catch (cfgErr) {
+              logger.warn(
+                "Failed to read auto_resume_active_chat config, defaulting to true",
+                cfgErr,
+              );
+            }
+
+            try {
+              await trace.phase("walCheckpointMs", async () => {
+                if (options.walCheckpoint) {
+                  await options.walCheckpoint(appTarget || "app");
+                } else {
+                  await checkpointStateDatabases(appTarget);
+                }
+              });
+            } catch (walErr) {
+              logger.warn(
+                "Pre-kill WAL checkpoint encountered an error, proceeding with switch",
+                walErr,
+              );
+            }
+
+            if (autoResumeEnabled) {
+              try {
+                await trace.phase("captureActiveTurnMs", async () => {
+                  const switchSource =
+                    options.source === "auto_switch"
+                      ? "auto_switch"
+                      : "manual_switch";
+
+                  await captureAndBufferActiveTurn(appTarget, {
+                    source: switchSource,
+                    accountEmail: options.accountEmail,
+                    customDetector: options.activeTurnDetector,
+                  });
+                });
+              } catch (snapErr) {
+                logger.warn(
+                  "Pre-kill active turn capture encountered an error, proceeding with switch",
+                  snapErr,
+                );
+              }
+            }
+          }
+
           await trace.phase("closeMs", async () => {
             await closeAntigravity(appTarget);
           });
@@ -254,6 +318,29 @@ export async function executeSwitchFlow(
           await trace.phase("startMs", async () => {
             await startAntigravity(appTarget);
           });
+
+          if (!isCliTarget) {
+            try {
+              const config = ConfigManager.loadConfig();
+              if (config.auto_resume_active_chat !== false) {
+                chatResumeDispatcher
+                  .triggerResumptionForTarget(appTarget || "app", {
+                    accountEmail: options.accountEmail,
+                  })
+                  .catch((dispatchErr) => {
+                    logger.warn(
+                      "Autonomous chat resumption failed in background",
+                      dispatchErr,
+                    );
+                  });
+              }
+            } catch (err) {
+              logger.warn(
+                "Failed to check chat resumption config after restart",
+                err,
+              );
+            }
+          }
         } else {
           logger.info(
             `Skipping process launch for ${appTarget}: application was not running prior to switch`,

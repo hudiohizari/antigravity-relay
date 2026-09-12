@@ -667,6 +667,17 @@ const fr = {
       limited: "Limite",
       critical: "Critique",
     },
+    automation: {
+      title: "Automatisation et basculement",
+      description:
+        "Configurez la reprise automatique des sessions et le comportement de basculement.",
+      autoResumeChat: {
+        title: "Reprendre automatiquement les sessions de chat actives",
+        description:
+          "Reprendre automatiquement les invites de chat et Cascade en cours lors du redémarrage d'Antigravity après un changement de compte.",
+        cliExcludedBadge: "App et IDE uniquement",
+      },
+    },
     save: "Enregistrer les parametres",
   },
   toast: {
@@ -693,6 +704,13 @@ const fr = {
     deleteError: {
       title: "Erreur",
       description: "Echec de la suppression de la sauvegarde : {{error}}",
+    },
+    chatResume: {
+      successTitle: "Session de chat reprise",
+      successDesc: "Session de chat reprise automatiquement sous {{email}}.",
+      failedTitle: "Échec de la reprise automatique",
+      failedDesc:
+        "Impossible de reprendre automatiquement la session de chat. Votre invite a été enregistrée.",
     },
   },
   cloud: {

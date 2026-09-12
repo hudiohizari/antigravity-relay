@@ -4,6 +4,7 @@ import type {
   CloudAccountSwitchReason,
   CloudAccountSwitchSource,
 } from "./modules/cloud-account/services/cloud-account-events";
+import type { ChatResumptionStatusPayload } from "./modules/chat-resume/types";
 import { IPC_CHANNELS } from "./shared/constants";
 
 window.addEventListener("message", (event) => {
@@ -70,6 +71,16 @@ const electronBridge = {
       ipcRenderer.off("tray://refresh-current", handler);
       ipcRenderer.off("accounts-updated", handler);
     };
+  },
+  onChatResumptionStatus: (
+    callback: (payload: ChatResumptionStatusPayload) => void,
+  ) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: ChatResumptionStatusPayload,
+    ) => callback(payload);
+    ipcRenderer.on("chat-session:resumption-status", handler);
+    return () => ipcRenderer.off("chat-session:resumption-status", handler);
   },
   checkForUpdates: () => {
     return ipcRenderer.invoke(IPC_CHANNELS.CHECK_FOR_UPDATES);

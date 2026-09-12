@@ -1,7 +1,7 @@
 {
   "name": "antigravity-relay",
   "productName": "Antigravity Relay",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Antigravity Relay - Remote Control & Session Buffer for Antigravity",
   "main": ".vite/build/main.js",
   "private": true,

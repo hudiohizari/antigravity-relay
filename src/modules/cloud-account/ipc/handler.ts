@@ -822,6 +822,7 @@ export interface SwitchCloudAccountResult {
 async function executeSingleTargetSwitch(
   account: CloudAccount,
   appTarget: AntigravityAppTarget,
+  options?: SwitchCloudAccountOptions,
 ): Promise<SwitchFlowResult> {
   const usesCredentialStore =
     CredentialStoreInjectionAdapter.shouldInjectTokenIntoCredentialStore(
@@ -865,6 +866,8 @@ async function executeSingleTargetSwitch(
     useCredentialStore: usesCredentialStore,
     processExitTimeoutMs: 10000,
     skipRefreshProcessCache: true,
+    accountEmail: account.email,
+    source: options?.source === "auto_switch" ? "auto_switch" : "manual_switch",
     performSwitch: async () => {
       const injectionMode = usesCredentialStore ? "credential-store" : "sqlite";
 
@@ -1001,7 +1004,11 @@ export async function switchCloudAccount(
 
         for (const target of targetsToSwitch) {
           try {
-            const flowResult = await executeSingleTargetSwitch(account, target);
+            const flowResult = await executeSingleTargetSwitch(
+              account,
+              target,
+              options,
+            );
             succeededTargets.push(target);
             const isRestarted =
               target !== "cli" &&
@@ -1071,7 +1078,11 @@ export async function switchCloudAccount(
         );
       }
 
-      const flowResult = await executeSingleTargetSwitch(account, singleTarget);
+      const flowResult = await executeSingleTargetSwitch(
+        account,
+        singleTarget,
+        options,
+      );
 
       CloudAccountRepo.updateLastUsed(account.id);
       CloudAccountRepo.syncActiveFlags();

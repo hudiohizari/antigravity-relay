@@ -5,8 +5,10 @@ import { renderHook, act, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useTrayAccountSync,
+  triggerChatResumptionToast,
   type TraySwitchedPayload,
 } from "@/modules/cloud-account/hooks/useTrayAccountSync";
+import type { ChatResumptionStatusPayload } from "@/modules/chat-resume/types";
 import { QUERY_KEYS } from "@/modules/cloud-account/hooks/useCloudAccounts";
 import type { CloudAccount } from "@/modules/cloud-account/types";
 import * as toastModule from "@/components/ui/use-toast";
@@ -45,6 +47,15 @@ vi.mock("react-i18next", () => ({
       if (key === "cloud.target.app") return "Antigravity";
       if (key === "cloud.target.ide") return "Antigravity IDE";
       if (key === "cloud.target.cli") return "Antigravity CLI";
+      if (key === "toast.chatResume.successTitle")
+        return "Chat Session Resumed";
+      if (key === "toast.chatResume.successDesc") {
+        return `Auto-resumed chat session under ${params?.email}.`;
+      }
+      if (key === "toast.chatResume.failedTitle") return "Auto-Resume Failed";
+      if (key === "toast.chatResume.failedDesc") {
+        return "Could not auto-resume chat session. Your prompt has been saved.";
+      }
       return key;
     },
   }),
@@ -87,8 +98,11 @@ describe("useTrayAccountSync", () => {
   let queryClient: QueryClient;
   let switchedCallback: ((payload: TraySwitchedPayload) => void) | null = null;
   let updatedCallback: (() => void) | null = null;
+  let resumptionCallback:
+    ((payload: ChatResumptionStatusPayload) => void) | null = null;
   const unbindSwitchedMock = vi.fn();
   const unbindUpdatedMock = vi.fn();
+  const unbindResumptionMock = vi.fn();
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -104,6 +118,7 @@ describe("useTrayAccountSync", () => {
 
     switchedCallback = null;
     updatedCallback = null;
+    resumptionCallback = null;
 
     window.electron = {
       ...((window.electron as object) || {}),
@@ -123,6 +138,12 @@ describe("useTrayAccountSync", () => {
         updatedCallback = cb;
         return unbindUpdatedMock;
       }),
+      onChatResumptionStatus: vi.fn(
+        (cb: (payload: ChatResumptionStatusPayload) => void) => {
+          resumptionCallback = cb;
+          return unbindResumptionMock;
+        },
+      ),
     };
   });
 
@@ -143,11 +164,13 @@ describe("useTrayAccountSync", () => {
 
     expect(window.electron.onAccountSwitched).toHaveBeenCalledTimes(1);
     expect(window.electron.onAccountsUpdated).toHaveBeenCalledTimes(1);
+    expect(window.electron.onChatResumptionStatus).toHaveBeenCalledTimes(1);
 
     unmount();
 
     expect(unbindSwitchedMock).toHaveBeenCalledTimes(1);
     expect(unbindUpdatedMock).toHaveBeenCalledTimes(1);
+    expect(unbindResumptionMock).toHaveBeenCalledTimes(1);
   });
 
   it("optimistically updates active account in cache and triggers 3s toast on account switch", () => {
@@ -686,6 +709,144 @@ describe("useTrayAccountSync", () => {
           "Switched all environments to beta@example.com via system tray.",
         duration: 3000,
       });
+    });
+  });
+
+  describe("chat resumption status toasts", () => {
+    it("renders emerald toast with Zap icon, 4000ms duration, and Maya copy on status resumed", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        resumptionCallback!({
+          status: "resumed",
+          accountEmail: "developer@example.com",
+          resumptionId: "res-uuid-1",
+        });
+      });
+
+      expect(toastModule.toast).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(toastModule.toast).mock.calls[0][0];
+
+      expect(call.duration).toBe(4000);
+      expect(call.className).toContain("border-emerald-500/30");
+      expect(call.className).toContain("bg-emerald-500/10");
+      expect(call.className).toContain("dark:border-emerald-500/35");
+      expect(call.className).toContain("dark:bg-emerald-500/15");
+
+      const { container: titleContainer } = render(
+        call.title as React.ReactElement,
+      );
+      expect(titleContainer.textContent).toContain("Chat Session Resumed");
+
+      const { container: descContainer } = render(
+        call.description as React.ReactElement,
+      );
+      expect(descContainer.textContent).toContain(
+        "Auto-resumed chat session under developer@example.com.",
+      );
+    });
+
+    it("renders amber toast with AlertTriangle icon, 4500ms duration, and Maya copy on status failed", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        resumptionCallback!({
+          status: "failed",
+          reason: "timeout",
+        });
+      });
+
+      expect(toastModule.toast).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(toastModule.toast).mock.calls[0][0];
+
+      expect(call.duration).toBe(4500);
+      expect(call.className).toContain("border-amber-500/30");
+      expect(call.className).toContain("bg-amber-500/10");
+      expect(call.className).toContain("dark:border-amber-500/35");
+      expect(call.className).toContain("dark:bg-amber-500/15");
+
+      const { container: titleContainer } = render(
+        call.title as React.ReactElement,
+      );
+      expect(titleContainer.textContent).toContain("Auto-Resume Failed");
+
+      const { container: descContainer } = render(
+        call.description as React.ReactElement,
+      );
+      expect(descContainer.textContent).toContain(
+        "Could not auto-resume chat session. Your prompt has been saved.",
+      );
+    });
+
+    it("renders amber toast with 4500ms duration on status model_fallback", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        resumptionCallback!({
+          status: "model_fallback",
+          fallbackModel: "gemini-1.5-flash",
+        });
+      });
+
+      expect(toastModule.toast).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(toastModule.toast).mock.calls[0][0];
+
+      expect(call.duration).toBe(4500);
+      expect(call.className).toContain("border-amber-500/30");
+
+      const { container: titleContainer } = render(
+        call.title as React.ReactElement,
+      );
+      expect(titleContainer.textContent).toContain("Auto-Resume Failed");
+    });
+
+    it("ignores null or undefined resumption payloads gracefully", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        resumptionCallback!(null as unknown as ChatResumptionStatusPayload);
+      });
+
+      expect(toastModule.toast).not.toHaveBeenCalled();
+    });
+
+    it("mounts safely when electron.onChatResumptionStatus is missing", () => {
+      delete window.electron.onChatResumptionStatus;
+
+      expect(() => {
+        const { unmount } = renderHook(() => useTrayAccountSync(), {
+          wrapper: createWrapper(),
+        });
+        unmount();
+      }).not.toThrow();
+    });
+
+    it("directly triggers toast via triggerChatResumptionToast with empty email fallback", () => {
+      const mockT = vi.fn((key: string, params?: Record<string, unknown>) => {
+        if (key === "toast.chatResume.successTitle")
+          return "Chat Session Resumed";
+        if (key === "toast.chatResume.successDesc") {
+          return `Auto-resumed under ${params?.email || "unknown"}`;
+        }
+        return key;
+      });
+
+      triggerChatResumptionToast(
+        { status: "resumed", accountEmail: undefined },
+        mockT,
+      );
+
+      expect(toastModule.toast).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(toastModule.toast).mock.calls[0][0];
+      expect(call.duration).toBe(4000);
     });
   });
 });

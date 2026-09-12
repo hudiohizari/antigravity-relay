@@ -639,6 +639,17 @@ const en = {
       limited: "Limited",
       critical: "Critical",
     },
+    automation: {
+      title: "Automation & Switching",
+      description:
+        "Configure automated session recovery and switching behaviors.",
+      autoResumeChat: {
+        title: "Auto-Resume Active Chat Sessions",
+        description:
+          "Automatically resume in-flight chat and Cascade prompts when restarting Antigravity after an account switch.",
+        cliExcludedBadge: "App & IDE only",
+      },
+    },
     save: "Save Settings",
   },
   toast: {
@@ -665,6 +676,13 @@ const en = {
     deleteError: {
       title: "Error",
       description: "Failed to delete backup: {{error}}",
+    },
+    chatResume: {
+      successTitle: "Chat Session Resumed",
+      successDesc: "Auto-resumed chat session under {{email}}.",
+      failedTitle: "Auto-Resume Failed",
+      failedDesc:
+        "Could not auto-resume chat session. Your prompt has been saved.",
     },
   },
   cloud: {

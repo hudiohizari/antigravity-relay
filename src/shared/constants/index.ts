@@ -15,4 +15,5 @@ export const IPC_CHANNELS = {
   OPEN_EXTERNAL_URL: "open-external-url",
   START_PERFORMANCE_RECORDING: "start-performance-recording",
   STOP_PERFORMANCE_RECORDING: "stop-performance-recording",
+  CHAT_SESSION_RESUMPTION_STATUS: "chat-session:resumption-status",
 };

@@ -30,7 +30,8 @@ import { useTranslation } from "react-i18next";
 import { setAppLanguage } from "@/modules/app-shell/actions/language";
 import { useAppConfig } from "@/modules/config/hooks/useAppConfig";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, FolderOpen, RefreshCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, FolderOpen, RefreshCw, Zap } from "lucide-react";
 import { ModelVisibilitySettings } from "@/modules/config/components/ModelVisibilitySettings";
 import { AutoSwitchModelSettings } from "@/modules/cloud-account/components/AutoSwitchModelSettings";
 import { WeeklyWarmupSettings } from "@/modules/cloud-account/components/WeeklyWarmupSettings";
@@ -39,10 +40,10 @@ import { openLogDirectory } from "@/modules/antigravity-runtime/actions/system";
 import { AntigravityClientCacheSettings } from "@/modules/antigravity-runtime/components/AntigravityClientCacheSettings";
 import { RuntimeTargetSettings } from "@/modules/antigravity-runtime/components/RuntimeTargetSettings";
 
-function SettingsPage() {
+export function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { t, i18n } = useTranslation();
-  const { config, isLoading, saveConfig } = useAppConfig();
+  const { config, isLoading, saveConfig, isSaving } = useAppConfig();
   const { toast } = useToast();
 
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
@@ -237,6 +238,67 @@ function SettingsPage() {
                     }
                   }}
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Automation & Switching Card */}
+          <Card className="border border-border bg-card">
+            <CardHeader className="space-y-1 pb-4">
+              <div className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-primary" aria-hidden="true" />
+                <CardTitle className="text-lg font-semibold tracking-tight">
+                  {t("settings.automation.title")}
+                </CardTitle>
+              </div>
+              <CardDescription className="text-sm text-muted-foreground">
+                {t("settings.automation.description")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div
+                role="group"
+                aria-labelledby="auto-resume-chat-label"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:border-muted-foreground/30"
+              >
+                <div className="space-y-1.5 min-w-0 flex-1 pr-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Label
+                      id="auto-resume-chat-label"
+                      htmlFor="auto-resume-chat-switch"
+                      className="text-sm font-medium text-foreground cursor-pointer"
+                    >
+                      {t("settings.automation.autoResumeChat.title")}
+                    </Label>
+                    <Badge
+                      variant="outline"
+                      className="rounded-full border-border/70 bg-muted/50 px-2 py-0.5 text-[11px] font-mono font-medium text-muted-foreground tracking-wide select-none"
+                      aria-label="Scope: Desktop App and IDE only. CLI excluded."
+                    >
+                      {t("settings.automation.autoResumeChat.cliExcludedBadge")}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {t("settings.automation.autoResumeChat.description")}
+                  </p>
+                </div>
+
+                <div className="flex items-center shrink-0 self-end sm:self-center">
+                  <Switch
+                    id="auto-resume-chat-switch"
+                    checked={config?.auto_resume_active_chat ?? true}
+                    disabled={isSaving}
+                    onCheckedChange={async (checked) => {
+                      if (config) {
+                        await saveConfig({
+                          ...config,
+                          auto_resume_active_chat: checked,
+                        });
+                      }
+                    }}
+                    aria-describedby="auto-resume-chat-label"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

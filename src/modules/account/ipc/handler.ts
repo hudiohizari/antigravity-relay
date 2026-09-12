@@ -273,6 +273,8 @@ export async function switchAccount(
       applyFingerprint: isIdentityProfileApplyEnabled(),
       useCredentialStore: usesCredentialStore,
       processExitTimeoutMs: SWITCH_EXIT_TIMEOUT_MS,
+      accountEmail: account.email,
+      source: "manual_switch",
       performSwitch: async () => {
         // NOTE Load backup file
         const backupContent = fs.readFileSync(backupPath, "utf-8");

@@ -653,6 +653,17 @@ const id = {
       limited: "Terbatas",
       critical: "Kritis",
     },
+    automation: {
+      title: "Otomatisasi & Pengalihan",
+      description:
+        "Konfigurasikan pemulihan sesi otomatis dan perilaku pengalihan akun.",
+      autoResumeChat: {
+        title: "Lanjutkan Otomatis Sesi Obrolan Aktif",
+        description:
+          "Lanjutkan prompt obrolan dan Cascade yang sedang berjalan secara otomatis saat memulai ulang Antigravity setelah beralih akun.",
+        cliExcludedBadge: "Hanya App & IDE",
+      },
+    },
     save: "Simpan Pengaturan",
   },
   toast: {
@@ -679,6 +690,13 @@ const id = {
     deleteError: {
       title: "Kesalahan",
       description: "Gagal menghapus cadangan: {{error}}",
+    },
+    chatResume: {
+      successTitle: "Sesi Obrolan Dilanjutkan",
+      successDesc: "Sesi obrolan otomatis dilanjutkan dengan {{email}}.",
+      failedTitle: "Gagal Melanjutkan Otomatis",
+      failedDesc:
+        "Tidak dapat melanjutkan sesi obrolan secara otomatis. Prompt Anda telah disimpan.",
     },
   },
   cloud: {

@@ -591,6 +591,16 @@ const zhCn = {
       limited: "受限",
       critical: "严重",
     },
+    automation: {
+      title: "自动化与切换",
+      description: "配置自动会话恢复与账号切换行为。",
+      autoResumeChat: {
+        title: "自动恢复进行中的会话",
+        description:
+          "在切换账号并重启 Antigravity 后，自动恢复未完成的对话和 Cascade 提示词。",
+        cliExcludedBadge: "仅限 App 与 IDE",
+      },
+    },
     save: "保存设置",
   },
   toast: {
@@ -617,6 +627,12 @@ const zhCn = {
     deleteError: {
       title: "错误",
       description: "删除备份失败：{{error}}",
+    },
+    chatResume: {
+      successTitle: "会话已恢复",
+      successDesc: "已在账号 {{email}} 下自动恢复对话会话。",
+      failedTitle: "自动恢复失败",
+      failedDesc: "未能自动恢复对话会话，您的提示词已保存。",
     },
   },
   cloud: {

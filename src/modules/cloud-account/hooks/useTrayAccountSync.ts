@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Zap } from "lucide-react";
+import { AlertTriangle, Zap } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { QUERY_KEYS } from "@/modules/cloud-account/hooks/useCloudAccounts";
 import type { CloudAccount } from "@/modules/cloud-account/types";
@@ -9,6 +9,7 @@ import type {
   CloudAccountSwitchReason,
   CloudAccountSwitchSource,
 } from "@/modules/cloud-account/services/cloud-account-events";
+import type { ChatResumptionStatusPayload } from "@/modules/chat-resume/types";
 
 export type TraySwitchedPayload =
   | string
@@ -252,20 +253,109 @@ export function useTrayAccountSync(): void {
     scheduleInvalidate();
   }, [scheduleInvalidate]);
 
+  const handleChatResumptionStatus = useCallback(
+    (payload: ChatResumptionStatusPayload) => {
+      triggerChatResumptionToast(payload, t);
+    },
+    [t],
+  );
+
   useEffect(() => {
     const electron = window.electron;
     if (!electron) return;
 
     const unbindSwitched = electron.onAccountSwitched?.(handleAccountSwitched);
     const unbindUpdated = electron.onAccountsUpdated?.(handleAccountsUpdated);
+    const unbindResumption = electron.onChatResumptionStatus?.(
+      handleChatResumptionStatus,
+    );
 
     return () => {
       unbindSwitched?.();
       unbindUpdated?.();
+      unbindResumption?.();
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
     };
-  }, [handleAccountSwitched, handleAccountsUpdated]);
+  }, [
+    handleAccountSwitched,
+    handleAccountsUpdated,
+    handleChatResumptionStatus,
+  ]);
+}
+
+export function triggerChatResumptionToast(
+  payload: ChatResumptionStatusPayload,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): void {
+  if (!payload) return;
+
+  if (payload.status === "resumed") {
+    toast({
+      title: React.createElement(
+        "div",
+        { className: "flex items-center gap-2 min-w-0" },
+        React.createElement(Zap, {
+          className: "h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400",
+          "aria-hidden": "true",
+        }),
+        React.createElement(
+          "span",
+          {
+            className:
+              "font-semibold text-emerald-950 dark:text-emerald-100 truncate",
+          },
+          t("toast.chatResume.successTitle"),
+        ),
+      ),
+      description: React.createElement(
+        "span",
+        {
+          className:
+            "block text-sm text-emerald-900/90 dark:text-emerald-200/90 break-words [overflow-wrap:anywhere]",
+        },
+        t("toast.chatResume.successDesc", {
+          email: payload.accountEmail || "",
+        }),
+      ),
+      className:
+        "border-emerald-500/30 bg-emerald-500/10 dark:border-emerald-500/35 dark:bg-emerald-500/15 text-foreground shadow-lg",
+      duration: 4000,
+    });
+    return;
+  }
+
+  if (payload.status === "failed" || payload.status === "model_fallback") {
+    toast({
+      title: React.createElement(
+        "div",
+        { className: "flex items-center gap-2 min-w-0" },
+        React.createElement(AlertTriangle, {
+          className: "h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400",
+          "aria-hidden": "true",
+        }),
+        React.createElement(
+          "span",
+          {
+            className:
+              "font-semibold text-amber-950 dark:text-amber-100 truncate",
+          },
+          t("toast.chatResume.failedTitle"),
+        ),
+      ),
+      description: React.createElement(
+        "span",
+        {
+          className:
+            "block text-sm text-amber-900/90 dark:text-amber-200/90 break-words [overflow-wrap:anywhere]",
+        },
+        t("toast.chatResume.failedDesc"),
+      ),
+      className:
+        "border-amber-500/30 bg-amber-500/10 dark:border-amber-500/35 dark:bg-amber-500/15 text-foreground shadow-lg",
+      duration: 4500,
+    });
+  }
 }

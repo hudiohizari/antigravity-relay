@@ -642,6 +642,17 @@ const vi = {
       limited: "Giới hạn",
       critical: "Nghiêm trọng",
     },
+    automation: {
+      title: "Tự động hóa & Chuyển đổi",
+      description:
+        "Cấu hình hành vi khôi phục phiên tự động và chuyển đổi tài khoản.",
+      autoResumeChat: {
+        title: "Tự động tiếp tục phiên trò chuyện đang chạy",
+        description:
+          "Tự động tiếp tục lời nhắc trò chuyện và Cascade đang xử lý khi khởi động lại Antigravity sau khi chuyển tài khoản.",
+        cliExcludedBadge: "Chỉ dành cho App & IDE",
+      },
+    },
     save: "Lưu cài đặt",
   },
   toast: {
@@ -668,6 +679,14 @@ const vi = {
     deleteError: {
       title: "Lỗi",
       description: "Không thể xóa bản sao lưu: {{error}}",
+    },
+    chatResume: {
+      successTitle: "Đã tiếp tục phiên trò chuyện",
+      successDesc:
+        "Đã tự động tiếp tục phiên trò chuyện dưới tài khoản {{email}}.",
+      failedTitle: "Tự động tiếp tục thất bại",
+      failedDesc:
+        "Không thể tự động tiếp tục phiên trò chuyện. Lời nhắc của bạn đã được lưu.",
     },
   },
   cloud: {

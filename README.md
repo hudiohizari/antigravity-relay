@@ -41,11 +41,22 @@ Resident in your macOS Menu Bar / Windows System Tray for instant background man
 - **At-a-Glance Quota**: View active target label, 5h pool bottleneck, and per-model quotas instantly.
 - **Background Persistence**: Minimizes seamlessly to tray with zero UI overhead.
 
+### 4. Active Chat Session Auto-Resume After Switch
+
+Eliminate disrupted generations during automated (quota exhaustion / HTTP 429) or manual account rotations.
+
+- **Pre-Kill Active Turn Capture**: Automatically detects running chat or Cascade turns (`status = 2`) and flushes SQLite WAL journals (`PRAGMA wal_checkpoint(PASSIVE)`) before closing the process.
+- **Connect-RPC Readiness Gate**: Waits for the restarted Language Server to complete authentication and extracts dynamic CSRF tokens before re-dispatching the prompt within $\le 1000\text{ms}$.
+- **Strict Model Fidelity**: Never silently downgrades your model. If the target account lacks quota for your chosen model, it cleanly aborts, preserves your prompt in local draft scratch, and notifies you via an amber toast.
+- **Desktop Scope Only**: Active for Antigravity App and IDE; CLI (`agy`) runs headlessly without restarts and is strictly excluded.
+- **User Control & Visibility**: Toggle on/off under Settings (`Automation & Switching`), paired with localized emerald success and amber fallback toasts.
+
 ---
 
 ## Features
 
 - **Unified Multi-Target Architecture**: Seamlessly coordinates credentials across **Antigravity App**, **Antigravity IDE**, and **Antigravity CLI** (`agy`) with 1-click global sync and independent target switching.
+- **Active Chat Session Auto-Resume**: Pre-kill in-flight prompt snapshotting, database WAL checkpointing, and Connect-RPC re-dispatch post-restart for Antigravity App and IDE with strict model fidelity and zero silent downgrades.
 - **Multi-Account Pool & Auto-Switch**: Connect and manage multiple Google accounts via OAuth 2.0 loopback authentication with automatic quota-depletion failover.
 - **Local Account Discovery & Sync**: One-click discovery, verification, and import of local signed-in accounts across System Credential Stores (macOS Keychain, Windows Credential Manager, Linux Secret Service), Antigravity CLI session files, IDE databases, and legacy Antigravity Manager databases (`~/.antigravity-agent/cloud_accounts.db`) with proactive token refresh.
 - **Live Quota Monitoring**: Real-time per-model quota tracking, background polling, and reset countdown timers for current Antigravity models (`gemini-3.8-flash`, `gemini-3.1-pro`, `claude-opus-4-6`, `claude-sonnet-4-6`).

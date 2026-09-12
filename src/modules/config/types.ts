@@ -93,6 +93,7 @@ export const AppConfigSchema = z.object({
   antigravity_cli_executable: z.string().nullable().optional().default(null),
   antigravity_args: z.array(z.string()).optional().default([]),
   antigravity_ide_args: z.array(z.string()).optional().default([]),
+  auto_resume_active_chat: z.boolean().default(true),
   proxy: ProxyConfigSchema,
 });
 
@@ -128,6 +129,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   antigravity_cli_executable: null,
   antigravity_args: [],
   antigravity_ide_args: [],
+  auto_resume_active_chat: true,
   proxy: {
     enabled: false,
     port: 8045,

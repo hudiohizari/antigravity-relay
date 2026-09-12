@@ -649,6 +649,17 @@ const tr = {
       limited: "Sınırlı",
       critical: "Kritik",
     },
+    automation: {
+      title: "Otomasyon ve Geçiş",
+      description:
+        "Otomatik oturum kurtarma ve hesap geçiş davranışlarını yapılandırın.",
+      autoResumeChat: {
+        title: "Etkin Sohbet Oturumlarını Otomatik Sürdür",
+        description:
+          "Hesap geçişinden sonra Antigravity yeniden başlatıldığında devam eden sohbet ve Cascade istemlerini otomatik olarak sürdürün.",
+        cliExcludedBadge: "Yalnızca App ve IDE",
+      },
+    },
     save: "Ayarları Kaydet",
   },
   toast: {
@@ -675,6 +686,14 @@ const tr = {
     deleteError: {
       title: "Hata",
       description: "Yedek silinemedi: {{error}}",
+    },
+    chatResume: {
+      successTitle: "Sohbet Oturumu Sürdürüldü",
+      successDesc:
+        "Sohbet oturumu {{email}} hesabı altında otomatik olarak sürdürüldü.",
+      failedTitle: "Otomatik Sürdürme Başarısız",
+      failedDesc:
+        "Sohbet oturumu otomatik olarak sürdürülemedi. İsteminiz kaydedildi.",
     },
   },
   cloud: {
