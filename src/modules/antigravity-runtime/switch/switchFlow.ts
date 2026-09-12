@@ -259,6 +259,10 @@ export async function executeSwitchFlow(
             }
           }
 
+          if (!isCliTarget) {
+            chatResumeDispatcher.notifyTargetRestarting(appTarget);
+          }
+
           await trace.phase("closeMs", async () => {
             await closeAntigravity(appTarget);
           });

@@ -1,24 +1,27 @@
-import Database from 'better-sqlite3';
-import fs from 'fs';
-import path from 'path';
-import { eq } from 'drizzle-orm';
-import { isString } from 'lodash-es';
-import type { AccountBackupData, AccountInfo } from '@/modules/account/types';
-import type { AntigravityAppTarget } from '@/shared/platform/antigravityAppTarget';
-import { ItemTableValueRowSchema, type ItemTableKey } from '@/shared/persistence/database/types';
-import { logger } from '@/shared/logging/logger';
-import { getAntigravityDbPaths } from '@/shared/platform/paths';
-import { parseRow } from '@/shared/persistence/database/sqlite';
-import { ProtobufUtils } from '@/shared/serialization/protobuf';
-import { openDrizzleConnection } from '@/shared/persistence/database/dbConnection';
-import { itemTable } from '@/shared/persistence/database/schema';
-import type { CredentialStoreTokenInput } from '@/shared/auth/credentialStoreToken';
-import { hasErrorCode } from '@/shared/errors/error-guards';
+import Database from "better-sqlite3";
+import fs from "fs";
+import path from "path";
+import { eq } from "drizzle-orm";
+import { isString } from "lodash-es";
+import type { AccountBackupData, AccountInfo } from "@/modules/account/types";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import {
+  ItemTableValueRowSchema,
+  type ItemTableKey,
+} from "@/shared/persistence/database/types";
+import { logger } from "@/shared/logging/logger";
+import { getAntigravityDbPaths } from "@/shared/platform/paths";
+import { parseRow } from "@/shared/persistence/database/sqlite";
+import { ProtobufUtils } from "@/shared/serialization/protobuf";
+import { openDrizzleConnection } from "@/shared/persistence/database/dbConnection";
+import { itemTable } from "@/shared/persistence/database/schema";
+import type { CredentialStoreTokenInput } from "@/shared/auth/credentialStoreToken";
+import { hasErrorCode } from "@/shared/errors/error-guards";
 
 const KEYS_TO_BACKUP: ItemTableKey[] = [
-  'antigravityAuthStatus',
-  'jetskiStateSync.agentManagerInitState',
-  'antigravityUnifiedStateSync.oauthToken',
+  "antigravityAuthStatus",
+  "jetskiStateSync.agentManagerInitState",
+  "antigravityUnifiedStateSync.oauthToken",
 ];
 
 function openAntigravityStateDb(
@@ -45,9 +48,9 @@ export function initDatabase(): void {
 
     const { raw } = getDatabaseConnection(undefined);
     raw.close();
-    logger.info('Database initialized and verified (WAL mode)');
+    logger.info("Database initialized and verified (WAL mode)");
   } catch (error) {
-    logger.error('Failed to initialize database on startup', error);
+    logger.error("Failed to initialize database on startup", error);
   }
 }
 
@@ -78,9 +81,9 @@ function ensureDatabaseExists(dbPath: string): void {
         value TEXT
       )
     `);
-    logger.info('Created new database with ItemTable schema.');
+    logger.info("Created new database with ItemTable schema.");
   } catch (error) {
-    logger.error('Failed to create new database', error);
+    logger.error("Failed to create new database", error);
     throw error;
   } finally {
     if (db) db.close();
@@ -99,7 +102,7 @@ export function getDatabaseConnection(
   const targetPath = dbPath || getAntigravityDbPaths(target)[0];
 
   if (!targetPath) {
-    throw new Error('No Antigravity database path found');
+    throw new Error("No Antigravity database path found");
   }
 
   ensureDatabaseExists(targetPath);
@@ -107,15 +110,20 @@ export function getDatabaseConnection(
   try {
     return openAntigravityStateDb(targetPath);
   } catch (error) {
-    if (hasErrorCode(error, 'SQLITE_BUSY') || hasErrorCode(error, 'SQLITE_LOCKED')) {
-      throw new Error('Database is locked. Please close Antigravity before proceeding.');
+    if (
+      hasErrorCode(error, "SQLITE_BUSY") ||
+      hasErrorCode(error, "SQLITE_LOCKED")
+    ) {
+      throw new Error(
+        "Database is locked. Please close Antigravity before proceeding.",
+      );
     }
     throw error;
   }
 }
 
 function readItemValue(
-  orm: ReturnType<typeof openDrizzleConnection>['orm'],
+  orm: ReturnType<typeof openDrizzleConnection>["orm"],
   key: string,
   context: string,
 ): string | null {
@@ -136,12 +144,12 @@ function readCurrentAccountInfoFromDbPath(
   try {
     connection = getDatabaseConnection(dbPath);
     const { orm } = connection;
-    const contextPrefix = `${target ?? 'default'}.itemTable`;
+    const contextPrefix = `${target ?? "default"}.itemTable`;
 
     // Query for auth status
     const authValue = readItemValue(
       orm,
-      'antigravityAuthStatus',
+      "antigravityAuthStatus",
       `${contextPrefix}.antigravityAuthStatus`,
     );
     let authStatus = null;
@@ -156,7 +164,7 @@ function readCurrentAccountInfoFromDbPath(
     // NOTE Query for user info (usually in jetskiStateSync.agentManagerInitState or similar)
     const initValue = readItemValue(
       orm,
-      'jetskiStateSync.agentManagerInitState',
+      "jetskiStateSync.agentManagerInitState",
       `${contextPrefix}.jetskiStateSync.agentManagerInitState`,
     );
     let initState = null;
@@ -171,7 +179,7 @@ function readCurrentAccountInfoFromDbPath(
     // Query for google.antigravity
     const googleValue = readItemValue(
       orm,
-      'google.antigravity',
+      "google.antigravity",
       `${contextPrefix}.google.antigravity`,
     );
     let googleState = null;
@@ -186,7 +194,7 @@ function readCurrentAccountInfoFromDbPath(
     // Query for antigravityUserSettings.allUserSettings
     const settingsValue = readItemValue(
       orm,
-      'antigravityUserSettings.allUserSettings',
+      "antigravityUserSettings.allUserSettings",
       `${contextPrefix}.antigravityUserSettings.allUserSettings`,
     );
     let settingsState = null;
@@ -199,9 +207,12 @@ function readCurrentAccountInfoFromDbPath(
     }
 
     // Helper to find email in object
-    const findEmail = (obj: { email?: string; user?: { email?: string } }): string => {
+    const findEmail = (obj: {
+      email?: string;
+      user?: { email?: string };
+    }): string => {
       if (!obj) {
-        return '';
+        return "";
       }
       if (isString(obj.email)) {
         return obj.email;
@@ -209,7 +220,7 @@ function readCurrentAccountInfoFromDbPath(
       if (obj.user && isString(obj.user.email)) {
         return obj.user.email;
       }
-      return '';
+      return "";
     };
 
     const email =
@@ -217,12 +228,15 @@ function readCurrentAccountInfoFromDbPath(
       findEmail(initState) ||
       findEmail(googleState) ||
       findEmail(settingsState) ||
-      '';
+      "";
 
-    const name = authStatus?.user?.name || initState?.user?.name || authStatus?.name || '';
+    const name =
+      authStatus?.user?.name || initState?.user?.name || authStatus?.name || "";
     const isAuthenticated = !!email;
 
-    logger.info(`Account info: authenticated=${isAuthenticated}, email=${email || 'none'}`);
+    logger.debug(
+      `Account info: authenticated=${isAuthenticated}, email=${email || "none"}`,
+    );
 
     return {
       email,
@@ -240,10 +254,12 @@ function readCurrentAccountInfoFromDbPath(
  * Gets the current account info.
  * @returns {AccountInfo} The current account info.
  */
-export function getCurrentAccountInfo(target?: AntigravityAppTarget | null): AccountInfo {
+export function getCurrentAccountInfo(
+  target?: AntigravityAppTarget | null,
+): AccountInfo {
   const dbPaths = getAntigravityDbPaths(target);
   if (dbPaths.length === 0) {
-    return { email: '', isAuthenticated: false };
+    return { email: "", isAuthenticated: false };
   }
 
   let lastError: unknown;
@@ -264,14 +280,16 @@ export function getCurrentAccountInfo(target?: AntigravityAppTarget | null): Acc
   }
 
   if (lastError) {
-    logger.error('Failed to get current account info', lastError);
+    logger.error("Failed to get current account info", lastError);
     throw lastError;
   }
 
-  return { email: '', isAuthenticated: false };
+  return { email: "", isAuthenticated: false };
 }
 
-export function backupAccount(account: AccountBackupData['account']): AccountBackupData {
+export function backupAccount(
+  account: AccountBackupData["account"],
+): AccountBackupData {
   let connection: ReturnType<typeof openDrizzleConnection> | null = null;
   try {
     connection = getDatabaseConnection(undefined);
@@ -295,16 +313,16 @@ export function backupAccount(account: AccountBackupData['account']): AccountBac
     }
 
     // NOTE Add metadata
-    data['account_email'] = account.email;
-    data['backup_time'] = new Date().toISOString();
+    data["account_email"] = account.email;
+    data["backup_time"] = new Date().toISOString();
 
     return {
-      version: '1.0',
+      version: "1.0",
       account,
       data,
     };
   } catch (error) {
-    logger.error('Failed to backup account', error);
+    logger.error("Failed to backup account", error);
     throw error;
   } finally {
     if (connection) {
@@ -321,14 +339,17 @@ export function backupAccount(account: AccountBackupData['account']): AccountBac
 export function extractCredentialStoreTokenFromBackup(
   backup: AccountBackupData,
 ): CredentialStoreTokenInput {
-  const unified = backup.data['antigravityUnifiedStateSync.oauthToken'];
+  const unified = backup.data["antigravityUnifiedStateSync.oauthToken"];
   if (!isString(unified)) {
-    throw new Error('Backup does not contain antigravityUnifiedStateSync.oauthToken');
+    throw new Error(
+      "Backup does not contain antigravityUnifiedStateSync.oauthToken",
+    );
   }
 
-  const parsed = ProtobufUtils.extractOAuthTokenDetailsFromUnifiedStateEntry(unified);
+  const parsed =
+    ProtobufUtils.extractOAuthTokenDetailsFromUnifiedStateEntry(unified);
   if (!parsed) {
-    throw new Error('Unable to extract OAuth token from backup');
+    throw new Error("Unable to extract OAuth token from backup");
   }
 
   return {
@@ -338,10 +359,13 @@ export function extractCredentialStoreTokenFromBackup(
   };
 }
 
-export function restoreAccount(backup: AccountBackupData, appTarget?: AntigravityAppTarget): void {
+export function restoreAccount(
+  backup: AccountBackupData,
+  appTarget?: AntigravityAppTarget,
+): void {
   const dbPaths = getAntigravityDbPaths(appTarget);
   if (dbPaths.length === 0) {
-    throw new Error('No Antigravity database paths found');
+    throw new Error("No Antigravity database paths found");
   }
 
   let successCount = 0;
@@ -353,7 +377,7 @@ export function restoreAccount(backup: AccountBackupData, appTarget?: Antigravit
     }
 
     // NOTE Restore backup DB (if exists)
-    const backupDbPath = dbPath.replace(/\.vscdb$/, '.vscdb.backup');
+    const backupDbPath = dbPath.replace(/\.vscdb$/, ".vscdb.backup");
     if (fs.existsSync(backupDbPath)) {
       if (restoreSingleDatabase(backupDbPath, backup)) {
         successCount++;
@@ -364,7 +388,7 @@ export function restoreAccount(backup: AccountBackupData, appTarget?: Antigravit
   if (successCount > 0) {
     logger.info(`Account data restored successfully to ${successCount} files`);
   } else {
-    throw new Error('Failed to restore account data to any database file');
+    throw new Error("Failed to restore account data to any database file");
   }
 }
 
@@ -374,7 +398,10 @@ export function restoreAccount(backup: AccountBackupData, appTarget?: Antigravit
  * @param backup {AccountBackupData} The backup data to restore.
  * @returns {boolean} True if the database file was restored successfully, false otherwise.
  */
-function restoreSingleDatabase(dbPath: string, backup: AccountBackupData): boolean {
+function restoreSingleDatabase(
+  dbPath: string,
+  backup: AccountBackupData,
+): boolean {
   if (!fs.existsSync(dbPath)) {
     return false;
   }

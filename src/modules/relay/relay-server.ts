@@ -2382,17 +2382,17 @@ export class RelayServer {
           });
         }
 
-        const port = this.portDiscovery.getPort();
-        if (!port) {
+        if (this.portDiscovery.isRestarting()) {
           return reply.status(503).header("Retry-After", "2").send({
-            error: "upstream_unavailable",
+            error: "upstream_restarting",
             retry_after_ms: 2000,
           });
         }
 
-        if (this.portDiscovery.isRestarting()) {
+        const port = this.portDiscovery.getPort();
+        if (!port) {
           return reply.status(503).header("Retry-After", "2").send({
-            error: "upstream_restarting",
+            error: "upstream_unavailable",
             retry_after_ms: 2000,
           });
         }

@@ -1,6 +1,6 @@
 import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
 
-export type ChatResumptionStatus = "resumed" | "model_fallback" | "failed";
+export type ChatResumptionStatus = "resumed" | "failed";
 
 export type ChatResumeSwitchSource =
   "auto_switch" | "manual_switch" | "tray" | "resync" | "manual" | "unknown";
@@ -23,7 +23,7 @@ export interface InFlightChatSnapshot {
   expiresAt: number;
   source?: ChatResumeSwitchSource;
   accountEmail?: string;
-  status: "pending" | "resumed" | "failed" | "expired";
+  status: "pending" | "in_flight" | "resumed" | "failed" | "expired";
 }
 
 export interface ChatDraftScratch {
@@ -50,4 +50,5 @@ export interface ActiveTurnSnapshot {
   cascadeId: string;
   sessionId?: string;
   promptPayload: InFlightPromptPayload;
+  conversationDbPath?: string;
 }

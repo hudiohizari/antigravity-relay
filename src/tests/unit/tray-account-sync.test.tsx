@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act, render } from "@testing-library/react";
+import { renderHook, act, render, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useTrayAccountSync,
@@ -55,6 +55,10 @@ vi.mock("react-i18next", () => ({
       if (key === "toast.chatResume.failedTitle") return "Auto-Resume Failed";
       if (key === "toast.chatResume.failedDesc") {
         return "Could not auto-resume chat session. Your prompt has been saved.";
+      }
+      if (key === "toast.chatResume.copyPrompt") return "Copy Prompt";
+      if (key === "toast.chatResume.promptCopied") {
+        return "Prompt copied to clipboard";
       }
       return key;
     },
@@ -782,30 +786,6 @@ describe("useTrayAccountSync", () => {
       );
     });
 
-    it("renders amber toast with 4500ms duration on status model_fallback", () => {
-      renderHook(() => useTrayAccountSync(), {
-        wrapper: createWrapper(),
-      });
-
-      act(() => {
-        resumptionCallback!({
-          status: "model_fallback",
-          fallbackModel: "gemini-1.5-flash",
-        });
-      });
-
-      expect(toastModule.toast).toHaveBeenCalledTimes(1);
-      const call = vi.mocked(toastModule.toast).mock.calls[0][0];
-
-      expect(call.duration).toBe(4500);
-      expect(call.className).toContain("border-amber-500/30");
-
-      const { container: titleContainer } = render(
-        call.title as React.ReactElement,
-      );
-      expect(titleContainer.textContent).toContain("Auto-Resume Failed");
-    });
-
     it("ignores null or undefined resumption payloads gracefully", () => {
       renderHook(() => useTrayAccountSync(), {
         wrapper: createWrapper(),
@@ -847,6 +827,126 @@ describe("useTrayAccountSync", () => {
       expect(toastModule.toast).toHaveBeenCalledTimes(1);
       const call = vi.mocked(toastModule.toast).mock.calls[0][0];
       expect(call.duration).toBe(4000);
+    });
+
+    it("invalidates process status query when status is resumed", () => {
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        resumptionCallback!({
+          status: "resumed",
+          accountEmail: "engineer@example.com",
+        });
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["process", "status"],
+        refetchType: "active",
+      });
+    });
+
+    it("renders amber toast with ToastAction copy prompt button when draftPrompt is present", async () => {
+      const writeTextMock = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        value: {
+          writeText: writeTextMock,
+        },
+        configurable: true,
+        writable: true,
+      });
+
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        resumptionCallback!({
+          status: "failed",
+          reason: "model_quota_restricted",
+          draftPrompt: "Draft prompt text to copy",
+        });
+      });
+
+      expect(toastModule.toast).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(toastModule.toast).mock.calls[0][0];
+      expect(call.action).toBeTruthy();
+
+      const { container } = render(call.action as React.ReactElement);
+      const copyBtn =
+        container.querySelector("button") ||
+        (container.firstElementChild as HTMLElement);
+      expect(copyBtn).toBeTruthy();
+      expect(copyBtn.textContent).toBe("Copy Prompt");
+
+      await fireEvent.click(copyBtn);
+      expect(writeTextMock).toHaveBeenCalledWith("Draft prompt text to copy");
+      expect(toastModule.toast).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(toastModule.toast).mock.calls[1][0]).toEqual(
+        expect.objectContaining({
+          description: "Prompt copied to clipboard",
+          duration: 2000,
+        }),
+      );
+    });
+
+    it("does not render action button on failed status when draftPrompt is absent", () => {
+      renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      act(() => {
+        resumptionCallback!({
+          status: "failed",
+          reason: "timeout",
+        });
+      });
+
+      expect(toastModule.toast).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(toastModule.toast).mock.calls[0][0];
+      expect(call.action).toBeUndefined();
+    });
+
+    it("guarantees both email and accountEmail interpolation in Emerald toast", () => {
+      const mockT = vi.fn((key: string, params?: Record<string, unknown>) => {
+        if (key === "toast.chatResume.successDesc") {
+          return `Auto-resumed under ${params?.accountEmail || params?.email}`;
+        }
+        return key;
+      });
+
+      triggerChatResumptionToast(
+        { status: "resumed", accountEmail: "lead@example.com" },
+        mockT,
+      );
+
+      expect(mockT).toHaveBeenCalledWith(
+        "toast.chatResume.successDesc",
+        expect.objectContaining({
+          email: "lead@example.com",
+          accountEmail: "lead@example.com",
+        }),
+      );
+    });
+
+    it("stabilizes listener binding across translation re-renders with tRef", () => {
+      const { rerender } = renderHook(() => useTrayAccountSync(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(window.electron.onAccountSwitched).toHaveBeenCalledTimes(1);
+      expect(window.electron.onAccountsUpdated).toHaveBeenCalledTimes(1);
+      expect(window.electron.onChatResumptionStatus).toHaveBeenCalledTimes(1);
+
+      rerender();
+
+      expect(unbindSwitchedMock).not.toHaveBeenCalled();
+      expect(unbindUpdatedMock).not.toHaveBeenCalled();
+      expect(unbindResumptionMock).not.toHaveBeenCalled();
+      expect(window.electron.onAccountSwitched).toHaveBeenCalledTimes(1);
     });
   });
 });

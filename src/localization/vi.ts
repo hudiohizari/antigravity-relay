@@ -687,6 +687,8 @@ const vi = {
       failedTitle: "Tự động tiếp tục thất bại",
       failedDesc:
         "Không thể tự động tiếp tục phiên trò chuyện. Lời nhắc của bạn đã được lưu.",
+      copyPrompt: "Sao chép lời nhắc",
+      promptCopied: "Đã sao chép lời nhắc vào khay nhớ tạm",
     },
   },
   cloud: {

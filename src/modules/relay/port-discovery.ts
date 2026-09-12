@@ -44,6 +44,7 @@ export function parsePortFromLog(content: string): number | null {
 
 export class PortDiscoveryService extends EventEmitter {
   private currentPort: number | null = null;
+  private stalePort: number | null = null;
   private restarting = false;
   private readonly logPath: string;
   private readonly pollIntervalMs: number;
@@ -74,6 +75,7 @@ export class PortDiscoveryService extends EventEmitter {
     this.currentPort = port;
     if (port !== null) {
       this.restarting = false;
+      this.stalePort = null;
       if (oldPort === null) {
         this.emit("port-discovered", port);
       }
@@ -81,6 +83,7 @@ export class PortDiscoveryService extends EventEmitter {
         this.emit("port-changed", { oldPort, newPort: port });
       }
     } else if (oldPort !== null) {
+      this.stalePort = oldPort;
       this.emit("port-lost");
     }
   }
@@ -96,6 +99,14 @@ export class PortDiscoveryService extends EventEmitter {
   public setRestarting(restarting: boolean): void {
     const changed = this.restarting !== restarting;
     this.restarting = restarting;
+    if (restarting) {
+      if (this.currentPort !== null) {
+        this.stalePort = this.currentPort;
+        this.currentPort = null;
+      }
+    } else {
+      this.stalePort = null;
+    }
     if (changed && restarting) {
       this.emit("restarting");
     }
@@ -128,9 +139,16 @@ export class PortDiscoveryService extends EventEmitter {
 
       const discoveredPort = parsePortFromLog(content);
       if (discoveredPort !== null) {
+        if (
+          this.restarting &&
+          this.stalePort !== null &&
+          discoveredPort === this.stalePort
+        ) {
+          return null;
+        }
         this.handlePortFound(discoveredPort);
       }
-      return discoveredPort;
+      return this.currentPort;
     } catch {
       return null;
     }
@@ -187,15 +205,24 @@ export class PortDiscoveryService extends EventEmitter {
   }
 
   private handlePortFound(newPort: number): void {
+    if (
+      this.restarting &&
+      this.stalePort !== null &&
+      newPort === this.stalePort
+    ) {
+      return;
+    }
+
+    this.restarting = false;
+    this.stalePort = null;
+
     if (this.currentPort === null) {
       this.currentPort = newPort;
-      this.restarting = false;
       this.emit("port-discovered", newPort);
       this.emit("port-changed", { oldPort: null, newPort });
     } else if (this.currentPort !== newPort) {
       const oldPort = this.currentPort;
       this.currentPort = newPort;
-      this.restarting = false;
       this.emit("port-changed", { oldPort, newPort });
     }
   }

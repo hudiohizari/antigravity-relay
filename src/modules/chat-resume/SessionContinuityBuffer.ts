@@ -152,6 +152,36 @@ export class SessionContinuityBuffer {
     return this.consume(latest.resumptionId);
   }
 
+  public claimInFlight(resumptionId: string): InFlightChatSnapshot | null {
+    const snapshot = this.snapshots.get(resumptionId);
+    if (!snapshot) {
+      return null;
+    }
+
+    if (Date.now() > snapshot.expiresAt) {
+      this.expireSnapshot(snapshot, "ttl_expired");
+      return null;
+    }
+
+    if (snapshot.status !== "pending") {
+      return null;
+    }
+
+    snapshot.status = "in_flight";
+    return snapshot;
+  }
+
+  public claimLatestForTarget(
+    appTarget: AntigravityAppTarget,
+  ): InFlightChatSnapshot | null {
+    const latest = this.getLatestForTarget(appTarget);
+    if (!latest || latest.status !== "pending") {
+      return null;
+    }
+
+    return this.claimInFlight(latest.resumptionId);
+  }
+
   public has(resumptionId: string): boolean {
     const snapshot = this.snapshots.get(resumptionId);
     if (!snapshot) {

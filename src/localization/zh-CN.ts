@@ -633,6 +633,8 @@ const zhCn = {
       successDesc: "已在账号 {{email}} 下自动恢复对话会话。",
       failedTitle: "自动恢复失败",
       failedDesc: "未能自动恢复对话会话，您的提示词已保存。",
+      copyPrompt: "复制提示词",
+      promptCopied: "提示词已复制到剪贴板",
     },
   },
   cloud: {

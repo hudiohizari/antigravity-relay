@@ -271,6 +271,7 @@ export function SettingsPage() {
                       {t("settings.automation.autoResumeChat.title")}
                     </Label>
                     <Badge
+                      id="auto-resume-chat-badge"
                       variant="outline"
                       className="rounded-full border-border/70 bg-muted/50 px-2 py-0.5 text-[11px] font-mono font-medium text-muted-foreground tracking-wide select-none"
                       aria-label="Scope: Desktop App and IDE only. CLI excluded."
@@ -278,7 +279,10 @@ export function SettingsPage() {
                       {t("settings.automation.autoResumeChat.cliExcludedBadge")}
                     </Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
+                  <p
+                    id="auto-resume-chat-desc"
+                    className="text-xs text-muted-foreground leading-relaxed"
+                  >
                     {t("settings.automation.autoResumeChat.description")}
                   </p>
                 </div>
@@ -296,7 +300,8 @@ export function SettingsPage() {
                         });
                       }
                     }}
-                    aria-describedby="auto-resume-chat-label"
+                    aria-labelledby="auto-resume-chat-label"
+                    aria-describedby="auto-resume-chat-badge auto-resume-chat-desc"
                   />
                 </div>
               </div>

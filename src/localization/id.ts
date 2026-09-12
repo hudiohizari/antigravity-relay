@@ -697,6 +697,8 @@ const id = {
       failedTitle: "Gagal Melanjutkan Otomatis",
       failedDesc:
         "Tidak dapat melanjutkan sesi obrolan secara otomatis. Prompt Anda telah disimpan.",
+      copyPrompt: "Salin Prompt",
+      promptCopied: "Prompt disalin ke papan klip",
     },
   },
   cloud: {

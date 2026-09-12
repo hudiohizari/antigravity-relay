@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Zap } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { ToastAction, type ToastActionElement } from "@/components/ui/toast";
 import { QUERY_KEYS } from "@/modules/cloud-account/hooks/useCloudAccounts";
 import type { CloudAccount } from "@/modules/cloud-account/types";
 import type {
@@ -24,6 +25,11 @@ export function useTrayAccountSync(): void {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tRef = useRef(t);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   const scheduleInvalidate = useCallback(() => {
     if (debounceTimerRef.current) {
@@ -155,20 +161,20 @@ export function useTrayAccountSync(): void {
               ? "cli"
               : rawTarget;
         const targetName =
-          t(`cloud.target.${canonicalKey}`) ||
-          t(`cloud.target.${rawTarget}`) ||
+          tRef.current(`cloud.target.${canonicalKey}`) ||
+          tRef.current(`cloud.target.${rawTarget}`) ||
           rawTarget;
 
         const description = isAll
-          ? t("autoSwitch.toastAllDescription", { email })
-          : t("autoSwitch.toastTargetDescription", {
+          ? tRef.current("autoSwitch.toastAllDescription", { email })
+          : tRef.current("autoSwitch.toastTargetDescription", {
               target: targetName,
               email,
             });
 
         const titleText = isAll
-          ? t("autoSwitch.toastTitle")
-          : t("autoSwitch.toastTargetTitle", { target: targetName });
+          ? tRef.current("autoSwitch.toastTitle")
+          : tRef.current("autoSwitch.toastTargetTitle", { target: targetName });
 
         toast({
           title: React.createElement(
@@ -213,12 +219,12 @@ export function useTrayAccountSync(): void {
               ? "cli"
               : payloadObj.target;
         const targetName =
-          t(`cloud.target.${canonicalKey}`) ||
-          t(`cloud.target.${payloadObj.target}`) ||
+          tRef.current(`cloud.target.${canonicalKey}`) ||
+          tRef.current(`cloud.target.${payloadObj.target}`) ||
           payloadObj.target;
         toast({
-          title: t("traySync.switchedTargetTitle"),
-          description: t("traySync.switchedTargetDescription", {
+          title: tRef.current("traySync.switchedTargetTitle"),
+          description: tRef.current("traySync.switchedTargetDescription", {
             target: targetName,
             email,
           }),
@@ -226,27 +232,28 @@ export function useTrayAccountSync(): void {
         });
       } else if (payloadObj && payloadObj.target === "all") {
         const hasSwitchedAll =
-          t("traySync.switchedAllTitle") !== "traySync.switchedAllTitle";
+          tRef.current("traySync.switchedAllTitle") !==
+          "traySync.switchedAllTitle";
         toast({
           title: hasSwitchedAll
-            ? t("traySync.switchedAllTitle")
-            : t("traySync.switchedTitle"),
+            ? tRef.current("traySync.switchedAllTitle")
+            : tRef.current("traySync.switchedTitle"),
           description: hasSwitchedAll
-            ? t("traySync.switchedAllDescription", { email })
-            : t("traySync.switchedDescription", { email }),
+            ? tRef.current("traySync.switchedAllDescription", { email })
+            : tRef.current("traySync.switchedDescription", { email }),
           duration: 3000,
         });
       } else {
         toast({
-          title: t("traySync.switchedTitle"),
-          description: t("traySync.switchedDescription", { email }),
+          title: tRef.current("traySync.switchedTitle"),
+          description: tRef.current("traySync.switchedDescription", { email }),
           duration: 3000,
         });
       }
 
       scheduleInvalidate();
     },
-    [queryClient, t, scheduleInvalidate],
+    [queryClient, scheduleInvalidate],
   );
 
   const handleAccountsUpdated = useCallback(() => {
@@ -255,9 +262,17 @@ export function useTrayAccountSync(): void {
 
   const handleChatResumptionStatus = useCallback(
     (payload: ChatResumptionStatusPayload) => {
-      triggerChatResumptionToast(payload, t);
+      triggerChatResumptionToast(payload, (key, options) =>
+        tRef.current(key, options),
+      );
+      if (payload?.status === "resumed") {
+        queryClient.invalidateQueries({
+          queryKey: ["process", "status"],
+          refetchType: "active",
+        });
+      }
     },
-    [t],
+    [queryClient],
   );
 
   useEffect(() => {
@@ -293,6 +308,7 @@ export function triggerChatResumptionToast(
   if (!payload) return;
 
   if (payload.status === "resumed") {
+    const email = payload.accountEmail || "";
     toast({
       title: React.createElement(
         "div",
@@ -317,7 +333,8 @@ export function triggerChatResumptionToast(
             "block text-sm text-emerald-900/90 dark:text-emerald-200/90 break-words [overflow-wrap:anywhere]",
         },
         t("toast.chatResume.successDesc", {
-          email: payload.accountEmail || "",
+          email,
+          accountEmail: email,
         }),
       ),
       className:
@@ -327,7 +344,9 @@ export function triggerChatResumptionToast(
     return;
   }
 
-  if (payload.status === "failed" || payload.status === "model_fallback") {
+  if (payload.status === "failed") {
+    const draftText = payload.draftPrompt;
+
     toast({
       title: React.createElement(
         "div",
@@ -353,6 +372,34 @@ export function triggerChatResumptionToast(
         },
         t("toast.chatResume.failedDesc"),
       ),
+      action: (draftText
+        ? React.createElement(
+            ToastAction,
+            {
+              altText: t("toast.chatResume.copyPrompt"),
+              className:
+                "h-8 px-3 text-xs font-semibold rounded-md shadow-xs bg-amber-950 text-white hover:bg-amber-900 dark:bg-amber-100 dark:text-amber-950 dark:hover:bg-amber-200 focus:ring-2 focus:ring-amber-500 focus-visible:outline-none transition-colors cursor-pointer shrink-0",
+              onClick: async (e: React.MouseEvent) => {
+                e.preventDefault();
+                try {
+                  if (
+                    typeof navigator !== "undefined" &&
+                    navigator.clipboard?.writeText
+                  ) {
+                    await navigator.clipboard.writeText(draftText);
+                  }
+                  toast({
+                    description: t("toast.chatResume.promptCopied"),
+                    duration: 2000,
+                  });
+                } catch {
+                  // Fallback if clipboard API fails
+                }
+              },
+            },
+            t("toast.chatResume.copyPrompt"),
+          )
+        : undefined) as unknown as ToastActionElement | undefined,
       className:
         "border-amber-500/30 bg-amber-500/10 dark:border-amber-500/35 dark:bg-amber-500/15 text-foreground shadow-lg",
       duration: 4500,

@@ -1235,6 +1235,106 @@ export function getCloudAccountsDbPath(
   );
 }
 
+export function getAntigravityConversationsDir(
+  target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
+): string {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  if (resolvedTarget === "cli") {
+    return "";
+  }
+  const subfolder =
+    resolvedTarget === "ide" ? "antigravity-ide" : "antigravity";
+
+  if (resolveIsWsl(options)) {
+    const winUser = getWindowsUser();
+    return `/mnt/c/Users/${winUser}/.gemini/${subfolder}/conversations`;
+  }
+
+  const home = os.homedir();
+  if (getCurrentPlatform(options) === "win32") {
+    return path.win32.join(home, ".gemini", subfolder, "conversations");
+  }
+
+  return path.posix.join(home, ".gemini", subfolder, "conversations");
+}
+
+export function getAntigravityBrainDir(
+  target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
+): string {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  if (resolvedTarget === "cli") {
+    return "";
+  }
+  const subfolder =
+    resolvedTarget === "ide" ? "antigravity-ide" : "antigravity";
+
+  if (resolveIsWsl(options)) {
+    const winUser = getWindowsUser();
+    return `/mnt/c/Users/${winUser}/.gemini/${subfolder}/brain`;
+  }
+
+  const home = os.homedir();
+  if (getCurrentPlatform(options) === "win32") {
+    return path.win32.join(home, ".gemini", subfolder, "brain");
+  }
+
+  return path.posix.join(home, ".gemini", subfolder, "brain");
+}
+
+export function getAntigravityConversationDbPaths(
+  target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
+): string[] {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  if (resolvedTarget === "cli") {
+    return [];
+  }
+
+  const dir = getAntigravityConversationsDir(target, options);
+  if (!dir || !fs.existsSync(dir)) {
+    return [];
+  }
+
+  try {
+    const pathApi = getCurrentPlatformPathApi(options);
+    const entries = fs.readdirSync(dir);
+    const dbFiles: Array<{ fullPath: string; mtimeMs: number }> = [];
+
+    for (const entry of entries) {
+      if (
+        entry.endsWith(".db") &&
+        !entry.endsWith("-wal") &&
+        !entry.endsWith("-shm")
+      ) {
+        const fullPath = pathApi.join(dir, entry);
+        try {
+          const stat = fs.statSync(fullPath);
+          let mtimeMs = stat.mtimeMs;
+          const walPath = `${fullPath}-wal`;
+          if (fs.existsSync(walPath)) {
+            try {
+              const walStat = fs.statSync(walPath);
+              mtimeMs = Math.max(mtimeMs, walStat.mtimeMs);
+            } catch {
+              // Ignore wal stat errors
+            }
+          }
+          dbFiles.push({ fullPath, mtimeMs });
+        } catch {
+          // Ignore transient file errors
+        }
+      }
+    }
+
+    dbFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return dbFiles.slice(0, 5).map((f) => f.fullPath);
+  } catch {
+    return [];
+  }
+}
+
 export function getAntigravityDbPaths(
   target?: AntigravityAppTarget | null,
   options?: PathResolutionOptions,

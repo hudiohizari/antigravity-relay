@@ -21,6 +21,7 @@ import { initDatabase } from "@/modules/account/public";
 import { CloudMonitorService } from "@/modules/cloud-account/services/CloudMonitorService";
 import { cloudAccountEvents } from "@/modules/cloud-account/services/cloud-account-events";
 import { chatResumeEvents } from "@/modules/chat-resume/telemetry";
+import { chatResumeDispatcher } from "@/modules/chat-resume/ChatResumeDispatcher";
 import { RelayController } from "@/modules/relay/relay-controller";
 
 // Static Imports to fix Bundle Resolution Errors
@@ -772,6 +773,25 @@ app
       } catch (err) {
         logger.warn(
           "Relay Server: Failed to restore previous session on port 4040",
+          err,
+        );
+      }
+
+      // Bind ChatResumeDispatcher to PortDiscoveryService
+      try {
+        const portDiscovery =
+          RelayController.getInstance().relayServer.getPortDiscovery();
+        chatResumeDispatcher.bindPortDiscovery(portDiscovery);
+        portDiscovery.start().catch((err) => {
+          logger.warn(
+            "Failed to start PortDiscoveryService for chat resumption",
+            err,
+          );
+        });
+        logger.info("ChatResumeDispatcher: Bound to PortDiscoveryService");
+      } catch (err) {
+        logger.warn(
+          "Failed to bind ChatResumeDispatcher to PortDiscoveryService",
           err,
         );
       }

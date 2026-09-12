@@ -683,6 +683,8 @@ const en = {
       failedTitle: "Auto-Resume Failed",
       failedDesc:
         "Could not auto-resume chat session. Your prompt has been saved.",
+      copyPrompt: "Copy Prompt",
+      promptCopied: "Prompt copied to clipboard",
     },
   },
   cloud: {

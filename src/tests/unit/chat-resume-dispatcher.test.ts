@@ -147,7 +147,7 @@ describe("ChatResumeDispatcher", () => {
       expect(result.success).toBe(true);
       expect(result.status).toBe("resumed");
       expect(mockRequester).toHaveBeenCalledWith(
-        "https://127.0.0.1:9000/SendUserCascadeMessage",
+        "https://127.0.0.1:9000/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage",
         expect.objectContaining({
           method: "POST",
           headers: expect.objectContaining({
@@ -155,6 +155,14 @@ describe("ChatResumeDispatcher", () => {
           }),
           body: JSON.stringify({
             cascadeId: "cascade-alpha",
+            items: [
+              {
+                chunk: {
+                  case: "text",
+                  value: "Write binary search in Go",
+                },
+              },
+            ],
             prompt: "Write binary search in Go",
             cascadeConfig: { requestedModel: { model: "gemini-1.5-pro" } },
             contextReferences: [],
@@ -363,6 +371,53 @@ describe("ChatResumeDispatcher", () => {
         accountEmail: "new@example.com",
       });
 
+      expect(result).not.toBeNull();
+      expect(result?.success).toBe(true);
+      expect(result?.resumptionId).toBe(snapshot.resumptionId);
+    });
+
+    it("waits for dynamically discovered port when port is restarting", async () => {
+      const { PortDiscoveryService } =
+        await import("@/modules/relay/port-discovery");
+      const mockPortDiscovery = new PortDiscoveryService();
+      dispatcher.bindPortDiscovery(mockPortDiscovery);
+
+      const snapshot = buffer.store({
+        appTarget: "app",
+        cascadeId: "c-dynamic-wait",
+        promptPayload: { prompt: "Hello dynamic port" },
+      });
+
+      // Target begins restarting
+      dispatcher.notifyTargetRestarting("app");
+      expect(mockPortDiscovery.isRestarting()).toBe(true);
+      expect(mockPortDiscovery.getPort()).toBeNull();
+
+      // Mock HTTP responses for handshake and dispatch
+      mockRequester.mockResolvedValueOnce({
+        status: 200,
+        headers: {},
+        data: `<script>window.__APP_CONFIG__ = {csrfToken: "t-dyn"};</script>`,
+      });
+      mockRequester.mockResolvedValueOnce({
+        status: 200,
+        headers: {},
+        data: JSON.stringify({ ok: true }),
+      });
+      mockRequester.mockResolvedValueOnce({
+        status: 200,
+        headers: {},
+        data: JSON.stringify({ ok: true }),
+      });
+
+      const triggerPromise = dispatcher.triggerResumptionForTarget("app");
+
+      // Simulate discovery of new port 59357 after 50ms
+      setTimeout(() => {
+        mockPortDiscovery.setPort(59357);
+      }, 50);
+
+      const result = await triggerPromise;
       expect(result).not.toBeNull();
       expect(result?.success).toBe(true);
       expect(result?.resumptionId).toBe(snapshot.resumptionId);

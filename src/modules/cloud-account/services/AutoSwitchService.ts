@@ -17,6 +17,32 @@ import {
   isRateLimitError,
   extractErrorMessage,
 } from "@/modules/cloud-account/utils/account-status";
+import { detectActiveTurn } from "@/modules/chat-resume/activeTurnDetector";
+import { chatResumeEvents } from "@/modules/chat-resume/telemetry";
+
+export function resolveQuotaGroupId(modelId: string): string {
+  const normalized = modelId.replace(/^models\//i, "").toLowerCase();
+  if (normalized.includes("image")) {
+    return normalized.includes("flash")
+      ? "gemini-3.1-flash-image"
+      : "gemini-3-pro-image";
+  }
+  if (normalized.includes("flash")) {
+    return "gemini-3-flash";
+  }
+  if (normalized.includes("pro")) {
+    return "gemini-3-pro-high";
+  }
+  if (
+    normalized.includes("claude") ||
+    normalized.includes("opus") ||
+    normalized.includes("sonnet") ||
+    normalized.includes("haiku")
+  ) {
+    return "claude";
+  }
+  return normalized;
+}
 
 interface AccountSelectionScore {
   priorityScore: number | null;
@@ -207,6 +233,7 @@ export class AutoSwitchService {
    */
   static async findBestAccount(
     currentAccountId: string,
+    activeModel?: string,
   ): Promise<CloudAccount | null> {
     const accounts = await CloudAccountRepo.getAccounts();
     const config =
@@ -222,7 +249,7 @@ export class AutoSwitchService {
       if (acc.status !== "active") return false; // Rate limited or expired accounts are skipped
       if (!acc.quota) return false; // No quota data means risky
 
-      return !this.isAccountDepleted(acc);
+      return !this.isAccountDepleted(acc, activeModel);
     });
 
     if (candidates.length === 0) return null;
@@ -531,8 +558,14 @@ export class AutoSwitchService {
       return result.switched;
     }
 
-    // Check if current is depleted
-    const isDepleted = this.isAccountDepleted(currentAccount);
+    // Check if there is an active turn currently executing
+    const detectionTarget =
+      effectiveTarget === "all" ? undefined : effectiveTarget;
+    const activeTurn = await detectActiveTurn(detectionTarget);
+    const activeModel = activeTurn?.promptPayload?.requestedModel;
+
+    // Check if current is depleted, scoped to the active model
+    const isDepleted = this.isAccountDepleted(currentAccount, activeModel);
 
     if (isDepleted) {
       if (this.isCircuitBreakerTripped(accounts.length)) {
@@ -545,11 +578,69 @@ export class AutoSwitchService {
         return false;
       }
 
+      // Turn Draining: if an active turn is running, wait for it to complete or 60s timeout
+      if (activeTurn) {
+        chatResumeEvents.recordTurnDrainingInitiated({
+          appTarget: detectionTarget ?? "app",
+          activeModel: activeModel ?? "unknown",
+          currentQuota: this.getAccountModelQuota(currentAccount, activeModel),
+          timeoutMs: 60000,
+        });
+        logger.info(
+          "AutoSwitch: Active turn detected during background poll low-quota. Initiating turn draining for up to 60s...",
+        );
+
+        const drainStart = Date.now();
+        const DRAIN_TIMEOUT_MS = 60_000;
+        const POLL_INTERVAL_MS = 1_000;
+        let turnDrained = false;
+
+        while (Date.now() - drainStart < DRAIN_TIMEOUT_MS) {
+          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+          // Check if hard rate limit occurred mid-drain
+          const refreshedCurrent = await CloudAccountRepo.getAccount(
+            currentAccount.id,
+          );
+          if (refreshedCurrent?.status === "rate_limited") {
+            logger.warn(
+              "AutoSwitch: Current account encountered hard rate limit mid-drain; aborting draining loop immediately.",
+            );
+            break;
+          }
+
+          const stillActive = await detectActiveTurn(detectionTarget);
+          if (!stillActive) {
+            turnDrained = true;
+            break;
+          }
+        }
+
+        if (turnDrained) {
+          const drainDurationMs = Date.now() - drainStart;
+          chatResumeEvents.recordTurnDrained({
+            appTarget: detectionTarget ?? "app",
+            drainDurationMs,
+            completedStatus: 3,
+          });
+          logger.info(
+            `AutoSwitch: Turn draining completed cleanly in ${drainDurationMs}ms. Proceeding with clean account switch.`,
+          );
+        } else {
+          logger.warn(
+            "AutoSwitch: Turn draining reached 60s timeout or rate limit; proceeding with switch.",
+          );
+        }
+      }
+
       logger.info(
-        `AutoSwitch: Current account ${currentAccount.email} is depleted. Finding highest 5h candidate...`,
+        `AutoSwitch: Current account ${currentAccount.email} is depleted for ${activeModel ?? "active model"}. Finding candidate...`,
       );
 
-      const nextAccount = await this.findBestAccount(currentAccount.id);
+      const nextAccount = await this.findBestAccount(
+        currentAccount.id,
+        activeModel,
+      );
       if (nextAccount) {
         const quota5h = this.getAccount5hQuotaScore(nextAccount);
         const quotaPct = Math.round(quota5h.bottleneck5h);
@@ -582,9 +673,81 @@ export class AutoSwitchService {
     return false;
   }
 
-  static isAccountDepleted(account: CloudAccount): boolean {
+  static getAccountModelQuota(account: CloudAccount, modelId?: string): number {
+    if (!account.quota) return 0;
+    if (!modelId) {
+      return this.getAccount5hQuotaScore(account).bottleneck5h;
+    }
+    const targetGroup = resolveQuotaGroupId(modelId);
+    if (account.quota.models) {
+      const matches = Object.entries(account.quota.models).filter(
+        ([id]) => resolveQuotaGroupId(id) === targetGroup,
+      );
+      if (matches.length > 0) {
+        return Math.max(...matches.map(([, m]) => m.percentage));
+      }
+    }
+    return this.getAccount5hQuotaScore(account).bottleneck5h;
+  }
+
+  static isAccountDepleted(
+    account: CloudAccount,
+    activeModel?: string,
+  ): boolean {
     if (!account.quota) return false;
     const THRESHOLD = 5;
+
+    // When scoped to an active model, evaluate quota exclusively for that model's quota group
+    if (activeModel) {
+      const targetGroupId = resolveQuotaGroupId(activeModel);
+      let activeQuotaPct = 100;
+      let matchedModel = false;
+
+      if (account.quota.models) {
+        const matchingModels = Object.entries(account.quota.models).filter(
+          ([modelId]) => resolveQuotaGroupId(modelId) === targetGroupId,
+        );
+
+        if (matchingModels.length > 0) {
+          matchedModel = true;
+          activeQuotaPct = Math.max(
+            ...matchingModels.map(([, m]) => m.percentage),
+          );
+        }
+      }
+
+      if (account.quota.quota_groups && account.quota.quota_groups.length > 0) {
+        for (const group of account.quota.quota_groups) {
+          const groupText = [group.display_name, group.description]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          if (
+            groupText.includes(targetGroupId) ||
+            groupText.includes(activeModel.toLowerCase())
+          ) {
+            const lowestBucket = group.buckets.reduce(
+              (min, b) => Math.min(min, b.remaining_fraction * 100),
+              100,
+            );
+            activeQuotaPct = matchedModel
+              ? Math.min(activeQuotaPct, lowestBucket)
+              : lowestBucket;
+            matchedModel = true;
+          }
+        }
+      }
+
+      const isDepleted = matchedModel ? activeQuotaPct < THRESHOLD : false;
+      chatResumeEvents.recordAccountDepletedModelScoped({
+        accountId: account.id,
+        activeModel,
+        quotaPercentage: activeQuotaPct,
+        isDepleted,
+      });
+
+      return isDepleted;
+    }
 
     const config =
       CloudAccountSettingsStore.getSetting(
@@ -593,7 +756,7 @@ export class AutoSwitchService {
         AutoSwitchModelsConfigSchema,
       ) || {};
 
-    const enabledModels = Object.entries(account.quota.models).filter(
+    const enabledModels = Object.entries(account.quota.models || {}).filter(
       ([modelId]) => {
         const modelConfig = this.getModelConfig(config, modelId);
         return modelConfig ? modelConfig.enabled : true;
@@ -606,26 +769,7 @@ export class AutoSwitchService {
 
     const maxPercentageByQuotaGroup = new Map<string, number>();
     for (const [modelId, model] of enabledModels) {
-      const normalizedModelId = modelId.replace(/^models\//i, "").toLowerCase();
-      let quotaGroupId = normalizedModelId;
-
-      if (normalizedModelId.includes("image")) {
-        quotaGroupId = normalizedModelId.includes("flash")
-          ? "gemini-3.1-flash-image"
-          : "gemini-3-pro-image";
-      } else if (normalizedModelId.includes("flash")) {
-        quotaGroupId = "gemini-3-flash";
-      } else if (normalizedModelId.includes("pro")) {
-        quotaGroupId = "gemini-3-pro-high";
-      } else if (
-        normalizedModelId.includes("claude") ||
-        normalizedModelId.includes("opus") ||
-        normalizedModelId.includes("sonnet") ||
-        normalizedModelId.includes("haiku")
-      ) {
-        quotaGroupId = "claude";
-      }
-
+      const quotaGroupId = resolveQuotaGroupId(modelId);
       const currentMaximum = maxPercentageByQuotaGroup.get(quotaGroupId) ?? -1;
       if (model.percentage > currentMaximum) {
         maxPercentageByQuotaGroup.set(quotaGroupId, model.percentage);

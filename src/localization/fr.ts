@@ -711,6 +711,8 @@ const fr = {
       failedTitle: "Échec de la reprise automatique",
       failedDesc:
         "Impossible de reprendre automatiquement la session de chat. Votre invite a été enregistrée.",
+      copyPrompt: "Copier l'invite",
+      promptCopied: "Invite copiée dans le presse-papiers",
     },
   },
   cloud: {

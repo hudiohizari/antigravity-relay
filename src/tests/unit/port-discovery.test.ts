@@ -264,6 +264,44 @@ describe("PortDiscoveryService", () => {
       expect(service.isRestarting()).toBe(false);
     });
 
+    it("should reject stale port from log while restarting and accept newly discovered port", async () => {
+      fs.writeFileSync(
+        testLogPath,
+        "listening on https://127.0.0.1:57550/\n",
+        "utf-8",
+      );
+
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        initialPort: 57550,
+      });
+
+      expect(service.getPort()).toBe(57550);
+
+      // Antigravity begins restart
+      service.setRestarting(true);
+      expect(service.getPort()).toBeNull();
+      expect(service.isRestarting()).toBe(true);
+
+      // checkOnce reads the same log before new process writes to it
+      const staleDiscovered = await service.checkOnce();
+      expect(staleDiscovered).toBeNull();
+      expect(service.getPort()).toBeNull();
+      expect(service.isRestarting()).toBe(true);
+
+      // New process boots and appends new port to log
+      fs.appendFileSync(
+        testLogPath,
+        "[Auto-Restart] Port changed! Reloading all windows with URL: https://127.0.0.1:59357/\n",
+        "utf-8",
+      );
+
+      const newDiscovered = await service.checkOnce();
+      expect(newDiscovered).toBe(59357);
+      expect(service.getPort()).toBe(59357);
+      expect(service.isRestarting()).toBe(false);
+    });
+
     it("should handle reading large log files (>64KB) efficiently", async () => {
       const padding = "x".repeat(70000) + "\n";
       const targetLine = "listening on https://127.0.0.1:49152/\n";

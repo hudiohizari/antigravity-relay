@@ -280,4 +280,29 @@ describe("SettingsPage - Automation & Switching Card", () => {
     expect(textWrapper).toBeTruthy();
     expect(textWrapper?.className).toContain("flex-1");
   });
+
+  it("enforces proper accessibility ARIA structure with aria-labelledby and aria-describedby", () => {
+    render(<SettingsPage />);
+
+    const switchEl = screen.getByRole("switch", {
+      name: "Auto-Resume Active Chat Sessions",
+    });
+
+    expect(switchEl.getAttribute("aria-labelledby")).toBe(
+      "auto-resume-chat-label",
+    );
+    expect(switchEl.getAttribute("aria-describedby")).toBe(
+      "auto-resume-chat-badge auto-resume-chat-desc",
+    );
+
+    const badge = document.getElementById("auto-resume-chat-badge");
+    expect(badge).toBeTruthy();
+    expect(badge?.textContent).toBe("App & IDE only");
+
+    const desc = document.getElementById("auto-resume-chat-desc");
+    expect(desc).toBeTruthy();
+    expect(desc?.textContent).toContain(
+      "Automatically resume in-flight chat and Cascade prompts",
+    );
+  });
 });

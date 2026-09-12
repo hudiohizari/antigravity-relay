@@ -1,8 +1,13 @@
 import fs from "node:fs";
 import Database from "better-sqlite3";
 import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
-import { getAntigravityDbPaths } from "@/shared/platform/paths";
+import {
+  getAntigravityConversationDbPaths,
+  getAntigravityDbPaths,
+} from "@/shared/platform/paths";
 import { logger } from "@/shared/logging/logger";
+import { chatResumeEvents } from "./telemetry";
+import { isCliTarget } from "./activeTurnDetector";
 
 export interface WalCheckpointResult {
   attempted: number;
@@ -18,16 +23,21 @@ export interface WalCheckpointResult {
 
 export interface WalCheckpointOptions {
   timeoutMs?: number;
+  globalTimeoutMs?: number;
   dbPaths?: string[];
 }
+
+export const DEFAULT_PER_DB_TIMEOUT_MS = 500;
+export const DEFAULT_GLOBAL_CHECKPOINT_TIMEOUT_MS = 1500;
 
 export async function checkpointStateDatabases(
   target?: AntigravityAppTarget,
   options?: WalCheckpointOptions,
 ): Promise<WalCheckpointResult> {
   const startTime = Date.now();
-  const timeoutMs = options?.timeoutMs ?? 1000;
-  const paths = options?.dbPaths ?? getAntigravityDbPaths(target);
+  const perDbTimeoutMs = options?.timeoutMs ?? DEFAULT_PER_DB_TIMEOUT_MS;
+  const globalTimeoutMs =
+    options?.globalTimeoutMs ?? DEFAULT_GLOBAL_CHECKPOINT_TIMEOUT_MS;
 
   const result: WalCheckpointResult = {
     attempted: 0,
@@ -37,7 +47,32 @@ export async function checkpointStateDatabases(
     details: [],
   };
 
-  for (const dbPath of paths) {
+  if (isCliTarget(target)) {
+    chatResumeEvents.recordSkippedCli();
+    return result;
+  }
+
+  // Resolve candidate paths: conversation databases (top 5) + state.vscdb storage databases
+  const candidatePaths: string[] = [];
+  if (options?.dbPaths) {
+    candidatePaths.push(...options.dbPaths);
+  } else {
+    for (const p of getAntigravityConversationDbPaths(target)) {
+      if (!candidatePaths.includes(p)) candidatePaths.push(p);
+    }
+    for (const p of getAntigravityDbPaths(target)) {
+      if (!candidatePaths.includes(p)) candidatePaths.push(p);
+    }
+  }
+
+  for (const dbPath of candidatePaths) {
+    if (Date.now() - startTime >= globalTimeoutMs) {
+      logger.warn(
+        `WAL checkpoint cumulative global timeout (${globalTimeoutMs}ms) reached; aborting remaining candidates`,
+      );
+      break;
+    }
+
     if (!fs.existsSync(dbPath)) {
       continue;
     }
@@ -51,7 +86,7 @@ export async function checkpointStateDatabases(
       const dbInstance: Database.Database = new DatabaseConstructor(dbPath, {
         readonly: false,
         fileMustExist: true,
-        timeout: timeoutMs,
+        timeout: perDbTimeoutMs,
       });
       db = dbInstance;
 
@@ -88,5 +123,13 @@ export async function checkpointStateDatabases(
   }
 
   result.durationMs = Date.now() - startTime;
+
+  chatResumeEvents.recordWalCheckpointExecuted({
+    attempted: result.attempted,
+    succeeded: result.succeeded,
+    failed: result.failed,
+    durationMs: result.durationMs,
+  });
+
   return result;
 }

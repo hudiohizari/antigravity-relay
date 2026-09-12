@@ -132,6 +132,14 @@ vi.mock("better-sqlite3", () => {
             return [];
           },
           get: () => {
+            if (q.includes("sqlite_master")) {
+              const match = q.match(/name\s*=\s*'([^']+)'/i);
+              if (match) {
+                const found = db.tables.find((t) => t.name === match[1]);
+                return found ? { name: found.name } : undefined;
+              }
+              return db.tables[0] ? { name: db.tables[0].name } : undefined;
+            }
             if (q.includes("WHERE status = 2")) {
               for (const table of db.tables) {
                 const row = table.rows.find((r) => r.status === 2);

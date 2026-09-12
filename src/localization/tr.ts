@@ -694,6 +694,8 @@ const tr = {
       failedTitle: "Otomatik Sürdürme Başarısız",
       failedDesc:
         "Sohbet oturumu otomatik olarak sürdürülemedi. İsteminiz kaydedildi.",
+      copyPrompt: "İstemi Kopyala",
+      promptCopied: "İstem panoya kopyalandı",
     },
   },
   cloud: {
