@@ -9,6 +9,7 @@ import {
   getAntigravityExecutablePath,
   getAntigravityTargetInstallationStatus,
   getConfiguredAntigravityArgs,
+  isAgyProcessCandidate,
   isConfiguredTargetExecutableProcessCandidate,
   isTargetAntigravityExecutableProcessCandidate,
   isTargetAntigravityProcessCandidate,
@@ -55,6 +56,21 @@ function getProcessSearchNames(
   includeAllProcesses = false,
 ): string[] {
   const normalizedTarget = resolveAntigravityAppTarget(target);
+  if (normalizedTarget === "cli") {
+    const names = ["agy", "agy.exe"];
+    const configuredPath = getAntigravityExecutablePath("cli");
+    if (configuredPath) {
+      const baseName = path.basename(configuredPath);
+      if (!names.includes(baseName)) {
+        names.push(baseName);
+      }
+    }
+    if (includeAllProcesses) {
+      names.push("");
+    }
+    return names;
+  }
+
   const searchNames =
     normalizedTarget === "ide"
       ? ["Antigravity IDE", "antigravity-ide", "Antigravity", "antigravity"]
@@ -74,11 +90,18 @@ function getWindowsTargetImageNames(
   target?: AntigravityAppTarget | null,
 ): string[] {
   const imageNames = new Set<string>();
+  const resolvedTarget = resolveAntigravityAppTarget(target);
   const defaultImageName =
-    resolveAntigravityAppTarget(target) === "ide"
+    resolvedTarget === "ide"
       ? "Antigravity IDE.exe"
-      : "Antigravity.exe";
+      : resolvedTarget === "cli"
+        ? "agy.exe"
+        : "Antigravity.exe";
   imageNames.add(defaultImageName);
+
+  if (resolvedTarget === "cli") {
+    imageNames.add("agy.cmd");
+  }
 
   const executablePath = getAntigravityExecutablePath(target);
   if (executablePath) {
@@ -376,6 +399,7 @@ function isClosableTargetProcessCandidate(
 async function hasClosableTargetProcess(
   target?: AntigravityAppTarget | null,
 ): Promise<boolean> {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
   const processes = await findAntigravityProcesses(target);
 
   return processes.some((processInfo) => {
@@ -385,9 +409,12 @@ async function hasClosableTargetProcess(
 
     const candidate = mapProcessInfoToCandidate(processInfo);
     const commandLine = candidate.commandLine;
+    const isAgyBinary = isAgyProcessCandidate(candidate);
+
     if (
-      commandLine.includes("Antigravity Relay") ||
-      commandLine.includes("antigravity-relay")
+      !(resolvedTarget === "cli" && isAgyBinary) &&
+      (commandLine.includes("Antigravity Relay") ||
+        commandLine.includes("antigravity-relay"))
     ) {
       return false;
     }
@@ -400,18 +427,21 @@ async function findClosableTargetProcesses(
   target?: AntigravityAppTarget | null,
   includeAllProcesses = false,
 ): Promise<ProcessInfo[]> {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
   const processes = await findAntigravityProcesses(target, includeAllProcesses);
 
   return processes.filter((processInfo) => {
     const candidate = mapProcessInfoToCandidate(processInfo);
     const commandLine = candidate.commandLine;
+    const isAgyBinary = isAgyProcessCandidate(candidate);
 
     if (processInfo.pid === process.pid) {
       return false;
     }
     if (
-      commandLine.includes("Antigravity Relay") ||
-      commandLine.includes("antigravity-relay")
+      !(resolvedTarget === "cli" && isAgyBinary) &&
+      (commandLine.includes("Antigravity Relay") ||
+        commandLine.includes("antigravity-relay"))
     ) {
       return false;
     }
@@ -449,11 +479,16 @@ export async function isProcessRunning(
       const processName = candidate.name.toLowerCase();
       const commandLine = candidate.commandLine.toLowerCase();
 
-      // Skip relay process
-      if (
+      // Skip relay process for non-CLI targets (or when candidate is target candidate)
+      const isRelayCandidate =
         processName.includes("relay") ||
         commandLine.includes("relay") ||
-        commandLine.includes("antigravity-relay")
+        commandLine.includes("antigravity-relay");
+
+      if (
+        isRelayCandidate &&
+        resolvedTarget !== "cli" &&
+        !isTargetAntigravityProcessCandidate(candidate, target)
       ) {
         continue;
       }

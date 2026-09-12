@@ -28,11 +28,14 @@ export interface WindowsProcessInfo {
 }
 
 export function isSafeWindowsImageName(imageName: string): boolean {
+  const lower = imageName.toLowerCase();
+  const hasValidExtension = lower.endsWith(".exe") || lower.endsWith(".cmd");
+
   if (
     imageName !== imageName.trim() ||
     imageName !== path.win32.basename(imageName) ||
-    imageName.length <= ".exe".length ||
-    !imageName.toLowerCase().endsWith(".exe")
+    imageName.length <= 4 ||
+    !hasValidExtension
   ) {
     return false;
   }

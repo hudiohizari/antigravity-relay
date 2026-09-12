@@ -1421,6 +1421,103 @@ describe("getAgyCliTokenPaths", () => {
     expect(isNotApp).toBe(false);
   });
 
+  it("detects agy CLI process candidate even when running inside antigravity-relay directory or passing relay arguments", async () => {
+    setPlatform("darwin");
+    const paths = await import("../../shared/platform/paths");
+
+    // Process running inside an antigravity-relay directory path
+    const insideRelayDir = paths.isTargetAntigravityProcessCandidate(
+      {
+        name: "agy",
+        commandLine:
+          "/Users/hhizari/WebProjects/antigravity-relay/bin/agy run --port=8080",
+        executablePath: "/Users/hhizari/WebProjects/antigravity-relay/bin/agy",
+      },
+      "cli",
+    );
+    expect(insideRelayDir).toBe(true);
+
+    // Process with arguments mentioning antigravity-relay
+    const withRelayArgs = paths.isTargetAntigravityProcessCandidate(
+      {
+        name: "agy",
+        commandLine:
+          "agy --cwd=/Users/hhizari/WebProjects/antigravity-relay --verbose",
+      },
+      "cli",
+    );
+    expect(withRelayArgs).toBe(true);
+
+    // Must NOT match "app" or "ide" targets
+    expect(
+      paths.isTargetAntigravityProcessCandidate(
+        {
+          name: "agy",
+          commandLine:
+            "/Users/hhizari/WebProjects/antigravity-relay/bin/agy run",
+          executablePath:
+            "/Users/hhizari/WebProjects/antigravity-relay/bin/agy",
+        },
+        "app",
+      ),
+    ).toBe(false);
+
+    expect(
+      paths.isTargetAntigravityProcessCandidate(
+        {
+          name: "agy",
+          commandLine:
+            "/Users/hhizari/WebProjects/antigravity-relay/bin/agy run",
+          executablePath:
+            "/Users/hhizari/WebProjects/antigravity-relay/bin/agy",
+        },
+        "ide",
+      ),
+    ).toBe(false);
+
+    // Genuine Antigravity Relay app must NOT match "cli"
+    const genuineRelayApp = paths.isTargetAntigravityProcessCandidate(
+      {
+        name: "Antigravity Relay",
+        commandLine:
+          "/Applications/Antigravity Relay.app/Contents/MacOS/Antigravity Relay",
+        executablePath:
+          "/Applications/Antigravity Relay.app/Contents/MacOS/Antigravity Relay",
+      },
+      "cli",
+    );
+    expect(genuineRelayApp).toBe(false);
+  });
+
+  it("detects Windows agy.exe and agy.cmd as CLI process candidates", async () => {
+    setPlatform("win32");
+    const paths = await import("../../shared/platform/paths");
+
+    const agyExeCandidate = paths.isTargetAntigravityProcessCandidate(
+      {
+        name: "agy.exe",
+        commandLine:
+          'C:\\Users\\User\\AppData\\Local\\Programs\\agy\\agy.exe --dir="C:\\Projects\\antigravity-relay"',
+        executablePath:
+          "C:\\Users\\User\\AppData\\Local\\Programs\\agy\\agy.exe",
+      },
+      "cli",
+      { platform: "win32" },
+    );
+    expect(agyExeCandidate).toBe(true);
+
+    const agyCmdCandidate = paths.isTargetAntigravityProcessCandidate(
+      {
+        name: "agy.cmd",
+        commandLine: "C:\\Users\\User\\AppData\\Roaming\\npm\\agy.cmd start",
+        executablePath: "C:\\Users\\User\\AppData\\Roaming\\npm\\agy.cmd",
+      },
+      "cli",
+      { platform: "win32" },
+    );
+    expect(agyCmdCandidate).toBe(true);
+  });
+
   it("should resolve configured antigravity_cli_executable for cli target", async () => {
     vi.resetModules();
     setPlatform("darwin");

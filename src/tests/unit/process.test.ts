@@ -40,13 +40,31 @@ vi.mock("@/shared/logging/logger", () => ({
 
 // Mock paths module to avoid child_process issues
 vi.mock("@/shared/platform/paths", () => ({
-  getAntigravityExecutablePath: vi.fn(() => "/path/to/antigravity"),
+  getAntigravityExecutablePath: vi.fn((target) => {
+    if (target === "cli") return "/path/to/agy";
+    return "/path/to/antigravity";
+  }),
   getConfiguredAntigravityArgs: vi.fn(() => []),
   rememberRunningExecutablePath: vi.fn(),
   getLastKnownAntigravityExecutablePath: vi.fn(),
   clearLastKnownAntigravityExecutablePaths: vi.fn(),
+  isAgyProcessCandidate: vi.fn((processItem) => {
+    const name = (processItem.name || "").toLowerCase();
+    const commandLine = (processItem.commandLine || "").toLowerCase();
+    const cmdExecutable = commandLine.split(" ")[0] || "";
+    const base = cmdExecutable.split(/[/\\]/).pop() || "";
+    return (
+      name === "agy" ||
+      name === "agy.exe" ||
+      name === "agy.cmd" ||
+      base === "agy" ||
+      base === "agy.exe" ||
+      base === "agy.cmd"
+    );
+  }),
   isConfiguredTargetExecutableProcessCandidate: vi.fn((processItem, target) => {
-    const normalizedTarget = target === "ide" ? "ide" : "classic";
+    const normalizedTarget =
+      target === "ide" ? "ide" : target === "cli" ? "cli" : "classic";
     return (
       normalizedTarget === "classic" &&
       processItem.executablePath ===
@@ -55,9 +73,16 @@ vi.mock("@/shared/platform/paths", () => ({
   }),
   isTargetAntigravityExecutableProcessCandidate: vi.fn(
     (processItem, target) => {
-      const normalizedTarget = target === "ide" ? "ide" : "classic";
+      const normalizedTarget =
+        target === "ide" ? "ide" : target === "cli" ? "cli" : "classic";
       const executablePath = processItem.executablePath;
 
+      if (normalizedTarget === "cli") {
+        return (
+          executablePath === "/usr/local/bin/agy" ||
+          executablePath === "C:\\Program Files\\agy\\agy.exe"
+        );
+      }
       if (normalizedTarget === "ide") {
         return (
           executablePath ===
@@ -71,9 +96,27 @@ vi.mock("@/shared/platform/paths", () => ({
     },
   ),
   isTargetAntigravityProcessCandidate: vi.fn((processItem, target) => {
-    const normalizedTarget = target === "ide" ? "ide" : "classic";
+    const normalizedTarget =
+      target === "ide" ? "ide" : target === "cli" ? "cli" : "classic";
     const name = processItem.name.toLowerCase();
     const commandLine = processItem.commandLine.toLowerCase();
+    const cmdExecutable = commandLine.split(" ")[0] || "";
+    const base = cmdExecutable.split(/[/\\]/).pop() || "";
+    const isAgy =
+      name === "agy" ||
+      name === "agy.exe" ||
+      name === "agy.cmd" ||
+      base === "agy" ||
+      base === "agy.exe" ||
+      base === "agy.cmd";
+
+    if (isAgy) {
+      return normalizedTarget === "cli";
+    }
+    if (normalizedTarget === "cli") {
+      return false;
+    }
+
     const isIde =
       name.includes("antigravity ide") ||
       name.includes("antigravity-ide") ||
@@ -247,6 +290,8 @@ describe("Windows process utilities", () => {
 
   it("should reject invalid Windows image names before starting taskkill", async () => {
     expect(isSafeWindowsImageName("Antigravity.exe")).toBe(true);
+    expect(isSafeWindowsImageName("agy.exe")).toBe(true);
+    expect(isSafeWindowsImageName("agy.cmd")).toBe(true);
     expect(isSafeWindowsImageName("O'Brien & Company.exe")).toBe(true);
     expect(isSafeWindowsImageName("..\\Antigravity.exe")).toBe(false);
     expect(isSafeWindowsImageName("*.exe")).toBe(false);
@@ -686,6 +731,86 @@ describe("Process Handler", () => {
       ]);
 
       const result = await isProcessRunning();
+      expect(result).toBe(false);
+    });
+
+    it("should return true when agy process is found for target cli on Unix/macOS", async () => {
+      Object.defineProperty(process, "platform", {
+        value: "darwin",
+        configurable: true,
+      });
+      Object.defineProperty(process, "pid", {
+        value: 1000,
+        configurable: true,
+      });
+
+      mockFindProcess.mockResolvedValue([
+        {
+          pid: 12345,
+          name: "agy",
+          cmd: "/usr/local/bin/agy auth login",
+        },
+      ]);
+
+      const result = await isProcessRunning("cli");
+      expect(result).toBe(true);
+      expect(mockFindProcess).toHaveBeenCalledWith("name", "agy", false);
+    });
+
+    it("should return true when running agy inside an antigravity-relay directory", async () => {
+      Object.defineProperty(process, "platform", {
+        value: "darwin",
+        configurable: true,
+      });
+      Object.defineProperty(process, "pid", {
+        value: 1000,
+        configurable: true,
+      });
+
+      mockFindProcess.mockResolvedValue([
+        {
+          pid: 12345,
+          name: "agy",
+          cmd: "/Users/hhizari/WebProjects/antigravity-relay/bin/agy run --port=8080",
+        },
+      ]);
+
+      const result = await isProcessRunning("cli");
+      expect(result).toBe(true);
+    });
+
+    it("should return true on Windows when agy.exe process is running", async () => {
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+        configurable: true,
+      });
+      Object.defineProperty(process, "pid", {
+        value: 1000,
+        configurable: true,
+      });
+
+      psListMock.mockResolvedValueOnce([
+        { name: "agy.exe", pid: 12345, ppid: 1000 },
+      ]);
+
+      const result = await isProcessRunning("cli");
+      expect(result).toBe(true);
+      expect(psListMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("should return false when no agy CLI process is running", async () => {
+      Object.defineProperty(process, "platform", {
+        value: "darwin",
+        configurable: true,
+      });
+      Object.defineProperty(process, "pid", {
+        value: 1000,
+        configurable: true,
+      });
+
+      mockFindProcess.mockResolvedValue([]);
+
+      const result = await isProcessRunning("cli");
       expect(result).toBe(false);
     });
   });

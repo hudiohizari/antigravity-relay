@@ -341,6 +341,49 @@ export interface AntigravityProcessCandidate {
   executablePath?: string;
 }
 
+export function isAgyProcessCandidate(
+  processItem: AntigravityProcessCandidate,
+  options?: PathResolutionOptions,
+): boolean {
+  const nameLower = processItem.name.toLowerCase();
+  const configuredCliPath = getConfiguredAntigravityExecutablePath(
+    "cli",
+    false,
+    options,
+  );
+  const commandExecutablePath =
+    parseCommandLineArguments(processItem.commandLine)[0] || "";
+  const commandBase = (
+    commandExecutablePath.includes("\\")
+      ? path.win32.basename(commandExecutablePath)
+      : path.basename(commandExecutablePath)
+  ).toLowerCase();
+  const processExecutablePath = processItem.executablePath ?? "";
+
+  return (
+    nameLower === "agy" ||
+    nameLower === "agy.exe" ||
+    nameLower === "agy.cmd" ||
+    commandBase === "agy" ||
+    commandBase === "agy.exe" ||
+    commandBase === "agy.cmd" ||
+    (configuredCliPath !== null &&
+      processExecutablePath !== "" &&
+      areExecutablePathsEquivalent(
+        configuredCliPath,
+        processExecutablePath,
+        options,
+      )) ||
+    (configuredCliPath !== null &&
+      commandExecutablePath !== "" &&
+      areExecutablePathsEquivalent(
+        configuredCliPath,
+        commandExecutablePath,
+        options,
+      ))
+  );
+}
+
 export function isTargetAntigravityProcessCandidate(
   processItem: AntigravityProcessCandidate,
   target?: AntigravityAppTarget | null,
@@ -359,11 +402,6 @@ export function isTargetAntigravityProcessCandidate(
     false,
     options,
   );
-  const configuredCliPath = getConfiguredAntigravityExecutablePath(
-    "cli",
-    false,
-    options,
-  );
   const strictConfiguredClassicPath = getConfiguredAntigravityExecutablePath(
     "classic",
     true,
@@ -376,7 +414,11 @@ export function isTargetAntigravityProcessCandidate(
   );
   const commandExecutablePath =
     parseCommandLineArguments(processItem.commandLine)[0] || "";
-  const commandBase = path.basename(commandExecutablePath).toLowerCase();
+  const commandBase = (
+    commandExecutablePath.includes("\\")
+      ? path.win32.basename(commandExecutablePath)
+      : path.basename(commandExecutablePath)
+  ).toLowerCase();
   const processExecutablePath = processItem.executablePath ?? "";
   const executableIdentity = `${processItem.executablePath || ""} ${commandExecutablePath}`;
   const hasAntigravityProcessIdentity =
@@ -408,32 +450,21 @@ export function isTargetAntigravityProcessCandidate(
     return false;
   }
 
+  const isAgyBinary = isAgyProcessCandidate(processItem, options);
+
+  if (isAgyBinary) {
+    return normalizedTarget === "cli" || normalizedTarget === ("agy" as any);
+  }
+
+  if (normalizedTarget === "cli" || normalizedTarget === ("agy" as any)) {
+    return false;
+  }
+
   if (
     nameLower.includes("relay") ||
     cmdLower.includes("relay") ||
     cmdLower.includes("antigravity-relay")
   ) {
-    return false;
-  }
-
-  const isAgyBinary =
-    nameLower === "agy" ||
-    nameLower === "agy.exe" ||
-    commandBase === "agy" ||
-    commandBase === "agy.exe" ||
-    (configuredCliPath !== null &&
-      processExecutablePath !== "" &&
-      areExecutablePathsEquivalent(
-        configuredCliPath,
-        processExecutablePath,
-        options,
-      ));
-
-  if (normalizedTarget === "cli" || normalizedTarget === ("agy" as any)) {
-    return isAgyBinary;
-  }
-
-  if (isAgyBinary) {
     return false;
   }
 
