@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ChatResumeDispatcher,
   extractCsrfTokenFromHtml,
+  normalizeModelToProtoEnum,
   type HttpRequester,
 } from "@/modules/chat-resume/ChatResumeDispatcher";
 import { SessionContinuityBuffer } from "@/modules/chat-resume/SessionContinuityBuffer";
@@ -157,6 +158,7 @@ describe("ChatResumeDispatcher", () => {
             cascadeId: "cascade-alpha",
             items: [
               {
+                text: "Write binary search in Go",
                 chunk: {
                   case: "text",
                   value: "Write binary search in Go",
@@ -164,7 +166,21 @@ describe("ChatResumeDispatcher", () => {
               },
             ],
             prompt: "Write binary search in Go",
-            cascadeConfig: { requestedModel: { model: "gemini-1.5-pro" } },
+            cascadeConfig: {
+              model: "gemini-1.5-pro",
+              temperature: 0.2,
+              plannerConfig: {
+                requestedModel: {
+                  model: "MODEL_PLACEHOLDER_M318",
+                  choice: { case: "model", value: "MODEL_PLACEHOLDER_M318" },
+                },
+                planModel: "MODEL_PLACEHOLDER_M318",
+                modelName: "gemini-1.5-pro",
+              },
+              requestedModel: {
+                model: "MODEL_PLACEHOLDER_M318",
+              },
+            },
             contextReferences: [],
           }),
         }),
@@ -196,6 +212,38 @@ describe("ChatResumeDispatcher", () => {
       );
 
       chatResumeEvents.off("resumption-status", statusListener);
+    });
+
+    it("dispatches continuation prompt 'Continue your previous response.' when snapshot isInterrupted is true", async () => {
+      const snapshot = buffer.store({
+        appTarget: "app",
+        cascadeId: "cascade-interrupted",
+        promptPayload: {
+          prompt: "The user original question",
+          requestedModel: "gemini-3.8-flash-high",
+        },
+        isInterrupted: true,
+      });
+
+      mockRequester.mockResolvedValueOnce({
+        status: 200,
+        headers: {},
+        data: JSON.stringify({ messageId: "msg-cont" }),
+      });
+
+      const result = await dispatcher.dispatchSnapshot(
+        snapshot,
+        9000,
+        "valid-csrf",
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockRequester).toHaveBeenCalledWith(
+        "https://127.0.0.1:9000/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage",
+        expect.objectContaining({
+          body: expect.stringContaining("Continue your previous response."),
+        }),
+      );
     });
 
     it("does not silently downgrade model on 403 quota error; cleanly aborts and preserves prompt in draft scratch", async () => {
@@ -421,6 +469,51 @@ describe("ChatResumeDispatcher", () => {
       expect(result).not.toBeNull();
       expect(result?.success).toBe(true);
       expect(result?.resumptionId).toBe(snapshot.resumptionId);
+    });
+  });
+
+  describe("normalizeModelToProtoEnum", () => {
+    it("preserves already-valid protobuf Model enum identifiers", () => {
+      expect(normalizeModelToProtoEnum("MODEL_PLACEHOLDER_M318")).toEqual({
+        enumModel: "MODEL_PLACEHOLDER_M318",
+      });
+      expect(normalizeModelToProtoEnum("MODEL_CLAUDE_4_SONNET")).toEqual({
+        enumModel: "MODEL_CLAUDE_4_SONNET",
+      });
+    });
+
+    it("maps raw Gemini model names to MODEL_PLACEHOLDER_M318 with modelName preserved", () => {
+      expect(normalizeModelToProtoEnum("gemini-3.8-flash-high")).toEqual({
+        enumModel: "MODEL_PLACEHOLDER_M318",
+        modelName: "gemini-3.8-flash-high",
+      });
+      expect(normalizeModelToProtoEnum("gemini-2.5-pro")).toEqual({
+        enumModel: "MODEL_PLACEHOLDER_M318",
+        modelName: "gemini-2.5-pro",
+      });
+    });
+
+    it("maps raw Claude model names to MODEL_CLAUDE_4_SONNET with modelName preserved", () => {
+      expect(normalizeModelToProtoEnum("claude-3-5-sonnet")).toEqual({
+        enumModel: "MODEL_CLAUDE_4_SONNET",
+        modelName: "claude-3-5-sonnet",
+      });
+      expect(normalizeModelToProtoEnum("claude-sonnet-4-5")).toEqual({
+        enumModel: "MODEL_CLAUDE_4_SONNET",
+        modelName: "claude-sonnet-4-5",
+      });
+    });
+
+    it("falls back to MODEL_PLACEHOLDER_M318 for empty or undefined inputs", () => {
+      expect(normalizeModelToProtoEnum(undefined)).toEqual({
+        enumModel: "MODEL_PLACEHOLDER_M318",
+      });
+      expect(normalizeModelToProtoEnum("")).toEqual({
+        enumModel: "MODEL_PLACEHOLDER_M318",
+      });
+      expect(normalizeModelToProtoEnum("   ")).toEqual({
+        enumModel: "MODEL_PLACEHOLDER_M318",
+      });
     });
   });
 });

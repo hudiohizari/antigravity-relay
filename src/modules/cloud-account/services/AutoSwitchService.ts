@@ -579,7 +579,7 @@ export class AutoSwitchService {
       }
 
       // Turn Draining: if an active turn is running, wait for it to complete or 60s timeout
-      if (activeTurn) {
+      if (activeTurn && !activeTurn.isInterrupted) {
         chatResumeEvents.recordTurnDrainingInitiated({
           appTarget: detectionTarget ?? "app",
           activeModel: activeModel ?? "unknown",
@@ -610,7 +610,7 @@ export class AutoSwitchService {
           }
 
           const stillActive = await detectActiveTurn(detectionTarget);
-          if (!stillActive) {
+          if (!stillActive || stillActive.isInterrupted) {
             turnDrained = true;
             break;
           }

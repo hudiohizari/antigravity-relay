@@ -29,7 +29,10 @@ export type ExecutableDetectionResult = z.infer<
 >;
 export type DetectedExecutableResult = ExecutableDetectionResult;
 
-type PathApi = Pick<typeof path, "dirname" | "join" | "normalize" | "resolve">;
+type PathApi = Pick<
+  typeof path,
+  "dirname" | "join" | "normalize" | "resolve" | "basename"
+>;
 
 const AntigravityRelayConfigSchema = z.object({
   antigravity_executable: z.string().nullable().optional(),
@@ -1283,6 +1286,30 @@ export function getAntigravityBrainDir(
   return path.posix.join(home, ".gemini", subfolder, "brain");
 }
 
+export function getAntigravityAnnotationsDir(
+  target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
+): string {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  if (resolvedTarget === "cli") {
+    return "";
+  }
+  const subfolder =
+    resolvedTarget === "ide" ? "antigravity-ide" : "antigravity";
+
+  if (resolveIsWsl(options)) {
+    const winUser = getWindowsUser();
+    return `/mnt/c/Users/${winUser}/.gemini/${subfolder}/annotations`;
+  }
+
+  const home = os.homedir();
+  if (getCurrentPlatform(options) === "win32") {
+    return path.win32.join(home, ".gemini", subfolder, "annotations");
+  }
+
+  return path.posix.join(home, ".gemini", subfolder, "annotations");
+}
+
 export function getAntigravityConversationDbPaths(
   target?: AntigravityAppTarget | null,
   options?: PathResolutionOptions,
@@ -1329,7 +1356,36 @@ export function getAntigravityConversationDbPaths(
     }
 
     dbFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    return dbFiles.slice(0, 5).map((f) => f.fullPath);
+
+    const annotDir = getAntigravityAnnotationsDir(target, options);
+    const hasAnnotDir = annotDir && fs.existsSync(annotDir);
+
+    if (hasAnnotDir) {
+      const topLevelFiles: string[] = [];
+      for (const file of dbFiles) {
+        const cascadeId = pathApi.basename(file.fullPath, ".db");
+        const pbtxtPath = pathApi.join(annotDir, `${cascadeId}.pbtxt`);
+        if (fs.existsSync(pbtxtPath)) {
+          try {
+            const content = fs.readFileSync(pbtxtPath, "utf-8");
+            if (content.includes("title:")) {
+              topLevelFiles.push(file.fullPath);
+              if (topLevelFiles.length >= 10) {
+                break;
+              }
+            }
+          } catch {
+            // Ignore read errors
+          }
+        }
+      }
+
+      if (topLevelFiles.length > 0) {
+        return topLevelFiles;
+      }
+    }
+
+    return dbFiles.slice(0, 10).map((f) => f.fullPath);
   } catch {
     return [];
   }

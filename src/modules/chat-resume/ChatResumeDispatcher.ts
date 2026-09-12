@@ -104,6 +104,32 @@ export function extractCsrfTokenFromHtml(html: string): string | null {
   return null;
 }
 
+export function normalizeModelToProtoEnum(rawModel?: string): {
+  enumModel: string;
+  modelName?: string;
+} {
+  if (
+    !rawModel ||
+    typeof rawModel !== "string" ||
+    rawModel.trim().length === 0
+  ) {
+    return { enumModel: "MODEL_PLACEHOLDER_M318" };
+  }
+
+  const trimmed = rawModel.trim();
+
+  if (/^MODEL_[A-Z0-9_]+$/.test(trimmed)) {
+    return { enumModel: trimmed };
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("claude")) {
+    return { enumModel: "MODEL_CLAUDE_4_SONNET", modelName: trimmed };
+  }
+
+  return { enumModel: "MODEL_PLACEHOLDER_M318", modelName: trimmed };
+}
+
 export interface ChatResumeDispatcherOptions {
   buffer?: SessionContinuityBuffer;
   portDiscovery?: PortDiscoveryService;
@@ -398,40 +424,59 @@ export class ChatResumeDispatcher {
         `https://127.0.0.1:${port}/SendUserCascadeMessage`,
       ];
 
-      const promptText = snapshot.promptPayload.prompt;
-      const requestedModel = snapshot.promptPayload.requestedModel;
-      let cascadeConfig: Record<string, unknown> = {};
-      if (
+      const promptText = snapshot.isInterrupted
+        ? "Continue your previous response."
+        : snapshot.promptPayload.prompt;
+      const existingConfig =
         snapshot.promptPayload.cascadeConfig &&
         typeof snapshot.promptPayload.cascadeConfig === "object"
-      ) {
-        const raw = snapshot.promptPayload.cascadeConfig as Record<
-          string,
-          unknown
-        >;
-        if (raw.requestedModel || raw.planModel) {
-          cascadeConfig = raw;
-        } else if (raw.model) {
-          cascadeConfig = { requestedModel: { model: raw.model } };
-        } else if (requestedModel) {
-          cascadeConfig = {
-            requestedModel: {
-              model: requestedModel,
-            },
-          };
-        }
-      } else if (requestedModel) {
-        cascadeConfig = {
-          requestedModel: {
-            model: requestedModel,
-          },
-        };
+          ? (snapshot.promptPayload.cascadeConfig as Record<string, unknown>)
+          : {};
+
+      const resolvedModel =
+        snapshot.promptPayload.requestedModel ||
+        (typeof existingConfig.model === "string"
+          ? existingConfig.model
+          : undefined) ||
+        (typeof (existingConfig.requestedModel as any)?.model === "string"
+          ? (existingConfig.requestedModel as any).model
+          : undefined) ||
+        "MODEL_PLACEHOLDER_M318";
+
+      const { enumModel, modelName } = normalizeModelToProtoEnum(resolvedModel);
+
+      const existingPlanner =
+        typeof existingConfig.plannerConfig === "object" &&
+        existingConfig.plannerConfig !== null
+          ? (existingConfig.plannerConfig as Record<string, unknown>)
+          : {};
+
+      const plannerConfig: Record<string, unknown> = {
+        ...existingPlanner,
+        requestedModel: {
+          model: enumModel,
+          choice: { case: "model", value: enumModel },
+        },
+        planModel: enumModel,
+      };
+
+      if (modelName) {
+        plannerConfig.modelName = modelName;
       }
+
+      const cascadeConfig = {
+        ...existingConfig,
+        plannerConfig,
+        requestedModel: {
+          model: enumModel,
+        },
+      };
 
       const primaryRequestBody = JSON.stringify({
         cascadeId: snapshot.cascadeId,
         items: [
           {
+            text: promptText,
             chunk: {
               case: "text",
               value: promptText,
@@ -543,13 +588,15 @@ export class ChatResumeDispatcher {
       timeoutMs?: number;
     },
   ): Promise<DispatchResult | null> {
-    const snapshot = this.buffer.getLatestForTarget(appTarget);
-    if (!snapshot || snapshot.status !== "pending") {
+    const pendingSnapshots = this.buffer.getAllPendingForTarget(appTarget);
+    if (pendingSnapshots.length === 0) {
       return null;
     }
 
     if (options?.accountEmail) {
-      snapshot.accountEmail = options.accountEmail;
+      for (const snap of pendingSnapshots) {
+        snap.accountEmail = options.accountEmail;
+      }
     }
 
     let port = options?.explicitPort ?? this.portDiscovery?.getPort();
@@ -611,24 +658,28 @@ export class ChatResumeDispatcher {
         return null;
       }
 
-      if (snapshot.status !== "pending") {
-        return null;
-      }
-
       if (!handshake.ready || !handshake.csrfToken) {
         const reason =
           handshake.error ?? "Language server readiness handshake failed";
-        this.handleResumptionFailure(snapshot, reason, this.handshakeTimeoutMs);
+        for (const snap of pendingSnapshots) {
+          this.handleResumptionFailure(snap, reason, this.handshakeTimeoutMs);
+        }
         return {
           success: false,
-          resumptionId: snapshot.resumptionId,
+          resumptionId: pendingSnapshots[0]?.resumptionId ?? "",
           status: "failed",
           reason,
           latencyMs: this.handshakeTimeoutMs,
         };
       }
 
-      return await this.dispatchSnapshot(snapshot, port, handshake.csrfToken);
+      const results = await Promise.all(
+        pendingSnapshots.map((snap) =>
+          this.dispatchSnapshot(snap, port, handshake.csrfToken!),
+        ),
+      );
+
+      return results[0] ?? null;
     } finally {
       if (this.activeHandshakes.get(appTarget) === controller) {
         this.activeHandshakes.delete(appTarget);
@@ -648,8 +699,8 @@ export class ChatResumeDispatcher {
         continue;
       }
 
-      const snapshot = this.buffer.getLatestForTarget(target);
-      if (snapshot && snapshot.status === "pending") {
+      const pending = this.buffer.getAllPendingForTarget(target);
+      if (pending.length > 0) {
         this.triggerResumptionForTarget(target, { explicitPort: port }).catch(
           (err) => {
             logger.warn(

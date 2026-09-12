@@ -24,6 +24,7 @@ export interface InFlightChatSnapshot {
   source?: ChatResumeSwitchSource;
   accountEmail?: string;
   status: "pending" | "in_flight" | "resumed" | "failed" | "expired";
+  isInterrupted?: boolean;
 }
 
 export interface ChatDraftScratch {
@@ -51,4 +52,5 @@ export interface ActiveTurnSnapshot {
   sessionId?: string;
   promptPayload: InFlightPromptPayload;
   conversationDbPath?: string;
+  isInterrupted?: boolean;
 }

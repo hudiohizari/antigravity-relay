@@ -141,6 +141,25 @@ export class SessionContinuityBuffer {
     return latest;
   }
 
+  public getAllPendingForTarget(
+    appTarget: AntigravityAppTarget,
+  ): InFlightChatSnapshot[] {
+    const results: InFlightChatSnapshot[] = [];
+    const now = Date.now();
+
+    for (const snapshot of this.snapshots.values()) {
+      if (snapshot.appTarget === appTarget && snapshot.status === "pending") {
+        if (now > snapshot.expiresAt) {
+          this.expireSnapshot(snapshot, "ttl_expired");
+          continue;
+        }
+        results.push(snapshot);
+      }
+    }
+
+    return results.sort((a, b) => b.capturedAt - a.capturedAt);
+  }
+
   public consumeLatestForTarget(
     appTarget: AntigravityAppTarget,
   ): InFlightChatSnapshot | null {
