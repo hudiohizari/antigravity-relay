@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -7,6 +7,7 @@ import {
   parsePortFromLog,
   getDefaultLogPath,
 } from "@/modules/relay/port-discovery";
+import { chatResumeEvents } from "@/modules/chat-resume/telemetry";
 
 describe("PortDiscoveryService", () => {
   let tempDir: string;
@@ -14,6 +15,7 @@ describe("PortDiscoveryService", () => {
   let service: PortDiscoveryService;
 
   beforeEach(() => {
+    chatResumeEvents.clearTelemetryHistory();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "port-discovery-test-"));
     testLogPath = path.join(tempDir, "main.log");
   });
@@ -281,6 +283,7 @@ describe("PortDiscoveryService", () => {
       // Antigravity begins restart
       service.setRestarting(true);
       expect(service.getPort()).toBeNull();
+      expect(service.getStalePort()).toBe(57550);
       expect(service.isRestarting()).toBe(true);
 
       // checkOnce reads the same log before new process writes to it
@@ -299,7 +302,112 @@ describe("PortDiscoveryService", () => {
       const newDiscovered = await service.checkOnce();
       expect(newDiscovered).toBe(59357);
       expect(service.getPort()).toBe(59357);
+      expect(service.getStalePort()).toBeNull();
       expect(service.isRestarting()).toBe(false);
+    });
+
+    it("should seed stalePort from log file tail when currentPort is null and explicit port is not provided", async () => {
+      fs.writeFileSync(
+        testLogPath,
+        "[LOG] prior session\nlistening on https://127.0.0.1:54321/\n",
+        "utf-8",
+      );
+
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        initialPort: null,
+      });
+
+      expect(service.getPort()).toBeNull();
+      expect(service.getStalePort()).toBeNull();
+
+      // Initiate restart with null in-memory port and no explicit port
+      service.setRestarting(true);
+
+      // Must have read synchronously from log to establish stale barrier
+      expect(service.getStalePort()).toBe(54321);
+      expect(service.isRestarting()).toBe(true);
+
+      // checkOnce reads log and correctly rejects the stale 54321 port
+      const result = await service.checkOnce();
+      expect(result).toBeNull();
+      expect(service.isRestarting()).toBe(true);
+    });
+
+    it("should seed stalePort from explicitStalePort parameter in setRestarting", () => {
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        initialPort: null,
+      });
+
+      expect(service.getStalePort()).toBeNull();
+      service.setRestarting(true, 58888);
+
+      expect(service.getStalePort()).toBe(58888);
+      expect(service.isRestarting()).toBe(true);
+      expect(service.getPort()).toBeNull();
+    });
+
+    it("should preserve stalePort when setPort(null) is called", () => {
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        initialPort: 51234,
+      });
+
+      expect(service.getPort()).toBe(51234);
+      expect(service.getStalePort()).toBeNull();
+
+      // Setting port to null saves currentPort into stalePort
+      service.setPort(null);
+      expect(service.getPort()).toBeNull();
+      expect(service.getStalePort()).toBe(51234);
+
+      // Consecutive call with null preserves stalePort without clearing
+      service.setPort(null);
+      expect(service.getPort()).toBeNull();
+      expect(service.getStalePort()).toBe(51234);
+    });
+
+    it("should emit stale-port-rejected event and chat_port_discovery_stale_rejected telemetry when stale port is encountered", async () => {
+      fs.writeFileSync(
+        testLogPath,
+        "listening on https://127.0.0.1:54321/\n",
+        "utf-8",
+      );
+
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        initialPort: 54321,
+      });
+
+      let rejectedEventPayload: {
+        stalePort: number;
+        discoveredPort: number;
+      } | null = null;
+      service.on("stale-port-rejected", (payload) => {
+        rejectedEventPayload = payload;
+      });
+
+      service.setRestarting(true);
+
+      const result = await service.checkOnce();
+      expect(result).toBeNull();
+      expect(rejectedEventPayload).toEqual({
+        stalePort: 54321,
+        discoveredPort: 54321,
+      });
+
+      const history = chatResumeEvents.getTelemetryHistory();
+      expect(history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "chat_port_discovery_stale_rejected",
+            stalePort: 54321,
+            discoveredPort: 54321,
+            appTarget: "app",
+          }),
+        ]),
+      );
     });
 
     it("should handle reading large log files (>64KB) efficiently", async () => {
@@ -323,6 +431,36 @@ describe("PortDiscoveryService", () => {
       await service.start();
       expect(() => service.stop()).not.toThrow();
       expect(() => service.dispose()).not.toThrow();
+    });
+
+    it("should expose getLogPath and handle setRestarting false transition", () => {
+      service = new PortDiscoveryService({ logPath: testLogPath });
+      expect(service.getLogPath()).toBe(testLogPath);
+
+      service.setRestarting(true, 54321);
+      expect(service.isRestarting()).toBe(true);
+      expect(service.getStalePort()).toBe(54321);
+
+      service.setRestarting(false);
+      expect(service.isRestarting()).toBe(false);
+      expect(service.getStalePort()).toBeNull();
+    });
+
+    it("should safely return null from readPortFromLogSync when log path is invalid or unreadable", () => {
+      service = new PortDiscoveryService({
+        logPath: path.join(tempDir, "non-existent.log"),
+      });
+      expect(service.readPortFromLogSync()).toBeNull();
+    });
+
+    it("should safely catch read errors in readPortFromLogSync and return null", () => {
+      service = new PortDiscoveryService({ logPath: testLogPath });
+      fs.writeFileSync(testLogPath, "hello");
+      const statSpy = vi.spyOn(fs, "statSync").mockImplementationOnce(() => {
+        throw new Error("Disk error");
+      });
+      expect(service.readPortFromLogSync()).toBeNull();
+      statSpy.mockRestore();
     });
   });
 });

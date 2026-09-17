@@ -553,6 +553,13 @@ function requestTrayShutdown(): Promise<void> {
       AuthServer.stop(),
       relayController.relayServer.stop(),
       relayController.tunnelManager.stop(),
+      Promise.resolve().then(() => {
+        relayController.relayServer.getPortDiscovery().stop();
+        chatResumeEvents.recordPortDiscoveryLifecycle({
+          source: "app_lifecycle",
+          active: false,
+        });
+      }),
     ]);
     let timeout: NodeJS.Timeout | undefined;
     const timeoutReached = new Promise<void>((resolve) => {
@@ -585,6 +592,15 @@ function requestTrayShutdown(): Promise<void> {
 app.on("before-quit", () => {
   isQuitting = true;
   logger.info("App before-quit event triggered - isQuitting set to true");
+  try {
+    RelayController.getInstance().relayServer.getPortDiscovery().stop();
+    chatResumeEvents.recordPortDiscoveryLifecycle({
+      source: "app_lifecycle",
+      active: false,
+    });
+  } catch (err) {
+    logger.warn("Failed to stop PortDiscoveryService during before-quit", err);
+  }
 });
 
 app.on("will-quit", () => {
@@ -782,12 +798,20 @@ app
         const portDiscovery =
           RelayController.getInstance().relayServer.getPortDiscovery();
         chatResumeDispatcher.bindPortDiscovery(portDiscovery);
-        portDiscovery.start().catch((err) => {
-          logger.warn(
-            "Failed to start PortDiscoveryService for chat resumption",
-            err,
-          );
-        });
+        portDiscovery
+          .start()
+          .then(() => {
+            chatResumeEvents.recordPortDiscoveryLifecycle({
+              source: "app_lifecycle",
+              active: true,
+            });
+          })
+          .catch((err) => {
+            logger.warn(
+              "Failed to start PortDiscoveryService for chat resumption",
+              err,
+            );
+          });
         logger.info("ChatResumeDispatcher: Bound to PortDiscoveryService");
       } catch (err) {
         logger.warn(

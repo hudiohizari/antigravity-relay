@@ -2692,7 +2692,8 @@ export class RelayServer {
     this.isRunning = false;
     this.startedAt = undefined;
 
-    this.portDiscovery.stop();
+    // PortDiscoveryService lifecycle is decoupled from RelayServer;
+    // it remains active in the background for chat auto-resumption and IDE/App tracking.
 
     this.broadcastToClients({
       type: "RELAY_STOPPED",

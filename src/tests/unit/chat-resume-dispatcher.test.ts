@@ -115,6 +115,33 @@ describe("ChatResumeDispatcher", () => {
       expect(result.ready).toBe(false);
       expect(result.error).toContain("timed out");
     });
+
+    it("aborts handshake immediately when signal is aborted during probe or backoff", async () => {
+      const controller = new AbortController();
+      // Mock requester hangs until aborted via signal
+      mockRequester.mockImplementation(
+        (_url: string, opts?: { signal?: AbortSignal }) =>
+          new Promise((_, reject) => {
+            if (opts?.signal) {
+              opts.signal.addEventListener("abort", () =>
+                reject(new Error("Request aborted")),
+              );
+            }
+          }),
+      );
+
+      const handshakePromise = dispatcher.performReadinessHandshake(9000, {
+        timeoutMs: 10000,
+        signal: controller.signal,
+      });
+
+      // Abort after 20ms
+      setTimeout(() => controller.abort(), 20);
+
+      const result = await handshakePromise;
+      expect(result.ready).toBe(false);
+      expect(result.error).toBe("Handshake aborted");
+    });
   });
 
   describe("Dispatch Prompt & Resumption Execution", () => {
@@ -469,6 +496,230 @@ describe("ChatResumeDispatcher", () => {
       expect(result).not.toBeNull();
       expect(result?.success).toBe(true);
       expect(result?.resumptionId).toBe(snapshot.resumptionId);
+    });
+
+    it("notifies port discovery of restart and passes last known port", async () => {
+      const { PortDiscoveryService } =
+        await import("@/modules/relay/port-discovery");
+      const mockPortDiscovery = new PortDiscoveryService({
+        initialPort: 54321,
+      });
+      dispatcher.bindPortDiscovery(mockPortDiscovery);
+
+      expect(mockPortDiscovery.getPort()).toBe(54321);
+
+      dispatcher.notifyTargetRestarting("app");
+
+      expect(mockPortDiscovery.isRestarting()).toBe(true);
+      expect(mockPortDiscovery.getPort()).toBeNull();
+      expect(mockPortDiscovery.getStalePort()).toBe(54321);
+    });
+
+    it("dynamically aborts active handshake on dead port and pivots to new port on port-changed event without dropping snapshots", async () => {
+      const { PortDiscoveryService } =
+        await import("@/modules/relay/port-discovery");
+      const mockPortDiscovery = new PortDiscoveryService();
+      dispatcher.bindPortDiscovery(mockPortDiscovery);
+
+      const snapshot = buffer.store({
+        appTarget: "app",
+        cascadeId: "cascade-pivot-test",
+        promptPayload: { prompt: "Refactor architecture cleanly" },
+        accountEmail: "user@corp.com",
+      });
+
+      // Dead port 54321: requests hang / wait for abort
+      // New port 58999: requests succeed immediately
+      mockRequester.mockImplementation((url: string, opts?: any) => {
+        if (url.includes("54321")) {
+          return new Promise((_, reject) => {
+            if (opts?.signal) {
+              opts.signal.addEventListener("abort", () =>
+                reject(new Error("Handshake aborted")),
+              );
+            }
+          });
+        }
+        if (url.includes("58999")) {
+          if (url.endsWith("/")) {
+            return Promise.resolve({
+              status: 200,
+              headers: {},
+              data: `<script>window.__APP_CONFIG__ = {csrfToken: "csrf-new-port"};</script>`,
+            });
+          }
+          if (url.includes("GetAuthStatus")) {
+            return Promise.resolve({
+              status: 200,
+              headers: {},
+              data: JSON.stringify({ authenticated: true }),
+            });
+          }
+          if (url.includes("SendUserCascadeMessage")) {
+            return Promise.resolve({
+              status: 200,
+              headers: {},
+              data: JSON.stringify({ messageId: "msg-pivoted-success" }),
+            });
+          }
+        }
+        return Promise.reject(new Error("Unknown URL"));
+      });
+
+      // 1. Initial trigger starts handshake on dead port 54321
+      const initialPromise = dispatcher.triggerResumptionForTarget("app", {
+        explicitPort: 54321,
+      });
+
+      // Verify active handshake is tracking dead port 54321
+      expect((dispatcher as any).activeHandshakePorts.get("app")).toBe(54321);
+
+      // 2. Language server emerges 30ms later with new port 58999
+      await new Promise((r) => setTimeout(r, 30));
+      mockPortDiscovery.setPort(58999);
+
+      // 3. Initial promise returns null due to abort
+      const initialResult = await initialPromise;
+      expect(initialResult).toBeNull();
+
+      // 4. Wait for autonomous resumption to complete on new port 58999
+      await new Promise((r) => setTimeout(r, 100));
+
+      // 5. Verify snapshot was NOT dropped or failed, and was consumed on success
+      expect(buffer.get(snapshot.resumptionId)).toBeNull();
+
+      // 6. Verify telemetry recorded chat_handshake_port_switched and chat_session_auto_resumed
+      const history = chatResumeEvents.getTelemetryHistory();
+      expect(history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "chat_handshake_port_switched",
+            appTarget: "app",
+            oldPort: 54321,
+            newPort: 58999,
+          }),
+          expect.objectContaining({
+            event: "chat_session_auto_resumed",
+            appTarget: "app",
+            resumptionId: snapshot.resumptionId,
+            status: "success",
+          }),
+        ]),
+      );
+    });
+
+    it("immediately returns null when extractCsrfToken is passed an aborted signal", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const token = await dispatcher.extractCsrfToken(8888, controller.signal);
+      expect(token).toBeNull();
+    });
+
+    it("aborts active target handshake and all active handshakes when notifyTargetRestarting is called", () => {
+      const controller1 = new AbortController();
+      const controller2 = new AbortController();
+      (dispatcher as any).activeHandshakes.set("app", controller1);
+      (dispatcher as any).activeHandshakePorts.set("app", 54321);
+      (dispatcher as any).activeHandshakes.set("ide", controller2);
+      (dispatcher as any).activeHandshakePorts.set("ide", 54322);
+
+      dispatcher.notifyTargetRestarting("app");
+      expect(controller1.signal.aborted).toBe(true);
+      expect(controller2.signal.aborted).toBe(false);
+
+      dispatcher.notifyTargetRestarting();
+      expect(controller2.signal.aborted).toBe(true);
+    });
+
+    it("aborts readiness handshake immediately while sleeping in backoff", async () => {
+      mockRequester.mockResolvedValueOnce({
+        status: 200,
+        headers: {},
+        data: '<script>window.__APP_CONFIG__ = {csrfToken: "tok"};</script>',
+      });
+      // Next call is /GetAuthStatus, fail it so it enters backoff
+      mockRequester.mockResolvedValueOnce({
+        status: 503,
+        headers: {},
+        data: '{"error": "starting"}',
+      });
+
+      const controller = new AbortController();
+      const handshakePromise = dispatcher.performReadinessHandshake(8888, {
+        signal: controller.signal,
+        timeoutMs: 5000,
+      });
+
+      await new Promise((r) => setTimeout(r, 20));
+      controller.abort();
+
+      const result = await handshakePromise;
+      expect(result.ready).toBe(false);
+      expect(result.error).toBe("Handshake aborted");
+    });
+
+    it("falls back to HTTP for CSRF extraction when HTTPS fails and signal is active", async () => {
+      mockRequester.mockImplementation((url: string) => {
+        if (url.startsWith("https")) {
+          return Promise.reject(new Error("TLS error"));
+        }
+        return Promise.resolve({
+          status: 200,
+          headers: {},
+          data: '<script>window.__APP_CONFIG__ = {csrfToken: "http-token"};</script>',
+        });
+      });
+
+      const token = await dispatcher.extractCsrfToken(
+        8888,
+        new AbortController().signal,
+      );
+      expect(token).toBe("http-token");
+    });
+
+    it("handles abort occurring immediately after probe failure before backoff completes", async () => {
+      const controller = new AbortController();
+      mockRequester.mockImplementation((url: string) => {
+        if (url.endsWith("/")) {
+          return Promise.resolve({
+            status: 200,
+            headers: {},
+            data: '<script>window.__APP_CONFIG__ = {csrfToken: "tok"};</script>',
+          });
+        }
+        // Fail probe and immediately abort
+        controller.abort();
+        return Promise.reject(new Error("Probe failed"));
+      });
+
+      const result = await dispatcher.performReadinessHandshake(8888, {
+        signal: controller.signal,
+        timeoutMs: 5000,
+      });
+
+      expect(result.ready).toBe(false);
+      expect(result.error).toBe("Handshake aborted");
+    });
+  });
+
+  describe("RelayServer Lifecycle Decoupling", () => {
+    it("does not stop PortDiscoveryService when RelayServer.prototype.stop is invoked", async () => {
+      const { RelayServer } = await import("@/modules/relay/relay-server");
+      const { PortDiscoveryService } =
+        await import("@/modules/relay/port-discovery");
+
+      const mockDiscovery = new PortDiscoveryService();
+      const stopSpy = vi.spyOn(mockDiscovery, "stop");
+
+      const server = new RelayServer({
+        portDiscovery: mockDiscovery,
+        config: { port: 49999 },
+      });
+
+      await server.stop();
+
+      // Verified: portDiscovery.stop() was NOT called
+      expect(stopSpy).not.toHaveBeenCalled();
     });
   });
 

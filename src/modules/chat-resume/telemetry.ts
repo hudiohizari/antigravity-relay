@@ -86,6 +86,31 @@ export interface AccountDepletedModelScopedTelemetry {
   occurredAt: number;
 }
 
+export interface PortDiscoveryStaleRejectedTelemetry {
+  event: "chat_port_discovery_stale_rejected";
+  appTarget?: AntigravityAppTarget;
+  stalePort: number;
+  discoveredPort: number;
+  elapsedMs?: number;
+  occurredAt: number;
+}
+
+export interface HandshakePortSwitchedTelemetry {
+  event: "chat_handshake_port_switched";
+  appTarget: AntigravityAppTarget;
+  oldPort: number;
+  newPort: number;
+  handshakeElapsedMs: number;
+  occurredAt: number;
+}
+
+export interface PortDiscoveryLifecycleTelemetry {
+  event: "chat_port_discovery_lifecycle_event";
+  source: "app_lifecycle" | "relay_server";
+  active: boolean;
+  occurredAt: number;
+}
+
 export type ChatResumeTelemetry =
   | ActiveTurnDetectedTelemetry
   | SnapshotCapturedTelemetry
@@ -95,7 +120,10 @@ export type ChatResumeTelemetry =
   | ResumeSkippedCliTelemetry
   | TurnDrainingInitiatedTelemetry
   | TurnDrainedTelemetry
-  | AccountDepletedModelScopedTelemetry;
+  | AccountDepletedModelScopedTelemetry
+  | PortDiscoveryStaleRejectedTelemetry
+  | HandshakePortSwitchedTelemetry
+  | PortDiscoveryLifecycleTelemetry;
 
 class ChatResumeEventEmitter extends EventEmitter {
   private readonly telemetryHistory: ChatResumeTelemetry[] = [];
@@ -284,6 +312,71 @@ class ChatResumeEventEmitter extends EventEmitter {
       payload,
     );
     this.emit("telemetry:account-depleted-model-scoped", payload);
+    return payload;
+  }
+
+  public recordPortDiscoveryStaleRejected(params: {
+    appTarget?: AntigravityAppTarget;
+    stalePort: number;
+    discoveredPort: number;
+    elapsedMs?: number;
+  }): PortDiscoveryStaleRejectedTelemetry {
+    const payload: PortDiscoveryStaleRejectedTelemetry = {
+      event: "chat_port_discovery_stale_rejected",
+      appTarget: params.appTarget,
+      stalePort: params.stalePort,
+      discoveredPort: params.discoveredPort,
+      elapsedMs:
+        params.elapsedMs !== undefined
+          ? Math.max(0, Math.round(params.elapsedMs))
+          : undefined,
+      occurredAt: Date.now(),
+    };
+
+    this.pushTelemetry(payload);
+    logger.info("[chat-resume-telemetry] Stale port rejected", payload);
+    this.emit("telemetry:stale-port-rejected", payload);
+    return payload;
+  }
+
+  public recordHandshakePortSwitched(params: {
+    appTarget: AntigravityAppTarget;
+    oldPort: number;
+    newPort: number;
+    handshakeElapsedMs: number;
+  }): HandshakePortSwitchedTelemetry {
+    const payload: HandshakePortSwitchedTelemetry = {
+      event: "chat_handshake_port_switched",
+      appTarget: params.appTarget,
+      oldPort: params.oldPort,
+      newPort: params.newPort,
+      handshakeElapsedMs: Math.max(0, Math.round(params.handshakeElapsedMs)),
+      occurredAt: Date.now(),
+    };
+
+    this.pushTelemetry(payload);
+    logger.info("[chat-resume-telemetry] Handshake port switched", payload);
+    this.emit("telemetry:handshake-port-switched", payload);
+    return payload;
+  }
+
+  public recordPortDiscoveryLifecycle(params: {
+    source: "app_lifecycle" | "relay_server";
+    active: boolean;
+  }): PortDiscoveryLifecycleTelemetry {
+    const payload: PortDiscoveryLifecycleTelemetry = {
+      event: "chat_port_discovery_lifecycle_event",
+      source: params.source,
+      active: params.active,
+      occurredAt: Date.now(),
+    };
+
+    this.pushTelemetry(payload);
+    logger.info(
+      "[chat-resume-telemetry] Port discovery lifecycle event",
+      payload,
+    );
+    this.emit("telemetry:port-discovery-lifecycle", payload);
     return payload;
   }
 

@@ -31,6 +31,7 @@ export type HttpRequester = (
     headers?: Record<string, string>;
     body?: string;
     timeoutMs?: number;
+    signal?: AbortSignal;
   },
 ) => Promise<HttpResponse>;
 
@@ -41,6 +42,7 @@ export async function defaultHttpRequester(
     headers?: Record<string, string>;
     body?: string;
     timeoutMs?: number;
+    signal?: AbortSignal;
   },
 ): Promise<HttpResponse> {
   const url = new URL(urlStr);
@@ -48,6 +50,11 @@ export async function defaultHttpRequester(
   const client = isHttps ? https : http;
 
   return new Promise((resolve, reject) => {
+    if (options?.signal?.aborted) {
+      reject(new Error("Request aborted"));
+      return;
+    }
+
     const req = client.request(
       url,
       {
@@ -61,7 +68,12 @@ export async function defaultHttpRequester(
         res.on("data", (chunk) =>
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
         );
+        res.on("error", (err) => {
+          cleanupSignal();
+          reject(err);
+        });
         res.on("end", () => {
+          cleanupSignal();
           resolve({
             status: res.statusCode ?? 0,
             headers: res.headers,
@@ -71,8 +83,28 @@ export async function defaultHttpRequester(
       },
     );
 
-    req.on("error", reject);
+    const abortHandler = () => {
+      req.destroy();
+      reject(new Error("Request aborted"));
+    };
+
+    const cleanupSignal = () => {
+      if (options?.signal) {
+        options.signal.removeEventListener("abort", abortHandler);
+      }
+    };
+
+    if (options?.signal) {
+      options.signal.addEventListener("abort", abortHandler, { once: true });
+    }
+
+    req.on("error", (err) => {
+      cleanupSignal();
+      reject(err);
+    });
+
     req.on("timeout", () => {
+      cleanupSignal();
       req.destroy();
       reject(
         new Error(`Request timed out after ${options?.timeoutMs ?? 5000}ms`),
@@ -164,6 +196,10 @@ export class ChatResumeDispatcher {
     AntigravityAppTarget,
     number
   >();
+  private readonly handshakeStartTimes = new Map<
+    AntigravityAppTarget,
+    number
+  >();
   private readonly waitingTargets = new Set<AntigravityAppTarget>();
 
   constructor(options?: ChatResumeDispatcherOptions) {
@@ -181,27 +217,53 @@ export class ChatResumeDispatcher {
     }
   }
 
+  public abortActiveHandshake(
+    appTarget: AntigravityAppTarget,
+    newPort?: number,
+  ): boolean {
+    const existing = this.activeHandshakes.get(appTarget);
+    if (!existing) {
+      return false;
+    }
+    const oldPort = this.activeHandshakePorts.get(appTarget);
+    const startTime = this.handshakeStartTimes.get(appTarget) ?? Date.now();
+    existing.abort();
+    this.activeHandshakes.delete(appTarget);
+    this.activeHandshakePorts.delete(appTarget);
+    this.handshakeStartTimes.delete(appTarget);
+
+    if (oldPort !== undefined && newPort !== undefined && oldPort !== newPort) {
+      chatResumeEvents.recordHandshakePortSwitched({
+        appTarget,
+        oldPort,
+        newPort,
+        handshakeElapsedMs: Math.max(0, Date.now() - startTime),
+      });
+    }
+    return true;
+  }
+
   public notifyTargetRestarting(appTarget?: AntigravityAppTarget): void {
+    let lastPort: number | null = null;
+    if (appTarget && this.activeHandshakePorts.has(appTarget)) {
+      lastPort = this.activeHandshakePorts.get(appTarget) ?? null;
+    } else if (this.portDiscovery?.getPort()) {
+      lastPort = this.portDiscovery.getPort();
+    }
+
     if (appTarget) {
       this.waitingTargets.delete(appTarget);
-      const active = this.activeHandshakes.get(appTarget);
-      if (active) {
-        active.abort();
-        this.activeHandshakes.delete(appTarget);
-        this.activeHandshakePorts.delete(appTarget);
-      }
+      this.abortActiveHandshake(appTarget);
     } else {
       this.waitingTargets.clear();
-      for (const controller of this.activeHandshakes.values()) {
-        controller.abort();
+      for (const target of Array.from(this.activeHandshakes.keys())) {
+        this.abortActiveHandshake(target);
       }
-      this.activeHandshakes.clear();
-      this.activeHandshakePorts.clear();
     }
 
     if (this.portDiscovery) {
       this.portDiscovery.setPort(null);
-      this.portDiscovery.setRestarting(true);
+      this.portDiscovery.setRestarting(true, lastPort);
     }
   }
 
@@ -288,22 +350,33 @@ export class ChatResumeDispatcher {
     }
   }
 
-  public async extractCsrfToken(port: number): Promise<string | null> {
+  public async extractCsrfToken(
+    port: number,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    if (signal?.aborted) {
+      return null;
+    }
     try {
       const res = await this.httpRequester(`https://127.0.0.1:${port}/`, {
         method: "GET",
         timeoutMs: 3000,
+        signal,
       });
 
       if (res.status >= 200 && res.status < 400) {
         return extractCsrfTokenFromHtml(res.data);
       }
     } catch {
+      if (signal?.aborted) {
+        return null;
+      }
       // Try HTTP fallback if HTTPS fails
       try {
         const resHttp = await this.httpRequester(`http://127.0.0.1:${port}/`, {
           method: "GET",
           timeoutMs: 3000,
+          signal,
         });
         if (resHttp.status >= 200 && resHttp.status < 400) {
           return extractCsrfTokenFromHtml(resHttp.data);
@@ -336,7 +409,11 @@ export class ChatResumeDispatcher {
 
       // Step 1: Extract CSRF token if not yet obtained
       if (!csrfToken) {
-        csrfToken = await this.extractCsrfToken(port);
+        csrfToken = await this.extractCsrfToken(port, options?.signal);
+      }
+
+      if (options?.signal?.aborted) {
+        return { ready: false, csrfToken: null, error: "Handshake aborted" };
       }
 
       if (csrfToken) {
@@ -365,6 +442,7 @@ export class ChatResumeDispatcher {
               },
               body: "{}",
               timeoutMs: 3000,
+              signal: options?.signal,
             });
 
             const contentType = String(probeRes.headers["content-type"] || "");
@@ -380,8 +458,30 @@ export class ChatResumeDispatcher {
         }
       }
 
-      // Exponential backoff
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      if (options?.signal?.aborted) {
+        return { ready: false, csrfToken: null, error: "Handshake aborted" };
+      }
+
+      // Exponential backoff with abort sensitivity
+      await new Promise<void>((resolve) => {
+        let timer: NodeJS.Timeout | null = null;
+        const onAbort = () => {
+          if (timer) clearTimeout(timer);
+          options?.signal?.removeEventListener("abort", onAbort);
+          resolve();
+        };
+
+        options?.signal?.addEventListener("abort", onAbort, { once: true });
+        timer = setTimeout(() => {
+          options?.signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, backoffMs);
+      });
+
+      if (options?.signal?.aborted) {
+        return { ready: false, csrfToken: null, error: "Handshake aborted" };
+      }
+
       backoffMs = Math.min(this.maxBackoffMs, backoffMs * 1.5);
     }
 
@@ -634,16 +734,14 @@ export class ChatResumeDispatcher {
     }
 
     // Abort existing handshake for this target if on a DIFFERENT port
-    const existing = this.activeHandshakes.get(appTarget);
-    if (existing) {
-      existing.abort();
-      this.activeHandshakes.delete(appTarget);
-      this.activeHandshakePorts.delete(appTarget);
+    if (this.activeHandshakes.has(appTarget)) {
+      this.abortActiveHandshake(appTarget, port);
     }
 
     const controller = new AbortController();
     this.activeHandshakes.set(appTarget, controller);
     this.activeHandshakePorts.set(appTarget, port);
+    this.handshakeStartTimes.set(appTarget, Date.now());
 
     try {
       const handshake = await this.performReadinessHandshake(port, {
@@ -684,6 +782,7 @@ export class ChatResumeDispatcher {
       if (this.activeHandshakes.get(appTarget) === controller) {
         this.activeHandshakes.delete(appTarget);
         this.activeHandshakePorts.delete(appTarget);
+        this.handshakeStartTimes.delete(appTarget);
       }
     }
   }
@@ -691,11 +790,21 @@ export class ChatResumeDispatcher {
   private onPortDetected(port: number): void {
     const targets: AntigravityAppTarget[] = ["app", "ide", "classic"];
     for (const target of targets) {
+      const currentHandshakePort = this.activeHandshakePorts.get(target);
       if (
-        this.waitingTargets.has(target) ||
-        (this.activeHandshakes.has(target) &&
-          this.activeHandshakePorts.get(target) === port)
+        this.activeHandshakes.has(target) &&
+        currentHandshakePort !== undefined
       ) {
+        if (currentHandshakePort === port) {
+          continue;
+        }
+        logger.info(
+          `Port changed from ${currentHandshakePort} to ${port} while handshake active for ${target}; aborting and pivoting...`,
+        );
+        this.abortActiveHandshake(target, port);
+      }
+
+      if (this.waitingTargets.has(target)) {
         continue;
       }
 

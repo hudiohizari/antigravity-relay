@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import { chatResumeEvents } from "@/modules/chat-resume/telemetry";
 
 export interface PortChangeEvent {
   oldPort: number | null;
@@ -13,6 +15,7 @@ export interface PortDiscoveryOptions {
   pollIntervalMs?: number;
   debounceMs?: number;
   initialPort?: number | null;
+  appTarget?: AntigravityAppTarget;
 }
 
 export function getDefaultLogPath(): string {
@@ -46,6 +49,8 @@ export class PortDiscoveryService extends EventEmitter {
   private currentPort: number | null = null;
   private stalePort: number | null = null;
   private restarting = false;
+  private restartingStartedAt: number | undefined;
+  private readonly appTarget: AntigravityAppTarget;
   private readonly logPath: string;
   private readonly pollIntervalMs: number;
   private readonly debounceMs: number;
@@ -58,6 +63,7 @@ export class PortDiscoveryService extends EventEmitter {
 
   constructor(options?: PortDiscoveryOptions) {
     super();
+    this.appTarget = options?.appTarget ?? "app";
     this.logPath = options?.logPath ?? getDefaultLogPath();
     this.pollIntervalMs = options?.pollIntervalMs ?? 1500;
     this.debounceMs = options?.debounceMs ?? 50;
@@ -70,20 +76,27 @@ export class PortDiscoveryService extends EventEmitter {
     return this.currentPort;
   }
 
+  public getStalePort(): number | null {
+    return this.stalePort;
+  }
+
   public setPort(port: number | null): void {
     const oldPort = this.currentPort;
     this.currentPort = port;
     if (port !== null) {
       this.restarting = false;
       this.stalePort = null;
+      this.restartingStartedAt = undefined;
       if (oldPort === null) {
         this.emit("port-discovered", port);
       }
       if (oldPort !== port) {
         this.emit("port-changed", { oldPort, newPort: port });
       }
-    } else if (oldPort !== null) {
-      this.stalePort = oldPort;
+    } else {
+      if (oldPort !== null) {
+        this.stalePort = oldPort;
+      }
       this.emit("port-lost");
     }
   }
@@ -96,19 +109,53 @@ export class PortDiscoveryService extends EventEmitter {
     return this.restarting;
   }
 
-  public setRestarting(restarting: boolean): void {
+  public setRestarting(
+    restarting: boolean,
+    explicitStalePort?: number | null,
+  ): void {
     const changed = this.restarting !== restarting;
     this.restarting = restarting;
     if (restarting) {
-      if (this.currentPort !== null) {
+      this.restartingStartedAt = Date.now();
+      if (explicitStalePort !== undefined && explicitStalePort !== null) {
+        this.stalePort = explicitStalePort;
+      } else if (this.currentPort !== null) {
         this.stalePort = this.currentPort;
-        this.currentPort = null;
+      } else if (this.stalePort === null) {
+        this.stalePort = this.readPortFromLogSync();
       }
+      this.currentPort = null;
     } else {
       this.stalePort = null;
+      this.restartingStartedAt = undefined;
     }
     if (changed && restarting) {
       this.emit("restarting");
+    }
+  }
+
+  public readPortFromLogSync(): number | null {
+    try {
+      if (!fs.existsSync(this.logPath)) {
+        return null;
+      }
+      const stats = fs.statSync(this.logPath);
+      let content: string;
+      if (stats.size > 65536) {
+        const buffer = Buffer.alloc(65536);
+        const fd = fs.openSync(this.logPath, "r");
+        try {
+          fs.readSync(fd, buffer, 0, 65536, stats.size - 65536);
+          content = buffer.toString("utf-8");
+        } finally {
+          fs.closeSync(fd);
+        }
+      } else {
+        content = fs.readFileSync(this.logPath, "utf-8");
+      }
+      return parsePortFromLog(content);
+    } catch {
+      return null;
     }
   }
 
@@ -144,6 +191,19 @@ export class PortDiscoveryService extends EventEmitter {
           this.stalePort !== null &&
           discoveredPort === this.stalePort
         ) {
+          const elapsedMs = this.restartingStartedAt
+            ? Date.now() - this.restartingStartedAt
+            : undefined;
+          chatResumeEvents.recordPortDiscoveryStaleRejected({
+            appTarget: this.appTarget,
+            stalePort: this.stalePort,
+            discoveredPort,
+            elapsedMs,
+          });
+          this.emit("stale-port-rejected", {
+            stalePort: this.stalePort,
+            discoveredPort,
+          });
           return null;
         }
         this.handlePortFound(discoveredPort);
@@ -215,6 +275,7 @@ export class PortDiscoveryService extends EventEmitter {
 
     this.restarting = false;
     this.stalePort = null;
+    this.restartingStartedAt = undefined;
 
     if (this.currentPort === null) {
       this.currentPort = newPort;
