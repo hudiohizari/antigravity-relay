@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ChatResumeDispatcher,
   extractCsrfTokenFromHtml,
+  isValidProtoModelEnum,
   normalizeModelToProtoEnum,
   type HttpRequester,
 } from "@/modules/chat-resume/ChatResumeDispatcher";
@@ -239,6 +240,159 @@ describe("ChatResumeDispatcher", () => {
       );
 
       chatResumeEvents.off("resumption-status", statusListener);
+    });
+
+    it("dispatches prompt with authentic Claude proto enum MODEL_PLACEHOLDER_M26 and records model resolution telemetry", async () => {
+      const snapshot = buffer.store({
+        appTarget: "app",
+        cascadeId: "cascade-claude-authentic",
+        promptPayload: {
+          prompt: "Refactor architecture with deep reasoning",
+          requestedModel: "MODEL_PLACEHOLDER_M26",
+          cascadeConfig: {
+            plannerConfig: {
+              modelName: "claude-opus-4-6-thinking",
+            },
+          },
+        },
+        accountEmail: "sarah@example.com",
+      });
+
+      mockRequester.mockResolvedValueOnce({
+        status: 200,
+        headers: {},
+        data: JSON.stringify({ messageId: "msg-claude-ok" }),
+      });
+
+      const result = await dispatcher.dispatchSnapshot(
+        snapshot,
+        9000,
+        "valid-csrf-token",
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe("resumed");
+
+      const callArgs = mockRequester.mock.calls[0];
+      const requestBody = JSON.parse(callArgs[1].body);
+
+      expect(requestBody.cascadeConfig.requestedModel).toEqual({
+        model: "MODEL_PLACEHOLDER_M26",
+      });
+      expect(requestBody.cascadeConfig.plannerConfig.requestedModel).toEqual({
+        model: "MODEL_PLACEHOLDER_M26",
+        choice: { case: "model", value: "MODEL_PLACEHOLDER_M26" },
+      });
+      expect(requestBody.cascadeConfig.plannerConfig.planModel).toBe(
+        "MODEL_PLACEHOLDER_M26",
+      );
+      expect(requestBody.cascadeConfig.plannerConfig.modelName).toBe(
+        "claude-opus-4-6-thinking",
+      );
+
+      // Verify ZERO fabricated enums in wire payload
+      expect(callArgs[1].body).not.toContain("MODEL_CLAUDE_4_SONNET");
+
+      // Verify chat_model_resolved telemetry recorded
+      const history = chatResumeEvents.getTelemetryHistory();
+      expect(history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "chat_model_resolved",
+            appTarget: "app",
+            resolvedEnum: "MODEL_PLACEHOLDER_M26",
+            modelName: "claude-opus-4-6-thinking",
+            inheritedNative: false,
+          }),
+        ]),
+      );
+    });
+
+    it("safely omits requestedModel and planModel overrides when raw model has no valid proto enum (native conversation inheritance)", async () => {
+      const snapshot = buffer.store({
+        appTarget: "ide",
+        cascadeId: "cascade-claude-inheritance",
+        promptPayload: {
+          prompt: "Draft system architecture document",
+          requestedModel: "claude-opus-4-6-thinking",
+        },
+        accountEmail: "engineer@example.com",
+      });
+
+      mockRequester.mockResolvedValueOnce({
+        status: 200,
+        headers: {},
+        data: JSON.stringify({ messageId: "msg-native-ok" }),
+      });
+
+      const result = await dispatcher.dispatchSnapshot(
+        snapshot,
+        9000,
+        "valid-csrf-token",
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe("resumed");
+
+      const callArgs = mockRequester.mock.calls[0];
+      const requestBody = JSON.parse(callArgs[1].body);
+
+      // Verify requestedModel override is completely omitted from cascadeConfig
+      expect(requestBody.cascadeConfig.requestedModel).toBeUndefined();
+
+      // Verify requestedModel and planModel are omitted from plannerConfig (native model inheritance)
+      expect(requestBody.cascadeConfig.plannerConfig?.requestedModel).toBeUndefined();
+      expect(requestBody.cascadeConfig.plannerConfig?.planModel).toBeUndefined();
+      expect(requestBody.cascadeConfig.plannerConfig?.modelName).toBe(
+        "claude-opus-4-6-thinking",
+      );
+
+      // Verify fabricated enum is NEVER sent
+      expect(callArgs[1].body).not.toContain("MODEL_CLAUDE_4_SONNET");
+
+      // Verify chat_model_resolved telemetry recorded with inheritedNative: true
+      const history = chatResumeEvents.getTelemetryHistory();
+      expect(history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "chat_model_resolved",
+            appTarget: "ide",
+            resolvedEnum: undefined,
+            modelName: "claude-opus-4-6-thinking",
+            inheritedNative: true,
+          }),
+        ]),
+      );
+    });
+
+    it("safely omits requestedModel and planModel overrides when snapshot has undefined model", async () => {
+      const snapshot = buffer.store({
+        appTarget: "app",
+        cascadeId: "cascade-empty-model",
+        promptPayload: {
+          prompt: "General prompt with no model override",
+        },
+      });
+
+      mockRequester.mockResolvedValueOnce({
+        status: 200,
+        headers: {},
+        data: JSON.stringify({ messageId: "msg-empty-ok" }),
+      });
+
+      const result = await dispatcher.dispatchSnapshot(
+        snapshot,
+        9000,
+        "csrf-token",
+      );
+
+      expect(result.success).toBe(true);
+      const callArgs = mockRequester.mock.calls[0];
+      const requestBody = JSON.parse(callArgs[1].body);
+
+      // Entirely omitted
+      expect(requestBody.cascadeConfig.requestedModel).toBeUndefined();
+      expect(requestBody.cascadeConfig.plannerConfig).toBeUndefined();
     });
 
     it("dispatches continuation prompt 'Continue your previous response.' when snapshot isInterrupted is true", async () => {
@@ -723,13 +877,30 @@ describe("ChatResumeDispatcher", () => {
     });
   });
 
+  describe("isValidProtoModelEnum", () => {
+    it("returns true for valid protobuf MODEL_ enums", () => {
+      expect(isValidProtoModelEnum("MODEL_PLACEHOLDER_M26")).toBe(true);
+      expect(isValidProtoModelEnum("MODEL_PLACEHOLDER_M318")).toBe(true);
+      expect(isValidProtoModelEnum("MODEL_CUSTOM_PRO")).toBe(true);
+    });
+
+    it("returns false for non-enum strings, empty strings, and undefined", () => {
+      expect(isValidProtoModelEnum("claude-opus-4-6-thinking")).toBe(false);
+      expect(isValidProtoModelEnum("gemini-1.5-pro")).toBe(false);
+      expect(isValidProtoModelEnum("")).toBe(false);
+      expect(isValidProtoModelEnum("   ")).toBe(false);
+      expect(isValidProtoModelEnum(undefined)).toBe(false);
+      expect(isValidProtoModelEnum(null)).toBe(false);
+    });
+  });
+
   describe("normalizeModelToProtoEnum", () => {
     it("preserves already-valid protobuf Model enum identifiers", () => {
       expect(normalizeModelToProtoEnum("MODEL_PLACEHOLDER_M318")).toEqual({
         enumModel: "MODEL_PLACEHOLDER_M318",
       });
-      expect(normalizeModelToProtoEnum("MODEL_CLAUDE_4_SONNET")).toEqual({
-        enumModel: "MODEL_CLAUDE_4_SONNET",
+      expect(normalizeModelToProtoEnum("MODEL_PLACEHOLDER_M26")).toEqual({
+        enumModel: "MODEL_PLACEHOLDER_M26",
       });
     });
 
@@ -744,27 +915,33 @@ describe("ChatResumeDispatcher", () => {
       });
     });
 
-    it("maps raw Claude model names to MODEL_CLAUDE_4_SONNET with modelName preserved", () => {
-      expect(normalizeModelToProtoEnum("claude-3-5-sonnet")).toEqual({
-        enumModel: "MODEL_CLAUDE_4_SONNET",
+    it("preserves raw Claude model names as modelName without fabricating fake enums (MODEL_CLAUDE_4_SONNET removed)", () => {
+      const res1 = normalizeModelToProtoEnum("claude-3-5-sonnet");
+      expect(res1).toEqual({
         modelName: "claude-3-5-sonnet",
       });
-      expect(normalizeModelToProtoEnum("claude-sonnet-4-5")).toEqual({
-        enumModel: "MODEL_CLAUDE_4_SONNET",
+      expect(res1.enumModel).toBeUndefined();
+      expect(JSON.stringify(res1)).not.toContain("MODEL_CLAUDE_4_SONNET");
+
+      const res2 = normalizeModelToProtoEnum("claude-sonnet-4-5");
+      expect(res2).toEqual({
         modelName: "claude-sonnet-4-5",
       });
+      expect(res2.enumModel).toBeUndefined();
+      expect(JSON.stringify(res2)).not.toContain("MODEL_CLAUDE_4_SONNET");
+
+      const res3 = normalizeModelToProtoEnum("claude-opus-4-6-thinking");
+      expect(res3).toEqual({
+        modelName: "claude-opus-4-6-thinking",
+      });
+      expect(res3.enumModel).toBeUndefined();
+      expect(JSON.stringify(res3)).not.toContain("MODEL_CLAUDE_4_SONNET");
     });
 
-    it("falls back to MODEL_PLACEHOLDER_M318 for empty or undefined inputs", () => {
-      expect(normalizeModelToProtoEnum(undefined)).toEqual({
-        enumModel: "MODEL_PLACEHOLDER_M318",
-      });
-      expect(normalizeModelToProtoEnum("")).toEqual({
-        enumModel: "MODEL_PLACEHOLDER_M318",
-      });
-      expect(normalizeModelToProtoEnum("   ")).toEqual({
-        enumModel: "MODEL_PLACEHOLDER_M318",
-      });
+    it("returns empty object without enumModel for empty or undefined inputs", () => {
+      expect(normalizeModelToProtoEnum(undefined)).toEqual({});
+      expect(normalizeModelToProtoEnum("")).toEqual({});
+      expect(normalizeModelToProtoEnum("   ")).toEqual({});
     });
   });
 });

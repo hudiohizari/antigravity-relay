@@ -11,7 +11,18 @@ export interface ActiveTurnDetectedTelemetry {
   appTarget: AntigravityAppTarget;
   conversationId: string;
   stepIndex?: number;
+  modelEnum?: string;
+  modelName?: string;
   status: 2;
+  occurredAt: number;
+}
+
+export interface ModelResolvedTelemetry {
+  event: "chat_model_resolved";
+  appTarget: AntigravityAppTarget;
+  resolvedEnum?: string;
+  modelName?: string;
+  inheritedNative: boolean;
   occurredAt: number;
 }
 
@@ -113,6 +124,7 @@ export interface PortDiscoveryLifecycleTelemetry {
 
 export type ChatResumeTelemetry =
   | ActiveTurnDetectedTelemetry
+  | ModelResolvedTelemetry
   | SnapshotCapturedTelemetry
   | WalCheckpointExecutedTelemetry
   | SessionAutoResumedTelemetry
@@ -133,12 +145,16 @@ class ChatResumeEventEmitter extends EventEmitter {
     appTarget: AntigravityAppTarget;
     conversationId: string;
     stepIndex?: number;
+    modelEnum?: string;
+    modelName?: string;
   }): ActiveTurnDetectedTelemetry {
     const payload: ActiveTurnDetectedTelemetry = {
       event: "chat_active_turn_detected",
       appTarget: params.appTarget,
       conversationId: params.conversationId,
       stepIndex: params.stepIndex,
+      modelEnum: params.modelEnum,
+      modelName: params.modelName,
       status: 2,
       occurredAt: Date.now(),
     };
@@ -146,6 +162,27 @@ class ChatResumeEventEmitter extends EventEmitter {
     this.pushTelemetry(payload);
     logger.info("[chat-resume-telemetry] Active turn detected", payload);
     this.emit("telemetry:active-turn-detected", payload);
+    return payload;
+  }
+
+  public recordModelResolved(params: {
+    appTarget: AntigravityAppTarget;
+    resolvedEnum?: string;
+    modelName?: string;
+    inheritedNative: boolean;
+  }): ModelResolvedTelemetry {
+    const payload: ModelResolvedTelemetry = {
+      event: "chat_model_resolved",
+      appTarget: params.appTarget,
+      resolvedEnum: params.resolvedEnum,
+      modelName: params.modelName,
+      inheritedNative: params.inheritedNative,
+      occurredAt: Date.now(),
+    };
+
+    this.pushTelemetry(payload);
+    logger.info("[chat-resume-telemetry] Model resolved", payload);
+    this.emit("telemetry:model-resolved", payload);
     return payload;
   }
 

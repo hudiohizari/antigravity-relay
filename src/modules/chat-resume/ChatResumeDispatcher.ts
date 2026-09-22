@@ -136,30 +136,47 @@ export function extractCsrfTokenFromHtml(html: string): string | null {
   return null;
 }
 
-export function normalizeModelToProtoEnum(rawModel?: string): {
-  enumModel: string;
+export function isValidProtoModelEnum(model?: unknown): boolean {
+  return typeof model === "string" && /^MODEL_[A-Z0-9_]+$/.test(model.trim());
+}
+
+export interface NormalizedModelResult {
+  enumModel?: string;
   modelName?: string;
-} {
+}
+
+export function normalizeModelToProtoEnum(
+  rawModel?: string,
+  modelNameOverride?: string,
+): NormalizedModelResult {
   if (
     !rawModel ||
     typeof rawModel !== "string" ||
     rawModel.trim().length === 0
   ) {
-    return { enumModel: "MODEL_PLACEHOLDER_M318" };
+    return modelNameOverride ? { modelName: modelNameOverride } : {};
   }
 
   const trimmed = rawModel.trim();
 
-  if (/^MODEL_[A-Z0-9_]+$/.test(trimmed)) {
-    return { enumModel: trimmed };
+  if (isValidProtoModelEnum(trimmed)) {
+    return {
+      enumModel: trimmed,
+      ...(modelNameOverride ? { modelName: modelNameOverride } : {}),
+    };
   }
 
   const lower = trimmed.toLowerCase();
-  if (lower.includes("claude")) {
-    return { enumModel: "MODEL_CLAUDE_4_SONNET", modelName: trimmed };
+  if (lower.includes("gemini")) {
+    return {
+      enumModel: "MODEL_PLACEHOLDER_M318",
+      modelName: modelNameOverride ?? trimmed,
+    };
   }
 
-  return { enumModel: "MODEL_PLACEHOLDER_M318", modelName: trimmed };
+  return {
+    modelName: modelNameOverride ?? trimmed,
+  };
 }
 
 export interface ChatResumeDispatcherOptions {
@@ -533,44 +550,80 @@ export class ChatResumeDispatcher {
           ? (snapshot.promptPayload.cascadeConfig as Record<string, unknown>)
           : {};
 
-      const resolvedModel =
-        snapshot.promptPayload.requestedModel ||
-        (typeof existingConfig.model === "string"
-          ? existingConfig.model
-          : undefined) ||
-        (typeof (existingConfig.requestedModel as any)?.model === "string"
-          ? (existingConfig.requestedModel as any).model
-          : undefined) ||
-        "MODEL_PLACEHOLDER_M318";
-
-      const { enumModel, modelName } = normalizeModelToProtoEnum(resolvedModel);
-
       const existingPlanner =
         typeof existingConfig.plannerConfig === "object" &&
         existingConfig.plannerConfig !== null
-          ? (existingConfig.plannerConfig as Record<string, unknown>)
+          ? { ...(existingConfig.plannerConfig as Record<string, unknown>) }
           : {};
 
-      const plannerConfig: Record<string, unknown> = {
-        ...existingPlanner,
-        requestedModel: {
-          model: enumModel,
-          choice: { case: "model", value: enumModel },
-        },
-        planModel: enumModel,
-      };
+      const rawModel =
+        snapshot.promptPayload.requestedModel ||
+        (typeof (existingConfig.requestedModel as any)?.model === "string"
+          ? (existingConfig.requestedModel as any).model
+          : undefined) ||
+        (typeof existingConfig.model === "string"
+          ? existingConfig.model
+          : undefined) ||
+        (typeof existingPlanner.modelName === "string"
+          ? existingPlanner.modelName
+          : undefined);
 
-      if (modelName) {
-        plannerConfig.modelName = modelName;
-      }
+      const modelNameHint =
+        typeof existingPlanner.modelName === "string"
+          ? existingPlanner.modelName
+          : undefined;
 
-      const cascadeConfig = {
+      const { enumModel, modelName } = normalizeModelToProtoEnum(
+        rawModel,
+        modelNameHint,
+      );
+
+      const inheritedNative = !isValidProtoModelEnum(enumModel);
+      chatResumeEvents.recordModelResolved({
+        appTarget,
+        resolvedEnum: isValidProtoModelEnum(enumModel) ? enumModel : undefined,
+        modelName,
+        inheritedNative,
+      });
+
+      const cascadeConfig: Record<string, unknown> = {
         ...existingConfig,
-        plannerConfig,
-        requestedModel: {
-          model: enumModel,
-        },
       };
+
+      if (isValidProtoModelEnum(enumModel)) {
+        const plannerConfig: Record<string, unknown> = {
+          ...existingPlanner,
+          requestedModel: {
+            model: enumModel,
+            choice: { case: "model", value: enumModel },
+          },
+          planModel: enumModel,
+        };
+
+        if (modelName) {
+          plannerConfig.modelName = modelName;
+        }
+
+        cascadeConfig.plannerConfig = plannerConfig;
+        cascadeConfig.requestedModel = {
+          model: enumModel,
+        };
+      } else {
+        // Safe Native Model Inheritance: OMIT requestedModel and planModel overrides
+        delete cascadeConfig.requestedModel;
+        delete existingPlanner.requestedModel;
+        delete existingPlanner.planModel;
+
+        if (modelName) {
+          existingPlanner.modelName = modelName;
+        }
+
+        if (Object.keys(existingPlanner).length > 0) {
+          cascadeConfig.plannerConfig = existingPlanner;
+        } else {
+          delete cascadeConfig.plannerConfig;
+        }
+      }
 
       const primaryRequestBody = JSON.stringify({
         cascadeId: snapshot.cascadeId,

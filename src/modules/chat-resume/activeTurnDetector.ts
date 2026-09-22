@@ -13,7 +13,10 @@ import {
   sessionContinuityBuffer,
   SessionContinuityBuffer,
 } from "./SessionContinuityBuffer";
-import { normalizeModelToProtoEnum } from "./ChatResumeDispatcher";
+import {
+  isValidProtoModelEnum,
+  normalizeModelToProtoEnum,
+} from "./ChatResumeDispatcher";
 import { chatResumeEvents } from "./telemetry";
 import type {
   ActiveTurnSnapshot,
@@ -386,32 +389,39 @@ export function inspectTranscriptForActiveTurn(
   return null;
 }
 
-function extractModelFromDatabase(
-  dbInstance: Database.Database,
+export interface DatabaseModelInfo {
+  enumModel?: string;
+  modelName?: string;
+}
+
+function extractProtoWireString(
+  text: string,
+  fieldKey: string,
 ): string | undefined {
-  try {
-    const hasSteps = dbInstance
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='steps'",
-      )
-      .get();
-    if (hasSteps) {
-      const stepRows = dbInstance
-        .prepare(
-          "SELECT step_payload FROM steps WHERE step_type = 14 AND step_payload IS NOT NULL ORDER BY idx DESC LIMIT 5",
-        )
-        .all() as Array<{ step_payload: Buffer | string }>;
-      for (const row of stepRows) {
-        const text = Buffer.isBuffer(row.step_payload)
-          ? row.step_payload.toString("utf-8")
-          : String(row.step_payload);
-        const matches = text.match(/MODEL_[A-Z0-9_]+/);
-        if (matches && matches[0]) {
-          return matches[0];
-        }
+  const pattern = fieldKey + "\x12";
+  let searchPos = 0;
+  while (searchPos < text.length) {
+    const idx = text.indexOf(pattern, searchPos);
+    if (idx === -1) break;
+    const lenPos = idx + pattern.length;
+    if (lenPos < text.length) {
+      const len = text.charCodeAt(lenPos);
+      if (len > 0 && len <= 127 && lenPos + 1 + len <= text.length) {
+        return text.substring(lenPos + 1, lenPos + 1 + len);
       }
     }
+    searchPos = idx + 1;
+  }
+  return undefined;
+}
 
+export function extractModelFromDatabase(
+  dbInstance: Database.Database,
+): DatabaseModelInfo | undefined {
+  let enumModel: string | undefined;
+  let modelName: string | undefined;
+
+  try {
     const hasGenMeta = dbInstance
       .prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='gen_metadata'",
@@ -429,18 +439,101 @@ function extractModelFromDatabase(
           typeof row.data === "string"
             ? row.data
             : Buffer.isBuffer(row.data)
-              ? row.data.toString("utf-8")
+              ? row.data.toString("latin1")
               : "";
-        const matches = text.match(
-          /(?:claude-[a-z0-9_\-\.]*|gemini-[a-z0-9_\-\.]*|MODEL_[A-Z0-9_]+)/i,
-        );
-        if (matches && matches[0]) {
-          return matches[0];
+
+        if (!enumModel) {
+          // 1. Binary protobuf wire format: model_enum\x12<len><value>
+          const wireEnum = extractProtoWireString(text, "model_enum");
+          if (wireEnum && isValidProtoModelEnum(wireEnum)) {
+            enumModel = wireEnum;
+          } else {
+            // 2. Text / JSON key: model_enum: "..." or model_enum=...
+            const jsonEnumMatch =
+              text.match(/model_enum["']?\s*[:=]\s*["']?([A-Za-z0-9_]+)["']?/) ||
+              text.match(/model_enum[^\w]*(MODEL_[A-Z0-9_]+)/i);
+
+            if (
+              jsonEnumMatch &&
+              jsonEnumMatch[1] &&
+              isValidProtoModelEnum(jsonEnumMatch[1])
+            ) {
+              enumModel = jsonEnumMatch[1];
+            } else {
+              // 3. Generic fallback for MODEL_... wire constants
+              const genericMatch = text.match(/MODEL_[A-Z0-9_]+/);
+              if (genericMatch && isValidProtoModelEnum(genericMatch[0])) {
+                enumModel = genericMatch[0];
+              }
+            }
+          }
+        }
+
+        if (!modelName) {
+          // 1. Binary protobuf wire format: model_name\x12<len><value>
+          const wireName = extractProtoWireString(text, "model_name");
+          if (wireName && !wireName.startsWith("MODEL_")) {
+            modelName = wireName;
+          } else {
+            // 2. Text / JSON key: model_name: "..." or model_name=...
+            const jsonNameMatch =
+              text.match(/model_name["']?\s*[:=]\s*["']?([A-Za-z0-9_\-\.]+)["']?/) ||
+              text.match(/model_name[^\w]*([a-zA-Z0-9_\-\.]+)/i);
+
+            if (
+              jsonNameMatch &&
+              jsonNameMatch[1] &&
+              !jsonNameMatch[1].startsWith("MODEL_")
+            ) {
+              modelName = jsonNameMatch[1];
+            } else {
+              // 3. Fallback for recognizable model family prefixes
+              const fallbackName = text.match(
+                /(?:claude-[a-z0-9_\-\.]+|gemini-[a-z0-9_\-\.]+)/i,
+              );
+              if (fallbackName) {
+                modelName = fallbackName[0];
+              }
+            }
+          }
+        }
+
+        if (enumModel && modelName) {
+          break;
+        }
+      }
+    }
+
+    if (!enumModel) {
+      const hasSteps = dbInstance
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='steps'",
+        )
+        .get();
+      if (hasSteps) {
+        const stepRows = dbInstance
+          .prepare(
+            "SELECT step_payload FROM steps WHERE step_type = 14 AND step_payload IS NOT NULL ORDER BY idx DESC LIMIT 5",
+          )
+          .all() as Array<{ step_payload: Buffer | string }>;
+        for (const row of stepRows) {
+          const text = Buffer.isBuffer(row.step_payload)
+            ? row.step_payload.toString("latin1")
+            : String(row.step_payload);
+          const matches = text.match(/MODEL_[A-Z0-9_]+/);
+          if (matches && isValidProtoModelEnum(matches[0])) {
+            enumModel = matches[0];
+            break;
+          }
         }
       }
     }
   } catch {
     // Ignore extraction error
+  }
+
+  if (enumModel || modelName) {
+    return { enumModel, modelName };
   }
   return undefined;
 }
@@ -663,9 +756,24 @@ export async function detectActiveTurnInDatabase(
           }
         }
 
-        const model =
-          (activeStep.model ? String(activeStep.model) : undefined) ??
-          extractModelFromDatabase(dbInstance);
+        const dbModel = extractModelFromDatabase(dbInstance);
+        const rawStepModel = activeStep.model
+          ? String(activeStep.model)
+          : undefined;
+
+        // Prioritize authentic proto enum from gen_metadata or steps
+        const authenticEnum =
+          (rawStepModel && isValidProtoModelEnum(rawStepModel)
+            ? rawStepModel
+            : undefined) ?? dbModel?.enumModel;
+
+        const authenticName =
+          dbModel?.modelName ??
+          (rawStepModel && !isValidProtoModelEnum(rawStepModel)
+            ? rawStepModel
+            : undefined);
+
+        const modelToReport = authenticEnum ?? authenticName;
 
         if (promptText && promptText.trim().length > 0) {
           chatResumeEvents.recordActiveTurnDetected({
@@ -673,33 +781,46 @@ export async function detectActiveTurnInDatabase(
             conversationId: cascadeId,
             stepIndex:
               typeof activeStep.idx === "number" ? activeStep.idx : undefined,
+            modelEnum: authenticEnum,
+            modelName: authenticName,
           });
 
-          const normalized = model
-            ? normalizeModelToProtoEnum(model)
+          const normalized = modelToReport
+            ? normalizeModelToProtoEnum(modelToReport, authenticName)
             : undefined;
+
           return {
             cascadeId,
             conversationDbPath: dbPath,
             isInterrupted,
             promptPayload: {
               prompt: promptText,
-              requestedModel: model,
-              cascadeConfig: normalized
-                ? {
-                    requestedModel: { model: normalized.enumModel },
-                    plannerConfig: {
-                      requestedModel: {
-                        model: normalized.enumModel,
-                        choice: { case: "model", value: normalized.enumModel },
+              requestedModel: modelToReport,
+              cascadeConfig:
+                normalized && isValidProtoModelEnum(normalized.enumModel)
+                  ? {
+                      requestedModel: { model: normalized.enumModel },
+                      plannerConfig: {
+                        requestedModel: {
+                          model: normalized.enumModel,
+                          choice: {
+                            case: "model",
+                            value: normalized.enumModel,
+                          },
+                        },
+                        planModel: normalized.enumModel,
+                        ...(normalized.modelName
+                          ? { modelName: normalized.modelName }
+                          : {}),
                       },
-                      planModel: normalized.enumModel,
-                      ...(normalized.modelName
-                        ? { modelName: normalized.modelName }
-                        : {}),
-                    },
-                  }
-                : undefined,
+                    }
+                  : normalized?.modelName
+                    ? {
+                        plannerConfig: {
+                          modelName: normalized.modelName,
+                        },
+                      }
+                    : undefined,
             },
           };
         }
@@ -764,24 +885,31 @@ export async function detectActiveTurnInDatabase(
                 promptPayload: {
                   prompt: promptText,
                   requestedModel: model,
-                  cascadeConfig: normalized
-                    ? {
-                        requestedModel: { model: normalized.enumModel },
-                        plannerConfig: {
-                          requestedModel: {
-                            model: normalized.enumModel,
-                            choice: {
-                              case: "model",
-                              value: normalized.enumModel,
+                  cascadeConfig:
+                    normalized && isValidProtoModelEnum(normalized.enumModel)
+                      ? {
+                          requestedModel: { model: normalized.enumModel },
+                          plannerConfig: {
+                            requestedModel: {
+                              model: normalized.enumModel,
+                              choice: {
+                                case: "model",
+                                value: normalized.enumModel,
+                              },
                             },
+                            planModel: normalized.enumModel,
+                            ...(normalized.modelName
+                              ? { modelName: normalized.modelName }
+                              : {}),
                           },
-                          planModel: normalized.enumModel,
-                          ...(normalized.modelName
-                            ? { modelName: normalized.modelName }
-                            : {}),
-                        },
-                      }
-                    : undefined,
+                        }
+                      : normalized?.modelName
+                        ? {
+                            plannerConfig: {
+                              modelName: normalized.modelName,
+                            },
+                          }
+                        : undefined,
                 },
               };
             }

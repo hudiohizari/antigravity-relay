@@ -87,6 +87,14 @@ vi.mock("better-sqlite3", () => {
               rows: [],
             });
           }
+        } else if (/CREATE\s+TABLE\s+gen_metadata/i.test(trimmed)) {
+          if (!db.tables.some((t) => t.name === "gen_metadata")) {
+            db.tables.push({
+              name: "gen_metadata",
+              columns: ["id", "idx", "data"],
+              rows: [],
+            });
+          }
         } else if (/INSERT\s+INTO\s+steps/i.test(trimmed)) {
           const match = trimmed.match(
             /VALUES\s*\(\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*(\d+)\s*,\s*'([^']*)'\s*\)/i,
@@ -146,6 +154,11 @@ vi.mock("better-sqlite3", () => {
                 );
               }
               return [...table.rows];
+            }
+            if (q.includes("FROM gen_metadata")) {
+              const table = db.tables.find((t) => t.name === "gen_metadata");
+              if (!table) return [];
+              return [...table.rows].sort((a, b) => (b.idx ?? 0) - (a.idx ?? 0));
             }
             return [];
           },
@@ -215,6 +228,15 @@ vi.mock("better-sqlite3", () => {
                   data: args[1],
                 });
               }
+            } else if (/INSERT\s+INTO\s+gen_metadata/i.test(q)) {
+              const table = db.tables.find((t) => t.name === "gen_metadata");
+              if (table) {
+                table.rows.push({
+                  id: args[0],
+                  idx: typeof args[1] === "number" ? args[1] : 0,
+                  data: args[2],
+                });
+              }
             }
           },
         };
@@ -230,6 +252,7 @@ import { checkpointStateDatabases } from "@/modules/chat-resume/walCheckpoint";
 import {
   detectActiveTurn,
   detectActiveTurnInDatabase,
+  extractModelFromDatabase,
   inspectTranscriptForActiveTurn,
   isCliTarget,
   isSubagentConversation,
@@ -804,6 +827,192 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
 
         const detected = await detectActiveTurnInDatabase(dbPath);
         expect(detected).toBeNull();
+      });
+    });
+
+    describe("extractModelFromDatabase & Claude Model Resolution", () => {
+      it("extracts authentic proto enum MODEL_PLACEHOLDER_M26 and model_name from gen_metadata binary wire format", () => {
+        const dbPath = path.join(tempDir, "claude-wire.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE gen_metadata (id TEXT PRIMARY KEY, idx INTEGER, data BLOB);`,
+        );
+
+        // Binary wire payload containing both model_name and model_enum
+        const wirePayload = Buffer.from(
+          "prefix_data\n\x18model_name\x12\x18claude-opus-4-6-thinking\n\x16model_enum\x12\x15MODEL_PLACEHOLDER_M26_suffix",
+          "latin1",
+        );
+
+        db.prepare(`INSERT INTO gen_metadata VALUES (?, ?, ?)`).run(
+          "meta-1",
+          10,
+          wirePayload,
+        );
+
+        const extracted = extractModelFromDatabase(db);
+        expect(extracted).toBeDefined();
+        expect(extracted?.enumModel).toBe("MODEL_PLACEHOLDER_M26");
+        expect(extracted?.modelName).toBe("claude-opus-4-6-thinking");
+        db.close();
+      });
+
+      it("prioritizes authentic model_enum over human model names when both exist in gen_metadata", () => {
+        const dbPath = path.join(tempDir, "priority.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE gen_metadata (id TEXT PRIMARY KEY, idx INTEGER, data BLOB);`,
+        );
+
+        const textPayload = JSON.stringify({
+          custom_metadata: {
+            model_name: "claude-opus-4-6-thinking",
+            model_enum: "MODEL_PLACEHOLDER_M26",
+          },
+        });
+
+        db.prepare(`INSERT INTO gen_metadata VALUES (?, ?, ?)`).run(
+          "meta-2",
+          5,
+          textPayload,
+        );
+
+        const extracted = extractModelFromDatabase(db);
+        expect(extracted).toBeDefined();
+        expect(extracted?.enumModel).toBe("MODEL_PLACEHOLDER_M26");
+        expect(extracted?.modelName).toBe("claude-opus-4-6-thinking");
+        db.close();
+      });
+
+      it("extracts model_name when gen_metadata only contains human name without proto enum", () => {
+        const dbPath = path.join(tempDir, "name-only.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE gen_metadata (id TEXT PRIMARY KEY, idx INTEGER, data BLOB);`,
+        );
+
+        const textPayload = `turn_data_model_name: "claude-opus-4-6-thinking"`;
+        db.prepare(`INSERT INTO gen_metadata VALUES (?, ?, ?)`).run(
+          "meta-3",
+          1,
+          textPayload,
+        );
+
+        const extracted = extractModelFromDatabase(db);
+        expect(extracted).toBeDefined();
+        expect(extracted?.enumModel).toBeUndefined();
+        expect(extracted?.modelName).toBe("claude-opus-4-6-thinking");
+        db.close();
+      });
+
+      it("detects active turn in SQLite for Claude Opus 4.6 and populates promptPayload with authentic enum and no fabricated enums", async () => {
+        const dbPath = path.join(tempDir, "claude-turn.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        db.exec(
+          `CREATE TABLE gen_metadata (id TEXT PRIMARY KEY, idx INTEGER, data BLOB);`,
+        );
+
+        // Step is active with prompt
+        db.prepare(`INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          "s-claude-1",
+          "cascade-claude-turn",
+          "Analyze the database indexing strategy for session continuity",
+          2,
+          "claude-opus-4-6-thinking",
+          5,
+          "",
+          null,
+        );
+
+        // gen_metadata has authentic wire payload
+        const wirePayload = Buffer.from(
+          "binary_header\n\x18model_name\x12\x18claude-opus-4-6-thinking\n\x16model_enum\x12\x15MODEL_PLACEHOLDER_M26_tail",
+          "latin1",
+        );
+        db.prepare(`INSERT INTO gen_metadata VALUES (?, ?, ?)`).run(
+          "meta-turn",
+          5,
+          wirePayload,
+        );
+        db.close();
+
+        const detected = await detectActiveTurnInDatabase(dbPath);
+        expect(detected).not.toBeNull();
+        expect(detected?.cascadeId).toBe("cascade-claude-turn");
+        expect(detected?.promptPayload.prompt).toBe(
+          "Analyze the database indexing strategy for session continuity",
+        );
+        // Authentically prioritized proto enum
+        expect(detected?.promptPayload.requestedModel).toBe(
+          "MODEL_PLACEHOLDER_M26",
+        );
+
+        // Schema-compliant cascadeConfig with authentic enum
+        const cascadeConfig = detected?.promptPayload.cascadeConfig as
+          | Record<string, any>
+          | undefined;
+        expect(cascadeConfig?.requestedModel).toEqual({
+          model: "MODEL_PLACEHOLDER_M26",
+        });
+        expect(cascadeConfig?.plannerConfig?.requestedModel).toEqual({
+          model: "MODEL_PLACEHOLDER_M26",
+          choice: { case: "model", value: "MODEL_PLACEHOLDER_M26" },
+        });
+        expect(cascadeConfig?.plannerConfig?.planModel).toBe(
+          "MODEL_PLACEHOLDER_M26",
+        );
+        expect(cascadeConfig?.plannerConfig?.modelName).toBe(
+          "claude-opus-4-6-thinking",
+        );
+
+        // Verify fabricated enum is NEVER present
+        expect(JSON.stringify(detected)).not.toContain("MODEL_CLAUDE_4_SONNET");
+      });
+
+      it("detects active turn in SQLite for Claude turn with only model_name and omits requestedModel override from cascadeConfig (native inheritance)", async () => {
+        const dbPath = path.join(tempDir, "claude-native.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+
+        db.prepare(`INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          "s-claude-2",
+          "cascade-claude-native",
+          "Design microservices architecture",
+          2,
+          "claude-opus-4-6-thinking",
+          1,
+          "",
+          null,
+        );
+        db.close();
+
+        const detected = await detectActiveTurnInDatabase(dbPath);
+        expect(detected).not.toBeNull();
+        expect(detected?.cascadeId).toBe("cascade-claude-native");
+        expect(detected?.promptPayload.prompt).toBe(
+          "Design microservices architecture",
+        );
+        expect(detected?.promptPayload.requestedModel).toBe(
+          "claude-opus-4-6-thinking",
+        );
+
+        // RequestedModel override is omitted so Language Server natively inherits conversation model
+        const nativeCascadeConfig = detected?.promptPayload.cascadeConfig as
+          | Record<string, any>
+          | undefined;
+        expect(nativeCascadeConfig?.requestedModel).toBeUndefined();
+        expect(nativeCascadeConfig?.plannerConfig?.planModel).toBeUndefined();
+        expect(nativeCascadeConfig?.plannerConfig?.modelName).toBe(
+          "claude-opus-4-6-thinking",
+        );
+
+        // Verify fabricated enum is NEVER present
+        expect(JSON.stringify(detected)).not.toContain("MODEL_CLAUDE_4_SONNET");
       });
     });
   });
