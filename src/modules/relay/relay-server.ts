@@ -370,6 +370,7 @@ export function generateAutoReloadScript(
   var initialPort = ${upstreamPort ?? "null"};
   var initialEpoch = ${upstreamEpoch};
   var reloading = false;
+  var reloadingStartedAt = 0;
   var RELAY_CHANNEL = "antigravity-relay";
 
   var copyCatalog = {
@@ -948,9 +949,9 @@ export function generateAutoReloadScript(
         var style = document.createElement("style");
         style.textContent = [
           ":host { position: fixed; top: max(12px, calc(env(safe-area-inset-top, 0px) + 8px)); left: 50%; transform: translateX(-50%); z-index: 2147483647; pointer-events: none; width: auto; display: flex; justify-content: center; align-items: center; margin: 0; padding: 0; border: none; }",
-          ".ag-banner { pointer-events: auto; box-sizing: border-box; display: inline-flex; align-items: center; gap: 8px; max-width: min(calc(100vw - 32px), 400px); width: max-content; padding: 8px 16px; border-radius: 9999px; background: rgba(15, 23, 42, 0.90); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3); font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 500; line-height: 1.4; color: #e0f2fe; letter-spacing: -0.01em; text-align: left; word-break: break-word; user-select: none; -webkit-user-select: none; transition: border-color 0.2s ease, transform 0.2s ease; }",
-          ".ag-banner:hover { border-color: rgba(56, 189, 248, 0.55); }",
-          ".ag-banner:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }",
+          ".ag-banner, #antigravity-reload-banner { pointer-events: auto; box-sizing: border-box; display: inline-flex; align-items: center; gap: 8px; max-width: min(calc(100vw - 32px), 400px); width: max-content; padding: 8px 16px; padding-top: max(8px, env(safe-area-inset-top, 8px)); border-radius: 9999px; background: rgba(15, 23, 42, 0.90); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3); font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 500; line-height: 1.4; color: #e0f2fe; letter-spacing: -0.01em; text-align: left; word-break: break-word; user-select: none; -webkit-user-select: none; transition: border-color 0.2s ease, transform 0.2s ease; }",
+          ".ag-banner:hover, #antigravity-reload-banner:hover { border-color: rgba(56, 189, 248, 0.55); }",
+          ".ag-banner:focus-visible, #antigravity-reload-banner:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }",
           ".ag-banner--stopped, .ag-banner--amber { border-color: rgba(245, 158, 11, 0.45); }",
           ".ag-banner--stopped:hover, .ag-banner--amber:hover { border-color: rgba(245, 158, 11, 0.65); }",
           ".ag-banner--stopped:focus-visible, .ag-banner--amber:focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }",
@@ -969,6 +970,7 @@ export function generateAutoReloadScript(
         shadow.appendChild(style);
 
         var banner = document.createElement("div");
+        banner.id = "antigravity-reload-banner";
         banner.className = "ag-banner ag-banner--" + mode + (mode === "stopped" ? " ag-banner--amber" : " ag-banner--cyan");
         banner.setAttribute("role", "status");
         banner.setAttribute("aria-live", "polite");
@@ -1000,10 +1002,23 @@ export function generateAutoReloadScript(
     window.__agUnmountReloadBanner = unmountReloadBanner;
   } catch (_) {}
 
-  function triggerReload() {
+  function triggerReload(initialMode) {
     if (reloading || window.__antigravitySessionRevoked) return;
     reloading = true;
-    mountReloadBanner(getCatalog().relayStoppedBanner, "stopped");
+    reloadingStartedAt = Date.now();
+    var mode = (initialMode === "restarting") ? "restarting" : "stopped";
+    if (mode === "restarting") {
+      mountReloadBanner(getCatalog().reconnectingBanner, "restarting");
+    } else {
+      mountReloadBanner(getCatalog().relayStoppedBanner, "stopped");
+    }
+
+    setTimeout(function() {
+      if (reloading) {
+        reloading = false;
+        unmountReloadBanner();
+      }
+    }, 10000);
 
     var pollAttempts = 0;
     var check = function() {
@@ -1012,11 +1027,19 @@ export function generateAutoReloadScript(
         unmountReloadBanner();
         return;
       }
+      if (!reloading) {
+        unmountReloadBanner();
+        return;
+      }
       fetch("/health", { cache: "no-store" })
         .then(function(res) { return res.json(); })
         .then(function(data) {
           if (window.__antigravitySessionRevoked) {
             reloading = false;
+            unmountReloadBanner();
+            return;
+          }
+          if (!reloading) {
             unmountReloadBanner();
             return;
           }
@@ -1033,7 +1056,7 @@ export function generateAutoReloadScript(
           setTimeout(check, 1000);
         })
         .catch(function() {
-          if (!window.__antigravitySessionRevoked) {
+          if (reloading && !window.__antigravitySessionRevoked) {
             mountReloadBanner(getCatalog().relayStoppedBanner, "stopped");
             pollAttempts++;
             var delay = pollAttempts > 5 ? 3000 : 1000;
@@ -1075,9 +1098,16 @@ export function generateAutoReloadScript(
           if (typeof window === "undefined" || window.__antigravitySessionRevoked) {
             return;
           }
-          if (event.code === 1012 || event.code === 1006 || event.code === 1011 || event.code === 1000 || event.reason === "Server stopping") {
+          var RESTART_CLOSE_CODES = [1000, 1001, 1005, 1006, 1011, 1012];
+          if (
+            RESTART_CLOSE_CODES.indexOf(event.code) !== -1 ||
+            event.reason === "Server stopping" ||
+            event.reason === "Service Restart" ||
+            event.reason === "Antigravity restarting"
+          ) {
             hasDeadSocket = true;
-            triggerReload();
+            var isRestart = event.code === 1012 || event.reason === "Service Restart" || event.reason === "Antigravity restarting";
+            triggerReload(isRestart ? "restarting" : "stopped");
           }
         });
       }
@@ -1095,7 +1125,14 @@ export function generateAutoReloadScript(
       handleRevocation(false);
       return;
     }
-    if (reloading) return;
+    if (reloading) {
+      if (Date.now() - reloadingStartedAt > 10000) {
+        reloading = false;
+        unmountReloadBanner();
+      } else {
+        return;
+      }
+    }
 
     var hadClosedSockets = hasDeadSocket || (trackedSockets.length > 0 && trackedSockets.some(function(s) {
       return s.readyState === 2 || s.readyState === 3;
@@ -1110,7 +1147,7 @@ export function generateAutoReloadScript(
         var isHealthy = data && data.isRunning && data.upstreamPort && !data.isRestarting;
 
         if (portChanged || epochChanged) {
-          triggerReload();
+          triggerReload("restarting");
         } else if (isHealthy && hadClosedSockets) {
           window.location.reload();
         }
@@ -1141,7 +1178,7 @@ export function generateAutoReloadScript(
         var portChanged = data && data.upstreamPort && initialPort && data.upstreamPort !== initialPort;
         var epochChanged = data && typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch;
         if (portChanged || epochChanged) {
-          triggerReload();
+          triggerReload("restarting");
         }
       })
       .catch(function() {});
@@ -1634,7 +1671,7 @@ export class RelayServer {
   private readonly upstreamBridge: UpstreamBridge;
   private readonly rateLimiter: AuthRateLimiter;
   private readonly portDiscovery: PortDiscoveryService;
-  private readonly upstreamDispatcher: Agent;
+  private upstreamDispatcher: Agent;
 
   private app: FastifyInstance | null = null;
   private wss: WebSocketServer | null = null;
@@ -1691,17 +1728,31 @@ export class RelayServer {
     }
 
     // Scoped Agent for localhost upstream with self-signed certificate acceptance
-    this.upstreamDispatcher = new Agent({
+    this.upstreamDispatcher = this.createUpstreamDispatcher();
+
+    this.wireUpstreamEvents();
+    this.wirePortDiscoveryEvents();
+    this.wireSessionEvents();
+  }
+
+  private createUpstreamDispatcher(): Agent {
+    return new Agent({
       connect: {
         rejectUnauthorized: false,
       },
       pipelining: 1,
       keepAliveTimeout: 30000,
     });
+  }
 
-    this.wireUpstreamEvents();
-    this.wirePortDiscoveryEvents();
-    this.wireSessionEvents();
+  private resetUpstreamDispatcher(): void {
+    const deadAgent = this.upstreamDispatcher;
+    this.upstreamDispatcher = this.createUpstreamDispatcher();
+    try {
+      deadAgent.destroy();
+    } catch {
+      // Suppress agent destroy error
+    }
   }
 
   public getSessionManager(): SessionManager {
@@ -2383,9 +2434,11 @@ export class RelayServer {
         }
 
         if (this.portDiscovery.isRestarting()) {
-          return reply.status(503).header("Retry-After", "2").send({
+          return reply.status(503).header("Retry-After", "1").send({
             error: "upstream_restarting",
-            retry_after_ms: 2000,
+            message:
+              "Antigravity upstream is restarting. Please retry in 1 second.",
+            retry_after_ms: 1000,
           });
         }
 
@@ -2532,11 +2585,26 @@ export class RelayServer {
             )) {
               if (headerVal === undefined) continue;
               const lower = headerName.toLowerCase();
-              if (HOP_BY_HOP_HEADERS.has(lower) || lower === "content-length") {
+              if (
+                HOP_BY_HOP_HEADERS.has(lower) ||
+                lower === "content-length" ||
+                lower === "etag" ||
+                lower === "last-modified" ||
+                lower === "cache-control" ||
+                lower === "pragma" ||
+                lower === "expires"
+              ) {
                 continue;
               }
               reply.header(headerName, headerVal);
             }
+
+            reply.header(
+              "Cache-Control",
+              "no-store, no-cache, must-revalidate, max-age=0, post-check=0, pre-check=0",
+            );
+            reply.header("Pragma", "no-cache");
+            reply.header("Expires", "0");
 
             return reply.status(upstreamRes.statusCode).send(finalHtml);
           }
@@ -2645,12 +2713,15 @@ export class RelayServer {
           const isRestarting = this.portDiscovery.isRestarting();
           return reply
             .status(503)
-            .header("Retry-After", "2")
+            .header("Retry-After", "1")
             .send({
               error: isRestarting
                 ? "upstream_restarting"
                 : "upstream_unavailable",
-              retry_after_ms: 2000,
+              message: isRestarting
+                ? "Antigravity upstream is restarting. Please retry in 1 second."
+                : "Upstream service is currently unavailable.",
+              retry_after_ms: 1000,
             });
         }
       },
@@ -3168,9 +3239,13 @@ export class RelayServer {
     });
   }
 
-  private handlePortChanged(_oldPort: number | null, _newPort: number): void {
+  private handlePortChanged(oldPort: number | null, newPort: number): void {
     this.upstreamEpoch++;
-    if (!this.hasCustomUpstreamBridge) {
+    this.resetUpstreamDispatcher();
+    this.upstreamBridge.setTarget("127.0.0.1", newPort);
+    if (this.hasCustomUpstreamBridge || this.upstreamBridge.isConnected()) {
+      this.upstreamBridge.reconnectAndFlush().catch(() => {});
+    } else {
       this.upstreamBridge.flushBuffer().catch(() => {});
     }
     for (const pair of this.activeWsConnections) {
@@ -3186,6 +3261,7 @@ export class RelayServer {
 
   private handleRestarting(): void {
     this.upstreamEpoch++;
+    this.resetUpstreamDispatcher();
     if (!this.hasCustomUpstreamBridge) {
       this.upstreamBridge.enterBuffering("Antigravity restarting");
     }

@@ -462,5 +462,120 @@ describe("PortDiscoveryService", () => {
       expect(service.readPortFromLogSync()).toBeNull();
       statSpy.mockRestore();
     });
+
+    it("AC-02: should resolve target-aware default log paths for app vs ide", () => {
+      const appPath = getDefaultLogPath("app");
+      const idePath = getDefaultLogPath("ide");
+      expect(appPath).toContain("Antigravity");
+      expect(idePath).toContain("Antigravity IDE");
+      expect(appPath).not.toBe(idePath);
+    });
+
+    it("AC-02: should dynamically retarget to a different application target and log path", () => {
+      service = new PortDiscoveryService({
+        appTarget: "app",
+        logPath: testLogPath,
+      });
+      expect(service.getAppTarget()).toBe("app");
+      expect(service.getLogPath()).toBe(testLogPath);
+
+      const ideLogPath = path.join(tempDir, "ide-main.log");
+      service.retarget("ide", ideLogPath);
+
+      expect(service.getAppTarget()).toBe("ide");
+      expect(service.getLogPath()).toBe(ideLogPath);
+      expect(service.getPort()).toBeNull();
+      expect(service.getStalePort()).toBeNull();
+    });
+
+    it("AC-01: should reject same-port rebind within quiet window (<400ms)", async () => {
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        readinessProbe: async () => true,
+      });
+
+      fs.writeFileSync(
+        testLogPath,
+        "listening on https://127.0.0.1:55555/\n",
+        "utf-8",
+      );
+
+      service.setRestarting(true, 55555);
+      expect(service.isRestarting()).toBe(true);
+
+      // Check immediately within quiet window
+      const result = await service.checkOnce();
+      expect(result).toBeNull();
+      expect(service.isRestarting()).toBe(true);
+      expect(service.getStalePort()).toBe(55555);
+    });
+
+    it("AC-01: should accept same-port rebind after quiet window (>=400ms) when probe succeeds", async () => {
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        readinessProbe: async () => true,
+      });
+
+      fs.writeFileSync(
+        testLogPath,
+        "listening on https://127.0.0.1:55555/\n",
+        "utf-8",
+      );
+
+      service.setRestarting(true, 55555);
+
+      // Fast-forward restartingStartedAt beyond quiet window
+      (service as any).restartingStartedAt = Date.now() - 500;
+
+      let portChangedEvent: { oldPort: number | null; newPort: number } | null = null;
+      service.on("port-changed", (evt) => {
+        portChangedEvent = evt;
+      });
+
+      const result = await service.checkOnce();
+      expect(result).toBe(55555);
+      expect(service.getPort()).toBe(55555);
+      expect(service.isRestarting()).toBe(false);
+      expect(service.getStalePort()).toBeNull();
+      expect(portChangedEvent).toEqual({ oldPort: null, newPort: 55555 });
+    });
+
+    it("AC-01: should clear stalePort after TTL (>=3000ms) even if probe fails", async () => {
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        readinessProbe: async () => false,
+      });
+
+      fs.writeFileSync(
+        testLogPath,
+        "listening on https://127.0.0.1:55555/\n",
+        "utf-8",
+      );
+
+      service.setRestarting(true, 55555);
+      (service as any).restartingStartedAt = Date.now() - 3500;
+
+      const result = await service.checkOnce();
+      expect(result).toBeNull();
+      expect(service.getStalePort()).toBeNull(); // TTL expired and cleared
+    });
+
+    it("AC-03: should suppress port discovery if active readiness probe fails", async () => {
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        readinessProbe: async () => false, // probe says socket not ready
+      });
+
+      fs.writeFileSync(
+        testLogPath,
+        "listening on https://127.0.0.1:56789/\n",
+        "utf-8",
+      );
+
+      const result = await service.checkOnce();
+      expect(result).toBeNull();
+      expect(service.getPort()).toBeNull();
+      expect(service.isDiscovered()).toBe(false);
+    });
   });
 });

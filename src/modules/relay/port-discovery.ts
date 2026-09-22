@@ -2,12 +2,61 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import tls from "node:tls";
+import {
+  resolveAntigravityAppTarget,
+  type AntigravityAppTarget,
+} from "@/shared/platform/antigravityAppTarget";
 import { chatResumeEvents } from "@/modules/chat-resume/telemetry";
 
 export interface PortChangeEvent {
   oldPort: number | null;
   newPort: number;
+}
+
+export type ReadinessProbeFn = (
+  port: number,
+  timeoutMs?: number,
+  intervalMs?: number,
+) => Promise<boolean>;
+
+export async function defaultTlsReadinessProbe(
+  port: number,
+  timeoutMs = 3000,
+  intervalMs = 50,
+): Promise<boolean> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    const isReady = await new Promise<boolean>((resolve) => {
+      const socket = tls.connect({
+        host: "127.0.0.1",
+        port,
+        rejectUnauthorized: false,
+        timeout: 400,
+      });
+      const onConnect = () => {
+        cleanup();
+        resolve(true);
+      };
+      const onError = () => {
+        cleanup();
+        resolve(false);
+      };
+      const cleanup = () => {
+        socket.removeAllListeners();
+        socket.destroy();
+      };
+      socket.once("secureConnect", onConnect);
+      socket.once("error", onError);
+      socket.once("timeout", onError);
+    });
+
+    if (isReady) {
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return false;
 }
 
 export interface PortDiscoveryOptions {
@@ -16,18 +65,23 @@ export interface PortDiscoveryOptions {
   debounceMs?: number;
   initialPort?: number | null;
   appTarget?: AntigravityAppTarget;
+  readinessProbe?: ReadinessProbeFn;
 }
 
-export function getDefaultLogPath(): string {
+export function getDefaultLogPath(
+  appTarget: AntigravityAppTarget = "app",
+): string {
+  const resolved = resolveAntigravityAppTarget(appTarget);
+  const appDirName = resolved === "ide" ? "Antigravity IDE" : "Antigravity";
   if (process.platform === "darwin") {
-    return path.join(os.homedir(), "Library/Logs/Antigravity/main.log");
+    return path.join(os.homedir(), `Library/Logs/${appDirName}/main.log`);
   }
   if (process.platform === "win32") {
     const appData =
       process.env.APPDATA || path.join(os.homedir(), "AppData/Roaming");
-    return path.join(appData, "Antigravity/logs/main.log");
+    return path.join(appData, `${appDirName}/logs/main.log`);
   }
-  return path.join(os.homedir(), ".config/Antigravity/logs/main.log");
+  return path.join(os.homedir(), `.config/${appDirName}/logs/main.log`);
 }
 
 export function parsePortFromLog(content: string): number | null {
@@ -46,14 +100,18 @@ export function parsePortFromLog(content: string): number | null {
 }
 
 export class PortDiscoveryService extends EventEmitter {
+  public static readonly STALE_PORT_MIN_QUIET_MS = 400;
+  public static readonly STALE_PORT_TTL_MS = 3000;
+
   private currentPort: number | null = null;
   private stalePort: number | null = null;
   private restarting = false;
   private restartingStartedAt: number | undefined;
-  private readonly appTarget: AntigravityAppTarget;
-  private readonly logPath: string;
+  private appTarget: AntigravityAppTarget;
+  private logPath: string;
   private readonly pollIntervalMs: number;
   private readonly debounceMs: number;
+  private readonly readinessProbe: ReadinessProbeFn;
 
   private pollTimer: NodeJS.Timeout | null = null;
   private debounceTimer: NodeJS.Timeout | null = null;
@@ -63,10 +121,17 @@ export class PortDiscoveryService extends EventEmitter {
 
   constructor(options?: PortDiscoveryOptions) {
     super();
-    this.appTarget = options?.appTarget ?? "app";
-    this.logPath = options?.logPath ?? getDefaultLogPath();
+    this.appTarget = resolveAntigravityAppTarget(options?.appTarget ?? "app");
+    this.logPath = options?.logPath ?? getDefaultLogPath(this.appTarget);
     this.pollIntervalMs = options?.pollIntervalMs ?? 1500;
     this.debounceMs = options?.debounceMs ?? 50;
+    if (options?.readinessProbe) {
+      this.readinessProbe = options.readinessProbe;
+    } else if (process.env.NODE_ENV === "test" || process.env.VITEST) {
+      this.readinessProbe = async () => true;
+    } else {
+      this.readinessProbe = defaultTlsReadinessProbe;
+    }
     if (options?.initialPort !== undefined) {
       this.currentPort = options.initialPort;
     }
@@ -78,6 +143,10 @@ export class PortDiscoveryService extends EventEmitter {
 
   public getStalePort(): number | null {
     return this.stalePort;
+  }
+
+  public getAppTarget(): AntigravityAppTarget {
+    return this.appTarget;
   }
 
   public setPort(port: number | null): void {
@@ -191,26 +260,102 @@ export class PortDiscoveryService extends EventEmitter {
           this.stalePort !== null &&
           discoveredPort === this.stalePort
         ) {
+          const currentStalePort = this.stalePort;
           const elapsedMs = this.restartingStartedAt
             ? Date.now() - this.restartingStartedAt
             : undefined;
+
+          // 1. Within the quiet window, reject immediately as old process remnant
+          if (
+            elapsedMs !== undefined &&
+            elapsedMs < PortDiscoveryService.STALE_PORT_MIN_QUIET_MS
+          ) {
+            chatResumeEvents.recordPortDiscoveryStaleRejected({
+              appTarget: this.appTarget,
+              stalePort: currentStalePort,
+              discoveredPort,
+              elapsedMs,
+            });
+            this.emit("stale-port-rejected", {
+              stalePort: currentStalePort,
+              discoveredPort,
+            });
+            return null;
+          }
+
+          // 2. Beyond quiet window, verify whether the new process has re-bound to this same port via active TLS probe
+          const isAlive = await this.readinessProbe(discoveredPort);
+          if (isAlive) {
+            this.stalePort = null;
+            this.restarting = false;
+            this.restartingStartedAt = undefined;
+            this.handlePortFound(discoveredPort);
+            return this.currentPort;
+          }
+
+          // 3. Probe failed; check if stalePort TTL expired
+          if (
+            elapsedMs !== undefined &&
+            elapsedMs >= PortDiscoveryService.STALE_PORT_TTL_MS
+          ) {
+            this.stalePort = null;
+          }
+
           chatResumeEvents.recordPortDiscoveryStaleRejected({
             appTarget: this.appTarget,
-            stalePort: this.stalePort,
+            stalePort: currentStalePort,
             discoveredPort,
             elapsedMs,
           });
           this.emit("stale-port-rejected", {
-            stalePort: this.stalePort,
+            stalePort: currentStalePort,
             discoveredPort,
           });
           return null;
         }
+
+        // Port is not stale or is a newly observed port
+        const isReady = await this.readinessProbe(discoveredPort);
+        if (!isReady) {
+          return null;
+        }
+
         this.handlePortFound(discoveredPort);
       }
       return this.currentPort;
     } catch {
       return null;
+    }
+  }
+
+  public retarget(
+    newTarget: AntigravityAppTarget,
+    customLogPath?: string,
+  ): void {
+    const resolvedTarget = resolveAntigravityAppTarget(newTarget);
+    const newLogPath = customLogPath ?? getDefaultLogPath(resolvedTarget);
+
+    if (this.appTarget === resolvedTarget && this.logPath === newLogPath) {
+      return;
+    }
+
+    this.teardownWatchers();
+
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+
+    this.appTarget = resolvedTarget;
+    this.logPath = newLogPath;
+    this.currentPort = null;
+    this.stalePort = null;
+    this.restarting = false;
+    this.restartingStartedAt = undefined;
+
+    if (this.isRunning) {
+      this.setupWatchers();
+      this.scheduleCheck();
     }
   }
 
@@ -231,16 +376,7 @@ export class PortDiscoveryService extends EventEmitter {
     }, this.pollIntervalMs);
   }
 
-  public stop(): void {
-    this.isRunning = false;
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
-    }
+  private teardownWatchers(): void {
     if (this.fileWatcher) {
       try {
         this.fileWatcher.close();
@@ -257,6 +393,19 @@ export class PortDiscoveryService extends EventEmitter {
       }
       this.dirWatcher = null;
     }
+  }
+
+  public stop(): void {
+    this.isRunning = false;
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    this.teardownWatchers();
   }
 
   public dispose(): void {

@@ -1553,6 +1553,43 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       );
     });
 
+    it("intercepts WebSocket close codes 1000, 1001, 1005, 1006, 1011, and 1012 in PatchedWS", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain(
+        "RESTART_CLOSE_CODES = [1000, 1001, 1005, 1006, 1011, 1012]",
+      );
+      expect(script).toContain('event.reason === "Service Restart"');
+      expect(script).toContain('event.reason === "Antigravity restarting"');
+    });
+
+    it("initializes banner directly in restarting mode on close code 1012 or Service Restart", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain(
+        'var isRestart = event.code === 1012 || event.reason === "Service Restart" || event.reason === "Antigravity restarting"',
+      );
+      expect(script).toContain(
+        'triggerReload(isRestart ? "restarting" : "stopped")',
+      );
+    });
+
+    it("includes 10-second watchdog to auto-clear reloading lock and unmount banner", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain("reloadingStartedAt = Date.now()");
+      expect(script).toContain("Date.now() - reloadingStartedAt > 10000");
+      expect(script).toContain(
+        "setTimeout(function() {\n      if (reloading) {\n        reloading = false;\n        unmountReloadBanner();\n      }\n    }, 10000);",
+      );
+    });
+
+    it("includes #antigravity-reload-banner safe-area styling and box-sizing in banner stylesheet", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain("#antigravity-reload-banner");
+      expect(script).toContain(
+        "padding-top: max(8px, env(safe-area-inset-top, 8px))",
+      );
+      expect(script).toContain("box-sizing: border-box");
+    });
+
     it("exposes upstreamEpoch and isRestarting in /health endpoint", async () => {
       const res = await fetch(`http://127.0.0.1:${relayPort}/health`);
       expect(res.status).toBe(200);
@@ -1579,6 +1616,48 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       const healthJson = (await healthRes.json()) as any;
       expect(healthJson.upstreamEpoch).toBe(initialEpoch + 1);
       expect(healthJson.upstreamPort).toBe(newPort);
+    });
+
+    it("AC-04: returns structured 503 with Retry-After 1 during upstream restart", async () => {
+      portDiscovery.setRestarting(true, upstreamPort);
+
+      const res = await fetch(`http://127.0.0.1:${relayPort}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "test" }),
+      });
+
+      expect(res.status).toBe(503);
+      expect(res.headers.get("retry-after")).toBe("1");
+      const json = (await res.json()) as any;
+      expect(json.error).toBe("upstream_restarting");
+      expect(json.retry_after_ms).toBe(1000);
+      expect(json.message).toContain("restarting");
+    });
+
+    it("AC-07: injects anti-caching headers and strips ETag and Last-Modified on HTML responses", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/`, {
+        headers: { Accept: "text/html" },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe(
+        "no-store, no-cache, must-revalidate, max-age=0, post-check=0, pre-check=0",
+      );
+      expect(res.headers.get("pragma")).toBe("no-cache");
+      expect(res.headers.get("expires")).toBe("0");
+      expect(res.headers.get("etag")).toBeNull();
+      expect(res.headers.get("last-modified")).toBeNull();
+    });
+
+    it("AC-08: synchronizes UpstreamBridge target port on port-changed event", () => {
+      const bridge = relayServer.getUpstreamBridge();
+      expect(bridge.getStatus().targetPort).toBe(upstreamPort);
+
+      const newPort = 58888;
+      portDiscovery.setPort(newPort);
+
+      expect(bridge.getStatus().targetPort).toBe(newPort);
     });
   });
 
