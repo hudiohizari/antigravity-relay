@@ -450,8 +450,9 @@ export function extractModelFromDatabase(
           } else {
             // 2. Text / JSON key: model_enum: "..." or model_enum=...
             const jsonEnumMatch =
-              text.match(/model_enum["']?\s*[:=]\s*["']?([A-Za-z0-9_]+)["']?/) ||
-              text.match(/model_enum[^\w]*(MODEL_[A-Z0-9_]+)/i);
+              text.match(
+                /model_enum["']?\s*[:=]\s*["']?([A-Za-z0-9_]+)["']?/,
+              ) || text.match(/model_enum[^\w]*(MODEL_[A-Z0-9_]+)/i);
 
             if (
               jsonEnumMatch &&
@@ -477,8 +478,9 @@ export function extractModelFromDatabase(
           } else {
             // 2. Text / JSON key: model_name: "..." or model_name=...
             const jsonNameMatch =
-              text.match(/model_name["']?\s*[:=]\s*["']?([A-Za-z0-9_\-\.]+)["']?/) ||
-              text.match(/model_name[^\w]*([a-zA-Z0-9_\-\.]+)/i);
+              text.match(
+                /model_name["']?\s*[:=]\s*["']?([A-Za-z0-9_\-\.]+)["']?/,
+              ) || text.match(/model_name[^\w]*([a-zA-Z0-9_\-\.]+)/i);
 
             if (
               jsonNameMatch &&
@@ -796,6 +798,7 @@ export async function detectActiveTurnInDatabase(
             promptPayload: {
               prompt: promptText,
               requestedModel: modelToReport,
+              modelName: authenticName ?? normalized?.modelName,
               cascadeConfig:
                 normalized && isValidProtoModelEnum(normalized.enumModel)
                   ? {
@@ -885,6 +888,7 @@ export async function detectActiveTurnInDatabase(
                 promptPayload: {
                   prompt: promptText,
                   requestedModel: model,
+                  modelName: normalized?.modelName,
                   cascadeConfig:
                     normalized && isValidProtoModelEnum(normalized.enumModel)
                       ? {
@@ -954,6 +958,12 @@ export async function detectActiveTurnInDatabase(
                   promptPayload: {
                     prompt,
                     requestedModel: parsed.model ?? parsed.requestedModel,
+                    modelName:
+                      parsed.modelName ??
+                      ((
+                        parsed.cascadeConfig?.plannerConfig as
+                          Record<string, unknown> | undefined
+                      )?.modelName as string | undefined),
                     cascadeConfig: parsed.cascadeConfig,
                     contextReferences: parsed.contextReferences,
                   },

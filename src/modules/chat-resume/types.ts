@@ -8,6 +8,7 @@ export type ChatResumeSwitchSource =
 export interface InFlightPromptPayload {
   prompt: string;
   requestedModel?: string;
+  modelName?: string;
   cascadeConfig?: Record<string, unknown>;
   contextReferences?: unknown[];
   [key: string]: unknown;

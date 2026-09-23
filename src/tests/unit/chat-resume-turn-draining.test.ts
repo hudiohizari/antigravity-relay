@@ -139,6 +139,10 @@ describe("Chat Resume Detection & Turn Draining", () => {
       expect(resolveQuotaGroupId("claude-opus-4")).toBe("claude");
       expect(resolveQuotaGroupId("gemini-1.5-pro")).toBe("gemini-3-pro-high");
       expect(resolveQuotaGroupId("gemini-2.5-flash")).toBe("gemini-3-flash");
+      expect(resolveQuotaGroupId("MODEL_PLACEHOLDER_M318")).toBe(
+        "gemini-3-flash",
+      );
+      expect(resolveQuotaGroupId("MODEL_PLACEHOLDER_M26")).toBe("claude");
       expect(resolveQuotaGroupId("unknown-model-xyz")).toBe(
         "unknown-model-xyz",
       );
@@ -185,6 +189,117 @@ describe("Chat Resume Detection & Turn Draining", () => {
 
       // Without activeModel (overall depletion), since one enabled quota group is depleted, unscoped check returns true
       expect(AutoSwitchService.isAccountDepleted(account)).toBe(true);
+    });
+
+    it("evaluates depletion correctly when activeModel is a protobuf enum", () => {
+      const geminiDepletedAccount: CloudAccount = {
+        id: "acc-gemini-depleted",
+        provider: "google",
+        email: "gemini@example.com",
+        token: {
+          access_token: "token-2",
+          refresh_token: "refresh-2",
+          expires_in: 3600,
+          expiry_timestamp: Date.now() + 3600000,
+          token_type: "Bearer",
+        },
+        created_at: Date.now(),
+        last_used: Date.now(),
+        status: "active",
+        quota: {
+          models: {
+            "models/gemini-2.5-flash": {
+              percentage: 0, // Depleted!
+              resetTime: new Date(Date.now() + 3600000).toISOString(),
+            },
+            "models/gemini-1.5-pro": {
+              percentage: 90, // Healthy
+              resetTime: new Date(Date.now() + 3600000).toISOString(),
+            },
+          },
+        },
+      };
+
+      // MODEL_PLACEHOLDER_M318 resolves to gemini-3-flash and should detect depletion
+      expect(
+        AutoSwitchService.isAccountDepleted(
+          geminiDepletedAccount,
+          "MODEL_PLACEHOLDER_M318",
+        ),
+      ).toBe(true);
+
+      // MODEL_PLACEHOLDER_M26 resolves to claude; since neither models nor quota_groups match, falls back to unscoped
+      expect(
+        AutoSwitchService.isAccountDepleted(
+          geminiDepletedAccount,
+          "MODEL_PLACEHOLDER_M26",
+        ),
+      ).toBe(true);
+    });
+
+    it("falls back to account-wide depletion check when activeModel cannot be matched", () => {
+      const partiallyDepletedAccount: CloudAccount = {
+        id: "acc-partial",
+        provider: "google",
+        email: "partial@example.com",
+        token: {
+          access_token: "token-3",
+          refresh_token: "refresh-3",
+          expires_in: 3600,
+          expiry_timestamp: Date.now() + 3600000,
+          token_type: "Bearer",
+        },
+        created_at: Date.now(),
+        last_used: Date.now(),
+        status: "active",
+        quota: {
+          models: {
+            "gemini-2.5-flash": {
+              percentage: 0, // Depleted!
+              resetTime: new Date(Date.now() + 3600000).toISOString(),
+            },
+          },
+        },
+      };
+
+      // Completely unknown model fails model-scoping and falls through to account-wide check
+      expect(
+        AutoSwitchService.isAccountDepleted(
+          partiallyDepletedAccount,
+          "unknown-vendor-model-999",
+        ),
+      ).toBe(true);
+
+      const fullyHealthyAccount: CloudAccount = {
+        id: "acc-healthy",
+        provider: "google",
+        email: "healthy@example.com",
+        token: {
+          access_token: "token-4",
+          refresh_token: "refresh-4",
+          expires_in: 3600,
+          expiry_timestamp: Date.now() + 3600000,
+          token_type: "Bearer",
+        },
+        created_at: Date.now(),
+        last_used: Date.now(),
+        status: "active",
+        quota: {
+          models: {
+            "gemini-2.5-flash": {
+              percentage: 100,
+              resetTime: new Date(Date.now() + 3600000).toISOString(),
+            },
+          },
+        },
+      };
+
+      expect(
+        AutoSwitchService.isAccountDepleted(
+          fullyHealthyAccount,
+          "unknown-vendor-model-999",
+        ),
+      ).toBe(false);
     });
   });
 });

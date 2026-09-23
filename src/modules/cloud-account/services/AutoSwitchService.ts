@@ -27,13 +27,14 @@ export function resolveQuotaGroupId(modelId: string): string {
       ? "gemini-3.1-flash-image"
       : "gemini-3-pro-image";
   }
-  if (normalized.includes("flash")) {
+  if (normalized === "model_placeholder_m318" || normalized.includes("flash")) {
     return "gemini-3-flash";
   }
   if (normalized.includes("pro")) {
     return "gemini-3-pro-high";
   }
   if (
+    normalized === "model_placeholder_m26" ||
     normalized.includes("claude") ||
     normalized.includes("opus") ||
     normalized.includes("sonnet") ||
@@ -562,7 +563,13 @@ export class AutoSwitchService {
     const detectionTarget =
       effectiveTarget === "all" ? undefined : effectiveTarget;
     const activeTurn = await detectActiveTurn(detectionTarget);
-    const activeModel = activeTurn?.promptPayload?.requestedModel;
+    const activeModel =
+      (activeTurn?.promptPayload?.modelName as string | undefined) ??
+      ((
+        activeTurn?.promptPayload?.cascadeConfig?.plannerConfig as
+          Record<string, unknown> | undefined
+      )?.modelName as string | undefined) ??
+      activeTurn?.promptPayload?.requestedModel;
 
     // Check if current is depleted, scoped to the active model
     const isDepleted = this.isAccountDepleted(currentAccount, activeModel);
@@ -722,9 +729,26 @@ export class AutoSwitchService {
             .filter(Boolean)
             .join(" ")
             .toLowerCase();
+
+          const cleanGroupText = groupText.replace(/[-_]/g, " ");
+          const cleanTargetGroupId = targetGroupId.replace(/[-_]/g, " ");
+          const cleanActiveModel = activeModel
+            .toLowerCase()
+            .replace(/[-_]/g, " ");
+
+          const targetTokens = cleanTargetGroupId
+            .split(" ")
+            .filter((t) => t.length > 2);
+          const matchesTokens =
+            targetTokens.length > 0 &&
+            targetTokens.every((token) => cleanGroupText.includes(token));
+
           if (
             groupText.includes(targetGroupId) ||
-            groupText.includes(activeModel.toLowerCase())
+            cleanGroupText.includes(cleanTargetGroupId) ||
+            groupText.includes(activeModel.toLowerCase()) ||
+            cleanGroupText.includes(cleanActiveModel) ||
+            matchesTokens
           ) {
             const lowestBucket = group.buckets.reduce(
               (min, b) => Math.min(min, b.remaining_fraction * 100),
@@ -738,15 +762,21 @@ export class AutoSwitchService {
         }
       }
 
-      const isDepleted = matchedModel ? activeQuotaPct < THRESHOLD : false;
-      chatResumeEvents.recordAccountDepletedModelScoped({
-        accountId: account.id,
-        activeModel,
-        quotaPercentage: activeQuotaPct,
-        isDepleted,
-      });
+      if (matchedModel) {
+        const isDepleted = activeQuotaPct < THRESHOLD;
+        chatResumeEvents.recordAccountDepletedModelScoped({
+          accountId: account.id,
+          activeModel,
+          quotaPercentage: activeQuotaPct,
+          isDepleted,
+        });
 
-      return isDepleted;
+        return isDepleted;
+      }
+
+      logger.warn(
+        `AutoSwitch: Active model "${activeModel}" could not be matched to account quota groups. Falling back to account-wide depletion check.`,
+      );
     }
 
     const config =
@@ -763,24 +793,23 @@ export class AutoSwitchService {
       },
     );
 
-    if (enabledModels.length === 0) {
-      return false; // No enabled models, so not depleted
-    }
-
-    const maxPercentageByQuotaGroup = new Map<string, number>();
-    for (const [modelId, model] of enabledModels) {
-      const quotaGroupId = resolveQuotaGroupId(modelId);
-      const currentMaximum = maxPercentageByQuotaGroup.get(quotaGroupId) ?? -1;
-      if (model.percentage > currentMaximum) {
-        maxPercentageByQuotaGroup.set(quotaGroupId, model.percentage);
+    if (enabledModels.length > 0) {
+      const maxPercentageByQuotaGroup = new Map<string, number>();
+      for (const [modelId, model] of enabledModels) {
+        const quotaGroupId = resolveQuotaGroupId(modelId);
+        const currentMaximum =
+          maxPercentageByQuotaGroup.get(quotaGroupId) ?? -1;
+        if (model.percentage > currentMaximum) {
+          maxPercentageByQuotaGroup.set(quotaGroupId, model.percentage);
+        }
       }
-    }
 
-    const anyQuotaGroupDepleted = [...maxPercentageByQuotaGroup.values()].some(
-      (percentage) => percentage < THRESHOLD,
-    );
-    if (anyQuotaGroupDepleted) {
-      return true;
+      const anyQuotaGroupDepleted = [
+        ...maxPercentageByQuotaGroup.values(),
+      ].some((percentage) => percentage < THRESHOLD);
+      if (anyQuotaGroupDepleted) {
+        return true;
+      }
     }
 
     // Check quota groups
@@ -793,23 +822,27 @@ export class AutoSwitchService {
     });
 
     if (depletedGroups.length > 0) {
-      const anyAffected = depletedGroups.some((group) => {
-        const groupText = [group.display_name, group.description]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return enabledModels.some(([modelId]) => {
-          const normalizedModelId = modelId
-            .replace(/^models\//i, "")
+      if (enabledModels.length > 0) {
+        const anyAffected = depletedGroups.some((group) => {
+          const groupText = [group.display_name, group.description]
+            .filter(Boolean)
+            .join(" ")
             .toLowerCase();
-          const modelPart = normalizedModelId.split("-")[0]; // 'claude' or 'gemini' etc.
-          return (
-            groupText.includes(modelPart) ||
-            groupText.includes(normalizedModelId)
-          );
+          return enabledModels.some(([modelId]) => {
+            const normalizedModelId = modelId
+              .replace(/^models\//i, "")
+              .toLowerCase();
+            const modelPart = normalizedModelId.split("-")[0]; // 'claude' or 'gemini' etc.
+            return (
+              groupText.includes(modelPart) ||
+              groupText.includes(normalizedModelId)
+            );
+          });
         });
-      });
-      if (anyAffected) {
+        if (anyAffected) {
+          return true;
+        }
+      } else {
         return true;
       }
     }
