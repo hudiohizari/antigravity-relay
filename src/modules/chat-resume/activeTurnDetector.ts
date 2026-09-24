@@ -294,6 +294,116 @@ export function isConversationIdleInSummaries(
   }
 }
 
+export function isConversationActiveInSummaries(
+  cascadeId: string,
+  appTarget: AntigravityAppTarget = "app",
+): boolean {
+  if (isCliTarget(appTarget) || !cascadeId) {
+    return false;
+  }
+
+  const summariesDbPath = getAntigravityConversationSummariesDbPath(appTarget);
+  if (!summariesDbPath || !fs.existsSync(summariesDbPath)) {
+    return false;
+  }
+
+  let db: Database.Database | null = null;
+  try {
+    const DatabaseConstructor =
+      typeof Database === "function" ? Database : (Database as any)?.default;
+    const dbInstance: Database.Database = new DatabaseConstructor(
+      summariesDbPath,
+      {
+        readonly: true,
+        fileMustExist: true,
+        timeout: 500,
+      },
+    );
+    db = dbInstance;
+    try {
+      dbInstance.pragma("busy_timeout = 500");
+    } catch {
+      // Ignore pragma error
+    }
+
+    const hasTable = dbInstance
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_summaries'",
+      )
+      .get();
+    if (!hasTable) {
+      return false;
+    }
+
+    const row = dbInstance
+      .prepare(
+        `SELECT conversation_id, not_fully_idle, status, killed, nesting_depth, parent_conversation_id
+         FROM conversation_summaries
+         WHERE conversation_id = ?`,
+      )
+      .get(cascadeId) as
+      | {
+          conversation_id: string;
+          not_fully_idle?: unknown;
+          status?: unknown;
+          killed?: unknown;
+          nesting_depth?: unknown;
+          parent_conversation_id?: unknown;
+        }
+      | undefined;
+
+    if (!row) {
+      return false;
+    }
+
+    const isKilled =
+      row.killed === 1 ||
+      row.killed === "1" ||
+      row.killed === true ||
+      row.killed === "true";
+    if (isKilled) {
+      return false;
+    }
+
+    const isNotFullyIdle =
+      row.not_fully_idle === 1 ||
+      row.not_fully_idle === "1" ||
+      row.not_fully_idle === true ||
+      row.not_fully_idle === "true";
+    const isRunning = row.status === CASCADE_RUN_STATUS.RUNNING;
+
+    if (isNotFullyIdle || isRunning) {
+      return true;
+    }
+
+    const activeChild = dbInstance
+      .prepare(
+        `SELECT conversation_id FROM conversation_summaries
+         WHERE parent_conversation_id = ?
+           AND (not_fully_idle = 1 OR not_fully_idle = 'true' OR status = ?)
+           AND (killed = 0 OR killed = 'false')
+         LIMIT 1`,
+      )
+      .get(cascadeId, CASCADE_RUN_STATUS.RUNNING);
+
+    return Boolean(activeChild);
+  } catch (err) {
+    logger.warn(
+      `Failed to check conversation active status in summaries for ${cascadeId}`,
+      err,
+    );
+    return false;
+  } finally {
+    if (db) {
+      try {
+        db.close();
+      } catch {
+        // Ignore close error
+      }
+    }
+  }
+}
+
 export function hasActiveBackgroundTasksInStepsAfter(
   stepsAfter: Array<Record<string, unknown>>,
 ): boolean {
@@ -1104,7 +1214,11 @@ export function inspectTranscriptForActiveTurn(
             ? hasActiveSubagentForParent(cascadeId, effectiveTarget)
             : false;
 
-      if (isBackgroundTaskActive || isChildSubagentActive) {
+      const isSummaryActive = cascadeId
+        ? isConversationActiveInSummaries(cascadeId, effectiveTarget)
+        : false;
+
+      if (isBackgroundTaskActive || isChildSubagentActive || isSummaryActive) {
         return {
           hasActiveTurn: true,
           isInterrupted: true,
@@ -1299,9 +1413,14 @@ export function extractModelFromDatabase(
   return undefined;
 }
 
+export interface DetectActiveTurnOptions {
+  activeSummaries?: Map<string, ActiveConversationSummary> | null;
+}
+
 export async function detectActiveTurnInDatabase(
   dbPath: string,
   appTarget: AntigravityAppTarget = "app",
+  options?: DetectActiveTurnOptions,
 ): Promise<ActiveTurnSnapshot | null> {
   if (!fs.existsSync(dbPath)) {
     return null;
@@ -1601,14 +1720,17 @@ export async function detectActiveTurnInDatabase(
         "transcript.jsonl",
       );
 
+      let maxIdx: number | null | undefined;
+      let recentSteps: Array<Record<string, unknown>> = [];
+
       try {
         const maxRow = dbInstance
           .prepare("SELECT MAX(idx) as max_idx FROM steps")
           .get() as { max_idx: number | null } | undefined;
-        const maxIdx = maxRow?.max_idx;
+        maxIdx = maxRow?.max_idx;
 
         if (typeof maxIdx === "number") {
-          const recentSteps = dbInstance
+          recentSteps = dbInstance
             .prepare("SELECT * FROM steps WHERE idx >= ? ORDER BY idx DESC")
             .all(Math.max(0, maxIdx - 5)) as Array<Record<string, unknown>>;
 
@@ -1730,6 +1852,39 @@ export async function detectActiveTurnInDatabase(
         }
       }
 
+      const checkIsActiveInSummaries = (cid: string): boolean => {
+        if (options?.activeSummaries !== undefined) {
+          if (options.activeSummaries === null) {
+            return false;
+          }
+          return options.activeSummaries.has(cid);
+        }
+        return isConversationActiveInSummaries(cid, appTarget);
+      };
+
+      if (
+        !activeStep &&
+        (checkIsActiveInSummaries(cascadeId) ||
+          checkIsActiveInSummaries(cascadeIdCandidate))
+      ) {
+        let stepModel: unknown;
+        if (typeof recentSteps !== "undefined" && Array.isArray(recentSteps)) {
+          for (const s of recentSteps) {
+            if (s.model) {
+              stepModel = s.model;
+              break;
+            }
+          }
+        }
+        activeStep = {
+          idx: typeof maxIdx === "number" ? maxIdx : 0,
+          cascade_id: cascadeId,
+          ...(stepModel ? { model: stepModel } : {}),
+        };
+        isInterrupted = true;
+        promptText = "Continue your previous response.";
+      }
+
       if (activeStep) {
         const stepCascadeId =
           activeStep.cascade_id || activeStep.cascadeId
@@ -1758,6 +1913,10 @@ export async function detectActiveTurnInDatabase(
               promptText = cleaned;
             }
           }
+        }
+
+        if (!promptText && isInterrupted) {
+          promptText = "Continue your previous response.";
         }
 
         const dbModel = extractModelFromDatabase(dbInstance);
@@ -2070,7 +2229,9 @@ export async function detectAllActiveTurns(
   const seenCascades = new Set<string>(results.map((r) => r.cascadeId));
 
   for (const dbPath of candidatePaths) {
-    const detected = await detectActiveTurnInDatabase(dbPath, effectiveTarget);
+    const detected = await detectActiveTurnInDatabase(dbPath, effectiveTarget, {
+      activeSummaries,
+    });
     if (detected && !seenCascades.has(detected.cascadeId)) {
       seenCascades.add(detected.cascadeId);
       results.push(detected);
@@ -2085,6 +2246,7 @@ export async function detectAllActiveTurns(
         const detected = await detectActiveTurnInDatabase(
           dbPath,
           effectiveTarget,
+          { activeSummaries },
         );
         if (detected && !seenCascades.has(detected.cascadeId)) {
           seenCascades.add(detected.cascadeId);

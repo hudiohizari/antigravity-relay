@@ -44,8 +44,8 @@ class Logger {
       format: consoleFormat,
     });
 
-    consoleTransport.on("error", (error) => {
-      console.error("Console transport error", error);
+    consoleTransport.on("error", () => {
+      // Ignore console transport write errors (EPIPE / EIO)
     });
 
     this.winstonLogger = winston.createLogger({
@@ -108,16 +108,20 @@ class Logger {
   }
 
   log(level: LogLevel, message: string, ...args: unknown[]) {
-    const formattedArgs = this.formatArgs(args);
-    const sanitizedMessage = String(sanitizeObject(message));
-    const mergedMessage = formattedArgs
-      ? `${sanitizedMessage} ${formattedArgs}`
-      : sanitizedMessage;
+    try {
+      const formattedArgs = this.formatArgs(args);
+      const sanitizedMessage = String(sanitizeObject(message));
+      const mergedMessage = formattedArgs
+        ? `${sanitizedMessage} ${formattedArgs}`
+        : sanitizedMessage;
 
-    this.winstonLogger.log({
-      level,
-      message: mergedMessage,
-    });
+      this.winstonLogger.log({
+        level,
+        message: mergedMessage,
+      });
+    } catch {
+      // Ignore logging failures (e.g. broken terminal pipe or EIO)
+    }
   }
 
   info(message: string, ...args: unknown[]) {

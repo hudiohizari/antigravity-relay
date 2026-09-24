@@ -703,12 +703,41 @@ async function setupORPC() {
   });
 }
 
-process.on("uncaughtException", (error) => {
-  logger.error("Uncaught Exception:", error);
+if (typeof process !== "undefined") {
+  if (process.stdout) {
+    process.stdout.on("error", (err: any) => {
+      if (err?.code === "EPIPE" || err?.code === "EIO") return;
+    });
+  }
+  if (process.stderr) {
+    process.stderr.on("error", (err: any) => {
+      if (err?.code === "EPIPE" || err?.code === "EIO") return;
+    });
+  }
+}
+
+process.on("uncaughtException", (error: any) => {
+  if (
+    error?.code === "EPIPE" ||
+    error?.code === "EIO" ||
+    error?.message?.includes?.("write EIO") ||
+    error?.message?.includes?.("write EPIPE")
+  ) {
+    return;
+  }
+  try {
+    logger.error("Uncaught Exception:", error);
+  } catch {
+    // Avoid recursive error logging
+  }
 });
 
 process.on("unhandledRejection", (reason) => {
-  logger.error("Unhandled Rejection:", reason);
+  try {
+    logger.error("Unhandled Rejection:", reason);
+  } catch {
+    // Avoid recursive error logging
+  }
 });
 
 app
