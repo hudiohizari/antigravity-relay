@@ -1262,6 +1262,40 @@ export function getAntigravityConversationsDir(
   return path.posix.join(home, ".gemini", subfolder, "conversations");
 }
 
+export function getAntigravityConversationSummariesDbPath(
+  target?: AntigravityAppTarget | null,
+  options?: PathResolutionOptions,
+): string {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  if (resolvedTarget === "cli") {
+    return "";
+  }
+  const subfolder =
+    resolvedTarget === "ide" ? "antigravity-ide" : "antigravity";
+
+  if (resolveIsWsl(options)) {
+    const winUser = getWindowsUser();
+    return `/mnt/c/Users/${winUser}/.gemini/${subfolder}/conversation_summaries.db`;
+  }
+
+  const home = os.homedir();
+  if (getCurrentPlatform(options) === "win32") {
+    return path.win32.join(
+      home,
+      ".gemini",
+      subfolder,
+      "conversation_summaries.db",
+    );
+  }
+
+  return path.posix.join(
+    home,
+    ".gemini",
+    subfolder,
+    "conversation_summaries.db",
+  );
+}
+
 export function getAntigravityBrainDir(
   target?: AntigravityAppTarget | null,
   options?: PathResolutionOptions,

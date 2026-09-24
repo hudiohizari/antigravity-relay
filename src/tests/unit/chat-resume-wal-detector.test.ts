@@ -12,6 +12,7 @@ interface MockTable {
 interface MockDbData {
   tables: MockTable[];
   pragmaLog: string[];
+  isCorrupt?: boolean;
 }
 
 const dbStore = new Map<string, MockDbData>();
@@ -31,16 +32,24 @@ vi.mock("better-sqlite3", () => {
       dbPath: string;
 
       constructor(dbPath: string, _options?: unknown) {
+        const db = getOrCreateDb(dbPath);
+        if (db.isCorrupt) {
+          throw new Error("file is not a database");
+        }
         if (fs.existsSync(dbPath)) {
           const content = fs.readFileSync(dbPath, "utf-8");
           if (content.includes("NOT A VALID SQLITE DATABASE HEADER")) {
             throw new Error("file is not a database");
           }
         } else {
-          fs.writeFileSync(dbPath, "");
+          try {
+            fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+            fs.writeFileSync(dbPath, "");
+          } catch {
+            // ignore
+          }
         }
         this.dbPath = dbPath;
-        getOrCreateDb(dbPath);
       }
 
       pragma(cmd: string) {
@@ -114,6 +123,26 @@ vi.mock("better-sqlite3", () => {
             db.tables.push({
               name: "gen_metadata",
               columns: ["id", "idx", "data"],
+              rows: [],
+            });
+          }
+        } else if (/CREATE\s+TABLE\s+conversation_summaries/i.test(trimmed)) {
+          if (!db.tables.some((t) => t.name === "conversation_summaries")) {
+            db.tables.push({
+              name: "conversation_summaries",
+              columns: [
+                "conversation_id",
+                "title",
+                "preview",
+                "step_count",
+                "last_modified_time",
+                "workspace_uris",
+                "status",
+                "parent_conversation_id",
+                "nesting_depth",
+                "not_fully_idle",
+                "killed",
+              ],
               rows: [],
             });
           }
@@ -206,9 +235,48 @@ vi.mock("better-sqlite3", () => {
                 (a, b) => (b.idx ?? 0) - (a.idx ?? 0),
               );
             }
+            if (q.includes("FROM conversation_summaries")) {
+              const table = db.tables.find(
+                (t) => t.name === "conversation_summaries",
+              );
+              if (!table) return [];
+              let rows = [...table.rows];
+              if (q.includes("not_fully_idle = 1 OR status = ?")) {
+                const runningStatus = args[0] ?? "CASCADE_RUN_STATUS_RUNNING";
+                rows = rows.filter(
+                  (r) =>
+                    (Boolean(r.not_fully_idle) || r.status === runningStatus) &&
+                    !r.killed,
+                );
+              }
+              return rows;
+            }
             return [];
           },
-          get: () => {
+          get: (...args: any[]) => {
+            if (q.includes("FROM conversation_summaries")) {
+              const table = db.tables.find(
+                (t) => t.name === "conversation_summaries",
+              );
+              if (!table) return undefined;
+              if (q.includes("parent_conversation_id = ?")) {
+                const parentId = args[0];
+                const runningStatus = args[1] ?? "CASCADE_RUN_STATUS_RUNNING";
+                const found = table.rows.find(
+                  (r) =>
+                    r.parent_conversation_id === parentId &&
+                    (Boolean(r.not_fully_idle) || r.status === runningStatus) &&
+                    !r.killed,
+                );
+                return found ? { ...found } : undefined;
+              }
+              if (q.includes("conversation_id = ?")) {
+                const id = args[0];
+                const found = table.rows.find((r) => r.conversation_id === id);
+                return found ? { ...found } : undefined;
+              }
+              return table.rows[0] ? { ...table.rows[0] } : undefined;
+            }
             if (q.includes("sqlite_master")) {
               const match = q.match(/name\s*=\s*'([^']+)'/i);
               if (match) {
@@ -315,6 +383,23 @@ vi.mock("better-sqlite3", () => {
                   data: args[2],
                 });
               }
+            } else if (/INSERT\s+INTO\s+conversation_summaries/i.test(q)) {
+              const table = db.tables.find(
+                (t) => t.name === "conversation_summaries",
+              );
+              if (table && args.length > 0) {
+                table.rows.push({
+                  conversation_id: args[0],
+                  title: args[1],
+                  status: args[2],
+                  not_fully_idle: args[3],
+                  killed: args[4] ?? 0,
+                  nesting_depth: args[5] ?? 0,
+                  parent_conversation_id: args[6] ?? "",
+                  workspace_uris: args[7] ?? "",
+                  last_modified_time: args[8] ?? Date.now(),
+                });
+              }
             }
           },
         };
@@ -326,6 +411,7 @@ vi.mock("better-sqlite3", () => {
 });
 
 import Database from "better-sqlite3";
+import * as paths from "@/shared/platform/paths";
 import { checkpointStateDatabases } from "@/modules/chat-resume/walCheckpoint";
 import {
   detectActiveTurn,
@@ -338,6 +424,10 @@ import {
   isSubagentConversation,
   resolveParentCascadeIdFromSubagent,
   hasActiveSubagentForParent,
+  getActiveConversationsFromSummaries,
+  isConversationIdleInSummaries,
+  hasActiveBackgroundTasksInStepsAfter,
+  CASCADE_RUN_STATUS,
 } from "@/modules/chat-resume/activeTurnDetector";
 import { SessionContinuityBuffer } from "@/modules/chat-resume/SessionContinuityBuffer";
 
@@ -746,7 +836,11 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
 
         fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
 
-        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        const result = inspectTranscriptForActiveTurn(
+          transcriptPath,
+          "app",
+          true,
+        );
         expect(result).not.toBeNull();
         expect(result?.hasActiveTurn).toBe(true);
         expect(result?.isInterrupted).toBe(true);
@@ -1171,7 +1265,7 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
     });
 
     describe("AC-01: Subagent Yielding Turn Detection in inspectTranscriptForActiveTurn", () => {
-      it("detects active turn when tail is PLANNER_RESPONSE with text and 0 tools after invoke_subagent in transcript", () => {
+      it("detects active turn when tail is PLANNER_RESPONSE with text and 0 tools after invoke_subagent when subagent is actively running", () => {
         const transcriptPath = path.join(
           tempDir,
           "subagent-yield-invoke.jsonl",
@@ -1197,14 +1291,52 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
         ];
         fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
 
-        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        const result = inspectTranscriptForActiveTurn(
+          transcriptPath,
+          "app",
+          true,
+        );
         expect(result).not.toBeNull();
         expect(result?.hasActiveTurn).toBe(true);
         expect(result?.isInterrupted).toBe(true);
         expect(result?.promptText).toBe("Continue your previous response.");
       });
 
-      it("detects active turn when tail is PLANNER_RESPONSE with text and 0 tools after send_message in transcript", () => {
+      it("returns null when tail is PLANNER_RESPONSE with text and 0 tools after invoke_subagent when subagents have completed", () => {
+        const transcriptPath = path.join(
+          tempDir,
+          "subagent-yield-invoke-completed.jsonl",
+        );
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "Please execute subagent task",
+          }),
+          JSON.stringify({
+            type: "TOOL_CALL",
+            name: "invoke_subagent",
+            args: {
+              subagent_type: "fiqry_frontend",
+              prompt: "Build UI component",
+            },
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "I have invoked the subagent to build the UI component. Waiting for results.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(
+          transcriptPath,
+          "app",
+          false,
+        );
+        expect(result).toBeNull();
+      });
+
+      it("detects active turn when tail is PLANNER_RESPONSE with text and 0 tools after send_message when subagent is actively running", () => {
         const transcriptPath = path.join(tempDir, "subagent-yield-send.jsonl");
         const lines = [
           JSON.stringify({
@@ -1224,14 +1356,49 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
         ];
         fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
 
-        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        const result = inspectTranscriptForActiveTurn(
+          transcriptPath,
+          "app",
+          true,
+        );
         expect(result).not.toBeNull();
         expect(result?.hasActiveTurn).toBe(true);
         expect(result?.isInterrupted).toBe(true);
         expect(result?.promptText).toBe("Continue your previous response.");
       });
 
-      it("detects active turn when tail is PLANNER_RESPONSE with text and 0 tools after manage_subagents in transcript", () => {
+      it("returns null when tail is PLANNER_RESPONSE with text and 0 tools after send_message when subagents have completed", () => {
+        const transcriptPath = path.join(
+          tempDir,
+          "subagent-yield-send-completed.jsonl",
+        );
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "Check worker status",
+          }),
+          JSON.stringify({
+            type: "TOOL_CALL",
+            name: "send_message",
+            args: { Recipient: "subagent-sub-1", Message: "Ping status" },
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "Sent ping to worker. Waiting for response.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(
+          transcriptPath,
+          "app",
+          false,
+        );
+        expect(result).toBeNull();
+      });
+
+      it("detects active turn when tail is PLANNER_RESPONSE with text and 0 tools after manage_subagents when subagent is actively running", () => {
         const transcriptPath = path.join(
           tempDir,
           "subagent-yield-manage.jsonl",
@@ -1254,11 +1421,46 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
         ];
         fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
 
-        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        const result = inspectTranscriptForActiveTurn(
+          transcriptPath,
+          "app",
+          true,
+        );
         expect(result).not.toBeNull();
         expect(result?.hasActiveTurn).toBe(true);
         expect(result?.isInterrupted).toBe(true);
         expect(result?.promptText).toBe("Continue your previous response.");
+      });
+
+      it("returns null when tail is PLANNER_RESPONSE with text and 0 tools after manage_subagents when subagents have completed", () => {
+        const transcriptPath = path.join(
+          tempDir,
+          "subagent-yield-manage-completed.jsonl",
+        );
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "List active tasks",
+          }),
+          JSON.stringify({
+            type: "TOOL_CALL",
+            name: "manage_subagents",
+            args: { action: "list" },
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "Checked running subagents list.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(
+          transcriptPath,
+          "app",
+          false,
+        );
+        expect(result).toBeNull();
       });
 
       it("returns null when tail is PLANNER_RESPONSE with text and 0 tools without subagent calls or background tasks", () => {
@@ -1893,6 +2095,652 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
 
         expect(snapshot).toBeNull();
         expect(testBuffer.getAllPendingForTarget("app")).toHaveLength(0);
+      });
+
+      describe("AC-02, AC-03, AC-04: Authoritative Active Turn Candidate Isolation via conversation_summaries.db", () => {
+        it("getActiveConversationsFromSummaries isolates root active, attributes subagent to parent, and excludes killed parent", () => {
+          const summariesPath =
+            paths.getAntigravityConversationSummariesDbPath("app");
+          const summariesDb = new DatabaseConstructor(summariesPath);
+          summariesDb.exec(`CREATE TABLE conversation_summaries (
+            conversation_id TEXT PRIMARY KEY,
+            title TEXT,
+            status TEXT,
+            not_fully_idle NUMERIC,
+            killed NUMERIC,
+            nesting_depth INTEGER,
+            parent_conversation_id TEXT,
+            workspace_uris TEXT,
+            last_modified_time DATETIME
+          );`);
+
+          // 1. Root active conversation
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "root-active-1",
+              "Root Active Feature",
+              CASCADE_RUN_STATUS.IDLE,
+              1,
+              0,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          // 2. Root completed conversation
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "root-completed-1",
+              "Root Completed Task",
+              CASCADE_RUN_STATUS.IDLE,
+              0,
+              0,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now() - 100000,
+            );
+
+          // 3. Root killed conversation (killed = 1 with not_fully_idle = 1)
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "root-killed-1",
+              "Root Killed Task",
+              CASCADE_RUN_STATUS.RUNNING,
+              1,
+              1,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          // 4. Subagent active whose parent is alive & idle
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "parent-alive-2",
+              "Parent Alive Feature",
+              CASCADE_RUN_STATUS.IDLE,
+              0,
+              0,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now() - 50000,
+            );
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "subagent-active-2",
+              "Child Subagent Running",
+              CASCADE_RUN_STATUS.RUNNING,
+              1,
+              0,
+              1,
+              "parent-alive-2",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          // 5. Subagent active whose parent is KILLED (killed = 1) -> must NOT resurrect parent
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "parent-killed-3",
+              "Parent Killed Feature",
+              CASCADE_RUN_STATUS.IDLE,
+              0,
+              1,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now() - 60000,
+            );
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "subagent-of-killed-3",
+              "Child of Killed Parent",
+              CASCADE_RUN_STATUS.RUNNING,
+              1,
+              0,
+              1,
+              "parent-killed-3",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          // 6. Subagent whose parent does not exist in summaries table (orphan fallback test)
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "subagent-orphan",
+              "Child Subagent Orphan",
+              CASCADE_RUN_STATUS.RUNNING,
+              1,
+              0,
+              1,
+              "parent-missing-from-db",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          const activeMap = getActiveConversationsFromSummaries("app");
+          expect(activeMap).not.toBeNull();
+          expect(activeMap!.has("root-active-1")).toBe(true);
+          expect(activeMap!.has("root-completed-1")).toBe(false);
+          expect(activeMap!.has("root-killed-1")).toBe(false);
+
+          // Subagent attributes to parent-alive-2, not subagent child ID
+          expect(activeMap!.has("parent-alive-2")).toBe(true);
+          expect(activeMap!.has("subagent-active-2")).toBe(false);
+
+          // Subagent of killed parent does NOT resurrect parent-killed-3
+          expect(activeMap!.has("parent-killed-3")).toBe(false);
+          expect(activeMap!.has("subagent-of-killed-3")).toBe(false);
+
+          // Orphan subagent falls back to parent-missing-from-db
+          expect(activeMap!.has("parent-missing-from-db")).toBe(true);
+        });
+
+        it("isConversationIdleInSummaries returns true for idle or killed, false for active or parent with active child", () => {
+          const summariesPath =
+            paths.getAntigravityConversationSummariesDbPath("app");
+          const summariesDb = new DatabaseConstructor(summariesPath);
+          summariesDb.exec(`CREATE TABLE conversation_summaries (
+            conversation_id TEXT PRIMARY KEY,
+            title TEXT,
+            status TEXT,
+            not_fully_idle NUMERIC,
+            killed NUMERIC,
+            nesting_depth INTEGER,
+            parent_conversation_id TEXT,
+            workspace_uris TEXT,
+            last_modified_time DATETIME
+          );`);
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "conv-idle",
+              "Idle Task",
+              CASCADE_RUN_STATUS.IDLE,
+              0,
+              0,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "conv-active",
+              "Active Task",
+              CASCADE_RUN_STATUS.RUNNING,
+              1,
+              0,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "conv-killed",
+              "Killed Task",
+              CASCADE_RUN_STATUS.RUNNING,
+              1,
+              1,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "parent-with-active-child",
+              "Parent Task",
+              CASCADE_RUN_STATUS.IDLE,
+              0,
+              0,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "active-child",
+              "Child Subagent",
+              CASCADE_RUN_STATUS.RUNNING,
+              1,
+              0,
+              1,
+              "parent-with-active-child",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          expect(isConversationIdleInSummaries("conv-idle", "app")).toBe(true);
+          expect(isConversationIdleInSummaries("conv-active", "app")).toBe(
+            false,
+          );
+          expect(isConversationIdleInSummaries("conv-killed", "app")).toBe(true);
+          expect(
+            isConversationIdleInSummaries("parent-with-active-child", "app"),
+          ).toBe(false);
+          expect(isConversationIdleInSummaries("non-existent-id", "app")).toBe(
+            false,
+          );
+          expect(isConversationIdleInSummaries("conv-idle", "cli" as any)).toBe(
+            false,
+          );
+        });
+
+        it("hasActiveBackgroundTasksInStepsAfter prevents collateral task deletion for concurrent tasks", () => {
+          const steps: Array<Record<string, unknown>> = [
+            {
+              type: "GENERIC",
+              content: "Tool is running as a background task. task id: task-1",
+            },
+            {
+              type: "GENERIC",
+              content: "Tool is running as a background task. task id: task-2",
+            },
+          ];
+
+          expect(hasActiveBackgroundTasksInStepsAfter(steps)).toBe(true);
+
+          // Completion notice arrives ONLY for task-1
+          steps.push({
+            type: "GENERIC",
+            content: "Task task-1 finished with result: ok",
+          });
+
+          // task-2 must STILL be active; must not suffer collateral deletion
+          expect(hasActiveBackgroundTasksInStepsAfter(steps)).toBe(true);
+
+          // Completion notice arrives for task-2
+          steps.push({
+            type: "GENERIC",
+            content: "Task task-2 completed with code 0",
+          });
+
+          expect(hasActiveBackgroundTasksInStepsAfter(steps)).toBe(false);
+
+          // Anonymous background task handling
+          const anonymousSteps: Array<Record<string, unknown>> = [
+            {
+              type: "GENERIC",
+              content: "Tool is running as a background task.",
+            },
+          ];
+          expect(hasActiveBackgroundTasksInStepsAfter(anonymousSteps)).toBe(
+            true,
+          );
+
+          anonymousSteps.push({
+            type: "GENERIC",
+            content: "The command exited with code 0",
+          });
+          expect(hasActiveBackgroundTasksInStepsAfter(anonymousSteps)).toBe(
+            false,
+          );
+        });
+
+        it("AC-02 & AC-04: isolates active root chats and drops completed chats across workspaces", async () => {
+          const summariesPath =
+            paths.getAntigravityConversationSummariesDbPath("app");
+          const summariesDb = new DatabaseConstructor(summariesPath);
+          summariesDb.exec(`CREATE TABLE conversation_summaries (
+            conversation_id TEXT PRIMARY KEY,
+            title TEXT,
+            status TEXT,
+            not_fully_idle NUMERIC,
+            killed NUMERIC,
+            nesting_depth INTEGER,
+            parent_conversation_id TEXT,
+            workspace_uris TEXT,
+            last_modified_time DATETIME
+          );`);
+
+          // Active in workspace 1
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "chat-active-ws1",
+              "Review Resolution Implementation Disconnects",
+              CASCADE_RUN_STATUS.IDLE,
+              1,
+              0,
+              0,
+              "",
+              "file:///workspace/megatama",
+              Date.now(),
+            );
+
+          // Active in workspace 2
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "chat-active-ws2",
+              "Auto-Continue Feature Not Working",
+              CASCADE_RUN_STATUS.RUNNING,
+              1,
+              0,
+              0,
+              "",
+              "file:///workspace/relay",
+              Date.now(),
+            );
+
+          // 5 idle in workspace 1
+          for (let i = 1; i <= 5; i++) {
+            summariesDb
+              .prepare(
+                `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              )
+              .run(
+                `chat-idle-ws1-${i}`,
+                `Completed Task ${i}`,
+                CASCADE_RUN_STATUS.IDLE,
+                0,
+                0,
+                0,
+                "",
+                "file:///workspace/megatama",
+                Date.now() - i * 60000,
+              );
+          }
+
+          const active1Db = path.join(tempDir, "chat-active-ws1.db");
+          const db1 = new DatabaseConstructor(active1Db);
+          db1.exec(
+            `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+          );
+          db1
+            .prepare(`INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+            .run(
+              "s1",
+              "chat-active-ws1",
+              "Prompt 1",
+              2,
+              "gemini-3.8-flash-high",
+              1,
+              "",
+              null,
+            );
+
+          const active2Db = path.join(tempDir, "chat-active-ws2.db");
+          const db2 = new DatabaseConstructor(active2Db);
+          db2.exec(
+            `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+          );
+          db2
+            .prepare(`INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+            .run(
+              "s2",
+              "chat-active-ws2",
+              "Prompt 2",
+              2,
+              "gemini-3.8-flash-high",
+              1,
+              "",
+              null,
+            );
+
+          const idleDbs: string[] = [];
+          for (let i = 1; i <= 5; i++) {
+            const idleDb = path.join(tempDir, `chat-idle-ws1-${i}.db`);
+            const idb = new DatabaseConstructor(idleDb);
+            idb.exec(
+              `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+            );
+            idb
+              .prepare(`INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+              .run(
+                `si-${i}`,
+                `chat-idle-ws1-${i}`,
+                "Idle prompt",
+                3,
+                "gemini-3.8-flash-high",
+                1,
+                "",
+                null,
+              );
+            idleDbs.push(idleDb);
+          }
+
+          const testBuffer = new SessionContinuityBuffer();
+          const detected = await detectAllActiveTurns("app", {
+            dbPaths: [active1Db, active2Db, ...idleDbs],
+            buffer: testBuffer,
+          });
+
+          expect(detected).toHaveLength(2);
+          expect(detected.map((d) => d.cascadeId)).toContain("chat-active-ws1");
+          expect(detected.map((d) => d.cascadeId)).toContain("chat-active-ws2");
+
+          const captured = await captureAndBufferActiveTurn("app", {
+            dbPaths: [active1Db, active2Db, ...idleDbs],
+            buffer: testBuffer,
+          });
+          expect(captured).not.toBeNull();
+          expect(testBuffer.getAllPendingForTarget("app")).toHaveLength(2);
+        });
+
+        it("AC-03: falls back cleanly when conversation_summaries table is missing or DB is corrupted", async () => {
+          const cliSummaries = getActiveConversationsFromSummaries("cli" as any);
+          expect(cliSummaries).toBeNull();
+          expect(isConversationIdleInSummaries("any", "cli" as any)).toBe(
+            false,
+          );
+
+          const summariesPath =
+            paths.getAntigravityConversationSummariesDbPath("app");
+          dbStore.clear();
+          new DatabaseConstructor(summariesPath);
+
+          const missingTableSummaries =
+            getActiveConversationsFromSummaries("app");
+          expect(missingTableSummaries).toBeNull();
+          expect(isConversationIdleInSummaries("any", "app")).toBe(false);
+
+          // Corrupted database header does not throw unhandled error
+          const corruptDb = getOrCreateDb(summariesPath);
+          corruptDb.isCorrupt = true;
+
+          const corruptSummaries = getActiveConversationsFromSummaries("app");
+          expect(corruptSummaries).toBeNull();
+          expect(isConversationIdleInSummaries("any", "app")).toBe(false);
+
+          corruptDb.isCorrupt = false;
+
+          const detected = await detectAllActiveTurns("app", { dbPaths: [] });
+          expect(Array.isArray(detected)).toBe(true);
+        });
+
+        it("inspectTranscriptForActiveTurn correctly extracts cascade ID when transcriptPath is named transcript.jsonl", () => {
+          const cascadeDir = path.join(
+            tempDir,
+            "cascade-extracted-99",
+            ".system_generated",
+            "logs",
+          );
+          fs.mkdirSync(cascadeDir, { recursive: true });
+          const transcriptPath = path.join(cascadeDir, "transcript.jsonl");
+
+          const lines = [
+            JSON.stringify({
+              type: "USER_INPUT",
+              content: "Write a high-performance database service",
+            }),
+            JSON.stringify({
+              type: "PLANNER_RESPONSE",
+              text: "Working on it...",
+              tools: [],
+            }),
+          ];
+          fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+          // When hasActiveSubagent is true, it detects active turn
+          const resultActive = inspectTranscriptForActiveTurn(
+            transcriptPath,
+            "app",
+            true,
+          );
+          expect(resultActive).not.toBeNull();
+          expect(resultActive?.hasActiveTurn).toBe(true);
+
+          // When hasActiveSubagent is false and no background tasks, it returns null
+          const resultIdle = inspectTranscriptForActiveTurn(
+            transcriptPath,
+            "app",
+            false,
+          );
+          expect(resultIdle).toBeNull();
+        });
+
+        it("hasActiveSubagentForParent queries conversation_summaries for active child or killed parent", () => {
+          const summariesPath =
+            paths.getAntigravityConversationSummariesDbPath("app");
+          const summariesDb = new DatabaseConstructor(summariesPath);
+          summariesDb.exec(`CREATE TABLE conversation_summaries (
+            conversation_id TEXT PRIMARY KEY,
+            title TEXT,
+            status TEXT,
+            not_fully_idle NUMERIC,
+            killed NUMERIC,
+            nesting_depth INTEGER,
+            parent_conversation_id TEXT,
+            workspace_uris TEXT,
+            last_modified_time DATETIME
+          );`);
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "parent-with-child",
+              "Parent",
+              CASCADE_RUN_STATUS.IDLE,
+              1,
+              0,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "child-running",
+              "Child",
+              CASCADE_RUN_STATUS.RUNNING,
+              1,
+              0,
+              1,
+              "parent-with-child",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "parent-killed",
+              "Killed Parent",
+              CASCADE_RUN_STATUS.IDLE,
+              0,
+              1,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          summariesDb
+            .prepare(
+              `INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              "parent-pure-idle",
+              "Pure Idle Parent",
+              CASCADE_RUN_STATUS.IDLE,
+              0,
+              0,
+              0,
+              "",
+              "file:///workspace/app",
+              Date.now(),
+            );
+
+          // Parent with active child returns true
+          expect(hasActiveSubagentForParent("parent-with-child", "app")).toBe(
+            true,
+          );
+
+          // Killed parent returns false immediately
+          expect(hasActiveSubagentForParent("parent-killed", "app")).toBe(
+            false,
+          );
+
+          // Idle parent with no active child returns false immediately
+          expect(hasActiveSubagentForParent("parent-pure-idle", "app")).toBe(
+            false,
+          );
+        });
       });
     });
   });

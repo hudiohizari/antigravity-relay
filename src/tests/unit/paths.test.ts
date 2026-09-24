@@ -1636,4 +1636,49 @@ describe("getAgyCliTokenPaths", () => {
     expect(paths.getRunningAntigravityProcesses("ide")).toEqual([]);
     expect(paths.getRunningAntigravityProcesses("classic")).toEqual([]);
   });
+
+  describe("getAntigravityConversationSummariesDbPath", () => {
+    it("returns correct path for app target on darwin/posix", async () => {
+      const paths = await import("../../shared/platform/paths");
+      const result = paths.getAntigravityConversationSummariesDbPath("app", {
+        platform: "darwin",
+        isWsl: false,
+      });
+      expect(result).toContain(".gemini/antigravity/conversation_summaries.db");
+    });
+
+    it("returns correct path for ide target on posix", async () => {
+      const paths = await import("../../shared/platform/paths");
+      const result = paths.getAntigravityConversationSummariesDbPath("ide", {
+        platform: "linux",
+        isWsl: false,
+      });
+      expect(result).toContain(".gemini/antigravity-ide/conversation_summaries.db");
+    });
+
+    it("returns empty string for cli target", async () => {
+      const paths = await import("../../shared/platform/paths");
+      expect(paths.getAntigravityConversationSummariesDbPath("cli")).toBe("");
+      expect(paths.getAntigravityConversationSummariesDbPath("agy" as any)).toBe("");
+    });
+
+    it("returns windows path on win32", async () => {
+      const paths = await import("../../shared/platform/paths");
+      const result = paths.getAntigravityConversationSummariesDbPath("app", {
+        platform: "win32",
+        isWsl: false,
+      });
+      expect(result).toContain(".gemini\\antigravity\\conversation_summaries.db");
+    });
+
+    it("returns wsl path when isWsl is true", async () => {
+      const paths = await import("../../shared/platform/paths");
+      const result = paths.getAntigravityConversationSummariesDbPath("app", {
+        platform: "linux",
+        isWsl: true,
+      });
+      expect(result).toContain("/.gemini/antigravity/conversation_summaries.db");
+      expect(result).toMatch(/^\/mnt\/c\/Users\//);
+    });
+  });
 });

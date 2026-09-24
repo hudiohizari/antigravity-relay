@@ -6,6 +6,8 @@ import {
   getAntigravityAnnotationsDir,
   getAntigravityBrainDir,
   getAntigravityConversationDbPaths,
+  getAntigravityConversationsDir,
+  getAntigravityConversationSummariesDbPath,
   getAntigravityDbPaths,
 } from "@/shared/platform/paths";
 import { logger } from "@/shared/logging/logger";
@@ -24,6 +26,341 @@ import type {
   ChatResumeSwitchSource,
   InFlightChatSnapshot,
 } from "./types";
+
+export const CASCADE_RUN_STATUS = {
+  RUNNING: "CASCADE_RUN_STATUS_RUNNING",
+  IDLE: "CASCADE_RUN_STATUS_IDLE",
+} as const;
+
+export interface ActiveConversationSummary {
+  conversationId: string;
+  title: string;
+  status: string;
+  notFullyIdle: boolean;
+  killed: boolean;
+  nestingDepth: number;
+  parentConversationId?: string;
+  workspaceUris?: string;
+  lastModifiedTime?: string | number;
+}
+
+export function getActiveConversationsFromSummaries(
+  target: AntigravityAppTarget = "app",
+): Map<string, ActiveConversationSummary> | null {
+  if (isCliTarget(target)) {
+    return null;
+  }
+
+  const summariesDbPath = getAntigravityConversationSummariesDbPath(target);
+  if (!summariesDbPath || !fs.existsSync(summariesDbPath)) {
+    return null;
+  }
+
+  let db: Database.Database | null = null;
+  try {
+    const DatabaseConstructor =
+      typeof Database === "function" ? Database : (Database as any)?.default;
+    const dbInstance: Database.Database = new DatabaseConstructor(
+      summariesDbPath,
+      {
+        readonly: true,
+        fileMustExist: true,
+        timeout: 500,
+      },
+    );
+    db = dbInstance;
+    try {
+      dbInstance.pragma("busy_timeout = 500");
+    } catch {
+      // Ignore pragma error
+    }
+
+    const hasTable = dbInstance
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_summaries'",
+      )
+      .get();
+    if (!hasTable) {
+      return null;
+    }
+
+    const rows = dbInstance
+      .prepare(
+        `SELECT conversation_id, title, status, not_fully_idle, killed, nesting_depth, parent_conversation_id, workspace_uris, last_modified_time
+         FROM conversation_summaries
+         WHERE (not_fully_idle = 1 OR status = ?)
+           AND killed = 0
+         ORDER BY last_modified_time DESC`,
+      )
+      .all(CASCADE_RUN_STATUS.RUNNING) as Array<Record<string, unknown>>;
+
+    const activeMap = new Map<string, ActiveConversationSummary>();
+
+    for (const row of rows) {
+      const convId = String(row.conversation_id ?? "");
+      if (!convId) continue;
+
+      const nestingDepth = Number(row.nesting_depth ?? 0);
+      const parentId = row.parent_conversation_id
+        ? String(row.parent_conversation_id)
+        : "";
+
+      const summary: ActiveConversationSummary = {
+        conversationId: convId,
+        title: String(row.title ?? ""),
+        status: String(row.status ?? ""),
+        notFullyIdle: Boolean(row.not_fully_idle),
+        killed: Boolean(row.killed),
+        nestingDepth,
+        parentConversationId: parentId || undefined,
+        workspaceUris: row.workspace_uris
+          ? String(row.workspace_uris)
+          : undefined,
+        lastModifiedTime: row.last_modified_time as any,
+      };
+
+      if (nestingDepth > 0 && parentId) {
+        if (!activeMap.has(parentId)) {
+          let parentSummary: ActiveConversationSummary | null = null;
+          let isKilledParent = false;
+          try {
+            const parentRow = dbInstance
+              .prepare(
+                `SELECT conversation_id, title, status, not_fully_idle, killed, nesting_depth, parent_conversation_id, workspace_uris, last_modified_time
+                 FROM conversation_summaries
+                 WHERE conversation_id = ?`,
+              )
+              .get(parentId) as Record<string, unknown> | undefined;
+            if (parentRow && Boolean(parentRow.killed)) {
+              isKilledParent = true;
+            } else if (parentRow) {
+              parentSummary = {
+                conversationId: parentId,
+                title: String(parentRow.title ?? summary.title),
+                status: String(parentRow.status ?? summary.status),
+                notFullyIdle: true,
+                killed: false,
+                nestingDepth: Number(parentRow.nesting_depth ?? 0),
+                parentConversationId: parentRow.parent_conversation_id
+                  ? String(parentRow.parent_conversation_id)
+                  : undefined,
+                workspaceUris: parentRow.workspace_uris
+                  ? String(parentRow.workspace_uris)
+                  : summary.workspaceUris,
+                lastModifiedTime: parentRow.last_modified_time as any,
+              };
+            }
+          } catch {
+            // Ignore query error
+          }
+
+          if (isKilledParent) {
+            continue;
+          }
+
+          activeMap.set(
+            parentId,
+            parentSummary ?? {
+              ...summary,
+              conversationId: parentId,
+              nestingDepth: 0,
+            },
+          );
+        }
+      } else {
+        activeMap.set(convId, summary);
+      }
+    }
+
+    return activeMap;
+  } catch (err) {
+    logger.warn(
+      `Failed to query conversation summaries from ${summariesDbPath}`,
+      err,
+    );
+    return null;
+  } finally {
+    if (db) {
+      try {
+        db.close();
+      } catch {
+        // Ignore close error
+      }
+    }
+  }
+}
+
+export function isConversationIdleInSummaries(
+  cascadeId: string,
+  appTarget: AntigravityAppTarget = "app",
+): boolean {
+  if (isCliTarget(appTarget) || !cascadeId) {
+    return false;
+  }
+
+  const summariesDbPath = getAntigravityConversationSummariesDbPath(appTarget);
+  if (!summariesDbPath || !fs.existsSync(summariesDbPath)) {
+    return false;
+  }
+
+  let db: Database.Database | null = null;
+  try {
+    const DatabaseConstructor =
+      typeof Database === "function" ? Database : (Database as any)?.default;
+    const dbInstance: Database.Database = new DatabaseConstructor(
+      summariesDbPath,
+      {
+        readonly: true,
+        fileMustExist: true,
+        timeout: 500,
+      },
+    );
+    db = dbInstance;
+    try {
+      dbInstance.pragma("busy_timeout = 500");
+    } catch {
+      // Ignore pragma error
+    }
+
+    const hasTable = dbInstance
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_summaries'",
+      )
+      .get();
+    if (!hasTable) {
+      return false;
+    }
+
+    const row = dbInstance
+      .prepare(
+        `SELECT conversation_id, not_fully_idle, status, killed, nesting_depth, parent_conversation_id
+         FROM conversation_summaries
+         WHERE conversation_id = ?`,
+      )
+      .get(cascadeId) as
+      | {
+          conversation_id: string;
+          not_fully_idle: number | boolean;
+          status: string;
+          killed: number | boolean;
+          nesting_depth: number;
+          parent_conversation_id: string;
+        }
+      | undefined;
+
+    if (!row) {
+      return false;
+    }
+
+    const notFullyIdle = Boolean(row.not_fully_idle);
+    const isRunning = row.status === CASCADE_RUN_STATUS.RUNNING;
+    const isKilled = Boolean(row.killed);
+
+    if (isKilled) {
+      return true;
+    }
+
+    if (!notFullyIdle && !isRunning) {
+      const activeChild = dbInstance
+        .prepare(
+          `SELECT conversation_id FROM conversation_summaries
+           WHERE parent_conversation_id = ?
+             AND (not_fully_idle = 1 OR status = ?)
+             AND killed = 0
+           LIMIT 1`,
+        )
+        .get(cascadeId, CASCADE_RUN_STATUS.RUNNING);
+
+      if (!activeChild) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch (err) {
+    logger.warn(
+      `Failed to check conversation idle status in summaries for ${cascadeId}`,
+      err,
+    );
+    return false;
+  } finally {
+    if (db) {
+      try {
+        db.close();
+      } catch {
+        // Ignore close error
+      }
+    }
+  }
+}
+
+export function hasActiveBackgroundTasksInStepsAfter(
+  stepsAfter: Array<Record<string, unknown>>,
+): boolean {
+  let anonymousTaskCount = 0;
+  const activeTaskIds = new Set<string>();
+
+  for (const step of stepsAfter) {
+    const content = typeof step.content === "string" ? step.content : "";
+    const text = typeof step.text === "string" ? step.text : "";
+    const message = typeof step.message === "string" ? step.message : "";
+    const combined = `${content}\n${text}\n${message}`;
+
+    const isGenericBgStart =
+      step.type === "GENERIC" &&
+      combined.includes("Tool is running as a background task");
+
+    const isToolCallBgStart =
+      Array.isArray(step.tool_calls) &&
+      step.tool_calls.some(
+        (t: any) =>
+          t?.name === "run_command" &&
+          (t?.args?.IsDaemon === true || t?.arguments?.IsDaemon === true),
+      );
+
+    if (isGenericBgStart || isToolCallBgStart) {
+      const match = combined.match(/task id:\s*([^\s\n\r"']+)/i);
+      if (match && match[1]) {
+        activeTaskIds.add(match[1]);
+      } else {
+        anonymousTaskCount++;
+      }
+    }
+
+    if (activeTaskIds.size > 0 || anonymousTaskCount > 0) {
+      let matchedSpecificTask = false;
+      for (const taskId of Array.from(activeTaskIds)) {
+        if (
+          combined.includes(taskId) &&
+          /(?:exited with code|finished with result|completed|cancelled|killed|Command finished)/i.test(
+            combined,
+          )
+        ) {
+          activeTaskIds.delete(taskId);
+          matchedSpecificTask = true;
+        }
+      }
+
+      const isCompletionNotice =
+        /(?:The command exited with code|exited with code \d+|finished with result:|Task .* finished|Task .* completed|Task .* cancelled|Task .* killed)/i.test(
+          combined,
+        );
+
+      if (isCompletionNotice && !matchedSpecificTask) {
+        if (activeTaskIds.size > 0) {
+          const firstId = activeTaskIds.values().next().value;
+          if (firstId) {
+            activeTaskIds.delete(firstId);
+          }
+        } else if (anonymousTaskCount > 0) {
+          anonymousTaskCount--;
+        }
+      }
+    }
+  }
+
+  return activeTaskIds.size > 0 || anonymousTaskCount > 0;
+}
 
 export interface ActiveTurnDetectionOptions {
   source?: ChatResumeSwitchSource;
@@ -293,6 +630,74 @@ export function hasActiveSubagentForParent(
   appTarget: AntigravityAppTarget = "app",
 ): boolean {
   if (!parentCascadeId) return false;
+
+  const summariesDbPath = getAntigravityConversationSummariesDbPath(appTarget);
+  if (summariesDbPath && fs.existsSync(summariesDbPath)) {
+    let summariesDb: Database.Database | null = null;
+    try {
+      const DatabaseConstructor =
+        typeof Database === "function" ? Database : (Database as any)?.default;
+      const summariesDbInstance: Database.Database = new DatabaseConstructor(
+        summariesDbPath,
+        {
+          readonly: true,
+          fileMustExist: true,
+          timeout: 500,
+        },
+      );
+      summariesDb = summariesDbInstance;
+      const hasTable = summariesDbInstance
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_summaries'",
+        )
+        .get();
+      if (hasTable) {
+        const activeChild = summariesDbInstance
+          .prepare(
+            `SELECT conversation_id FROM conversation_summaries
+             WHERE parent_conversation_id = ?
+               AND (not_fully_idle = 1 OR status = ?)
+               AND killed = 0
+             LIMIT 1`,
+          )
+          .get(parentCascadeId, CASCADE_RUN_STATUS.RUNNING);
+        if (activeChild) {
+          return true;
+        }
+
+        const parentRow = summariesDbInstance
+          .prepare(
+            "SELECT not_fully_idle, status, killed FROM conversation_summaries WHERE conversation_id = ?",
+          )
+          .get(parentCascadeId) as
+          | {
+              not_fully_idle?: number | boolean;
+              status?: string;
+              killed?: number | boolean;
+            }
+          | undefined;
+        if (
+          parentRow &&
+          (Boolean(parentRow.killed) ||
+            (!parentRow.not_fully_idle &&
+              parentRow.status === CASCADE_RUN_STATUS.IDLE))
+        ) {
+          return false;
+        }
+      }
+    } catch {
+      // Continue to SQLite candidate DB scan
+    } finally {
+      if (summariesDb) {
+        try {
+          summariesDb.close();
+        } catch {
+          // Ignore close error
+        }
+      }
+    }
+  }
+
   try {
     const candidateDbs = getAntigravityConversationDbPaths(appTarget);
     for (const dbPath of candidateDbs) {
@@ -455,9 +860,16 @@ export interface TranscriptTurnAnalysis {
 
 export function inspectTranscriptForActiveTurn(
   transcriptPath: string,
+  appTarget: AntigravityAppTarget = "app",
+  hasActiveSubagent?: boolean,
 ): TranscriptTurnAnalysis | null {
   if (!fs.existsSync(transcriptPath)) {
     return null;
+  }
+
+  let effectiveTarget = appTarget;
+  if (effectiveTarget === "app" && transcriptPath.includes("antigravity-ide")) {
+    effectiveTarget = "ide";
   }
 
   try {
@@ -531,13 +943,23 @@ export function inspectTranscriptForActiveTurn(
 
     const pathParts = transcriptPath.split(path.sep);
     const sysGenIdx = pathParts.indexOf(".system_generated");
-    const cascadeIdFromPath = sysGenIdx > 0 ? pathParts[sysGenIdx - 1] : "";
-
-    const subagentToolNames = new Set([
-      "invoke_subagent",
-      "send_message",
-      "manage_subagents",
-    ]);
+    let cascadeIdFromPath = sysGenIdx > 0 ? pathParts[sysGenIdx - 1] : "";
+    if (
+      !cascadeIdFromPath &&
+      path.basename(transcriptPath) === "transcript.jsonl"
+    ) {
+      const candidateDir = path.basename(
+        path.resolve(transcriptPath, "../../.."),
+      );
+      if (
+        candidateDir &&
+        candidateDir !== "." &&
+        candidateDir !== "/" &&
+        candidateDir !== "transcript"
+      ) {
+        cascadeIdFromPath = candidateDir;
+      }
+    }
 
     // Case 2: Quota or rate limit exhaustion occurred in steps after user prompt
     const quotaPatterns = [
@@ -640,37 +1062,49 @@ export function inspectTranscriptForActiveTurn(
         };
       }
 
-      // Model output text with no tools: check if subagents or background tasks were invoked in stepsAfter OR in history
-      const hasSubagentsInStepsAfter = stepsAfter.some((s) => {
-        const sTools = s.tool_calls ?? s.tools;
-        const sName = s.name;
-        return (
-          (typeof sName === "string" && subagentToolNames.has(sName)) ||
-          (Array.isArray(sTools) &&
-            sTools.some((t: any) => subagentToolNames.has(String(t?.name))))
-        );
-      });
+      // Model output text with no tools: check if background tasks or child subagents are actually active
+      const isBackgroundTaskActive =
+        hasActiveBackgroundTasksInStepsAfter(stepsAfter);
 
-      const hasBackgroundTasksInStepsAfter = stepsAfter.some((s) => {
-        return (
-          (s.type === "GENERIC" &&
-            typeof s.content === "string" &&
-            s.content.includes("Tool is running as a background task")) ||
-          (Array.isArray(s.tool_calls) &&
-            s.tool_calls.some(
-              (t: any) =>
-                t?.name === "manage_task" ||
-                (t?.name === "run_command" &&
-                  (t?.args?.IsDaemon === true ||
-                    t?.arguments?.IsDaemon === true)),
-            ))
-        );
-      });
+      let cascadeId = cascadeIdFromPath;
+      if (!cascadeId) {
+        for (const s of stepsAfter) {
+          if (s.cascade_id) {
+            cascadeId = String(s.cascade_id);
+            break;
+          }
+        }
+      }
+      if (!cascadeId) {
+        if (path.basename(transcriptPath) === "transcript.jsonl") {
+          const candidateDir = path.basename(
+            path.resolve(transcriptPath, "../../.."),
+          );
+          if (
+            candidateDir &&
+            candidateDir !== "." &&
+            candidateDir !== "/" &&
+            candidateDir !== "transcript"
+          ) {
+            cascadeId = candidateDir;
+          }
+        }
+        if (!cascadeId) {
+          const base = path.basename(transcriptPath, ".jsonl");
+          if (base !== "transcript") {
+            cascadeId = base;
+          }
+        }
+      }
 
-      const isSubagentOrchestrating =
-        hasSubagentsInStepsAfter || hasBackgroundTasksInStepsAfter;
+      const isChildSubagentActive =
+        typeof hasActiveSubagent === "boolean"
+          ? hasActiveSubagent
+          : cascadeId
+            ? hasActiveSubagentForParent(cascadeId, effectiveTarget)
+            : false;
 
-      if (isSubagentOrchestrating) {
+      if (isBackgroundTaskActive || isChildSubagentActive) {
         return {
           hasActiveTurn: true,
           isInterrupted: true,
@@ -684,7 +1118,7 @@ export function inspectTranscriptForActiveTurn(
         };
       }
 
-      // Model successfully generated final content response - turn completed
+      // Model successfully generated final content response - turn completed and idle
       return null;
     }
 
@@ -873,6 +1307,14 @@ export async function detectActiveTurnInDatabase(
     return null;
   }
 
+  const cascadeIdCandidate = path.basename(dbPath, ".db");
+  if (isConversationIdleInSummaries(cascadeIdCandidate, appTarget)) {
+    logger.debug(
+      `Conversation ${cascadeIdCandidate} is marked idle (not_fully_idle=0, status=idle) in conversation_summaries.db; skipping`,
+    );
+    return null;
+  }
+
   let isRecent = true;
   try {
     const stat = fs.statSync(dbPath);
@@ -890,7 +1332,6 @@ export async function detectActiveTurnInDatabase(
     const isDbRecent = dbAge < 60 * 60 * 1000;
 
     // 2. Conversation transcript modified within 15 minutes
-    const cascadeIdCandidate = path.basename(dbPath, ".db");
     const brainDir = getAntigravityBrainDir(appTarget);
     const transcriptPath = path.join(
       brainDir,
@@ -989,6 +1430,16 @@ export async function detectActiveTurnInDatabase(
 
       if (!cascadeId) {
         cascadeId = path.basename(dbPath, ".db");
+      }
+
+      if (
+        cascadeId !== cascadeIdCandidate &&
+        isConversationIdleInSummaries(cascadeId, appTarget)
+      ) {
+        logger.debug(
+          `Conversation ${cascadeId} is marked idle (not_fully_idle=0, status=idle) in conversation_summaries.db; skipping`,
+        );
+        return null;
       }
 
       if (isSubagentConversation(cascadeId, appTarget, dbInstance)) {
@@ -1183,8 +1634,10 @@ export async function detectActiveTurnInDatabase(
 
           // If no running step found in SQLite, check transcript log for incomplete/interrupted turn
           if (!activeStep) {
-            const transcriptAnalysis =
-              inspectTranscriptForActiveTurn(transcriptPath);
+            const transcriptAnalysis = inspectTranscriptForActiveTurn(
+              transcriptPath,
+              appTarget,
+            );
             if (transcriptAnalysis && transcriptAnalysis.hasActiveTurn) {
               activeStep = {
                 idx: transcriptAnalysis.stepIndex ?? maxIdx,
@@ -1586,9 +2039,33 @@ export async function detectAllActiveTurns(
     results.push(inMemoryPrompt);
   }
 
-  // 3. Inspect real Antigravity conversation databases (sorted by mtimeMs, capped to top 5)
-  const candidatePaths =
-    options?.dbPaths ?? getAntigravityConversationDbPaths(effectiveTarget);
+  // 3. Inspect conversation_summaries.db as authoritative source of truth
+  const activeSummaries = getActiveConversationsFromSummaries(effectiveTarget);
+
+  let candidatePaths: string[] = [];
+
+  if (options?.dbPaths) {
+    if (activeSummaries !== null) {
+      candidatePaths = options.dbPaths.filter((p) => {
+        const id = path.basename(p, ".db");
+        return activeSummaries.has(id);
+      });
+    } else {
+      candidatePaths = options.dbPaths;
+    }
+  } else if (activeSummaries !== null) {
+    const convsDir = getAntigravityConversationsDir(effectiveTarget);
+    if (convsDir && fs.existsSync(convsDir)) {
+      for (const cascadeId of activeSummaries.keys()) {
+        const candidateDb = path.join(convsDir, `${cascadeId}.db`);
+        if (fs.existsSync(candidateDb)) {
+          candidatePaths.push(candidateDb);
+        }
+      }
+    }
+  } else {
+    candidatePaths = getAntigravityConversationDbPaths(effectiveTarget);
+  }
 
   const seenCascades = new Set<string>(results.map((r) => r.cascadeId));
 
@@ -1601,7 +2078,7 @@ export async function detectAllActiveTurns(
   }
 
   // 4. Fallback inspection for test environments or state storage
-  if (!options?.dbPaths && results.length === 0) {
+  if (!options?.dbPaths && activeSummaries === null && results.length === 0) {
     const stateDbPaths = getAntigravityDbPaths(effectiveTarget);
     for (const dbPath of stateDbPaths) {
       if (!candidatePaths.includes(dbPath)) {
