@@ -75,9 +75,16 @@ export class MockUpstreamServer {
   public recordedWsHeaders: http.IncomingHttpHeaders[] = [];
   public recordedWsMessages: string[] = [];
 
+  public discoveryCount: number = 0;
+  public customHtml: string | null = null;
+
   constructor(options?: MockUpstreamOptions) {
     this.csrfToken = options?.csrfToken ?? "mock-csrf-token-default";
     this.validateCsrf = options?.validateCsrf ?? true;
+  }
+
+  public setCustomHtml(html: string | null): void {
+    this.customHtml = html;
   }
 
   public getPort(): number {
@@ -90,6 +97,14 @@ export class MockUpstreamServer {
 
   public setCsrfToken(token: string): void {
     this.csrfToken = token;
+  }
+
+  public getDiscoveryCount(): number {
+    return this.discoveryCount;
+  }
+
+  public resetDiscoveryCount(): void {
+    this.discoveryCount = 0;
   }
 
   public async start(requestedPort: number = 0): Promise<number> {
@@ -194,9 +209,13 @@ export class MockUpstreamServer {
       });
 
       const url = req.url || "/";
+      const method = (req.method || "GET").toUpperCase();
 
       if (url === "/" || url.startsWith("/?")) {
-        const html = `<!doctype html><html><head><script>window.__APP_CONFIG__ = {csrfToken: "${this.csrfToken}"};</script></head><body><h1>Antigravity App</h1></body></html>`;
+        this.discoveryCount++;
+        const html =
+          this.customHtml ??
+          `<!doctype html><html><head><script>window.__APP_CONFIG__ = {csrfToken: "${this.csrfToken}"};</script></head><body><h1>Antigravity App</h1></body></html>`;
         res.writeHead(200, {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-cache",
@@ -256,14 +275,53 @@ export class MockUpstreamServer {
         return;
       }
 
-      if (url.startsWith("/api/")) {
+      if (url === "/api/auth-error-non-csrf") {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            code: "unauthenticated",
+            message: "invalid oauth token",
+          }),
+        );
+        return;
+      }
+
+      const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+      if (
+        this.validateCsrf &&
+        Boolean(this.csrfToken) &&
+        (isMutation || url.startsWith("/exa."))
+      ) {
+        const clientCsrf = req.headers["x-codeium-csrf-token"];
+        if (clientCsrf !== this.csrfToken) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              code: "unauthenticated",
+              message: "invalid CSRF token",
+            }),
+          );
+          return;
+        }
+      }
+
+      if (url.startsWith("/api/") || url.startsWith("/exa.")) {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             success: true,
             method: req.method,
             path: url,
-            receivedBody: bodyStr ? JSON.parse(bodyStr) : null,
+            receivedHeaders: req.headers,
+            receivedBody: bodyStr
+              ? (() => {
+                  try {
+                    return JSON.parse(bodyStr);
+                  } catch {
+                    return bodyStr;
+                  }
+                })()
+              : null,
           }),
         );
         return;

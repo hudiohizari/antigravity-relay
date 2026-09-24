@@ -44,7 +44,7 @@ interface ActiveWsPair {
   deviceId?: string;
 }
 
-function extractClientIp(
+export function extractClientIp(
   headers: Record<string, string | string[] | undefined>,
   remoteAddress?: string,
 ): string {
@@ -66,7 +66,7 @@ function extractClientIp(
   return "127.0.0.1";
 }
 
-function extractUserAgent(
+export function extractUserAgent(
   headers: Record<string, string | string[] | undefined>,
 ): string {
   const ua = headers["user-agent"];
@@ -111,6 +111,45 @@ export function extractDeviceId(
     }
   }
   return undefined;
+}
+
+export const MAX_MUTATION_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB
+export const CSRF_PROBE_TIMEOUT_MS = 2000;
+export const RESTART_MUTATION_QUEUE_TIMEOUT_MS = 1500;
+
+export function extractCsrfTokenFromHtml(html: string): string | null {
+  // 1. Matches window.__APP_CONFIG__ = {csrfToken: "..."} or {csrf_token: "..."}
+  const configMatch = html.match(
+    /(?:csrfToken|csrf_token)["']?\s*:\s*["']([^"']+)["']/i,
+  );
+  if (configMatch && configMatch[1]) {
+    return configMatch[1];
+  }
+
+  // 2. Matches <meta ... name/id="csrf-token" content="..." ...> or reversed
+  const metaMatch =
+    html.match(
+      /(?:name|id)=["'](?:csrf[-_]?token|x-codeium-csrf-token)["']\s+content=["']([^"']+)["']/i,
+    ) ||
+    html.match(
+      /content=["']([^"']+)["']\s+(?:name|id)=["'](?:csrf[-_]?token|x-codeium-csrf-token)["']/i,
+    );
+  if (metaMatch && metaMatch[1]) {
+    return metaMatch[1];
+  }
+
+  return null;
+}
+
+export function isUpstreamCsrfError(
+  statusCode: number,
+  bodyText: string,
+): boolean {
+  if (statusCode !== 401) {
+    return false;
+  }
+  const lower = bodyText.toLowerCase();
+  return lower.includes("csrf") || lower.includes("invalid csrf token");
 }
 
 let cachedFaviconBuffer: Buffer | null = null;
@@ -373,6 +412,29 @@ export function generateAutoReloadScript(
   var reloadingStartedAt = 0;
   var RELAY_CHANNEL = "antigravity-relay";
 
+  function hardNavigateWithCacheBuster() {
+    reloading = false;
+    try {
+      var lastNav = parseInt(sessionStorage.getItem("ag_last_hard_navigate") || sessionStorage.getItem("ag_last_nav_ts") || "0", 10);
+      var now = Date.now();
+      if (now - lastNav < 3000) {
+        return;
+      }
+      sessionStorage.setItem("ag_last_hard_navigate", now.toString());
+      sessionStorage.setItem("ag_last_nav_ts", now.toString());
+      var url = new URL(window.location.href);
+      url.searchParams.set("_t", now.toString());
+      window.location.replace(url.toString());
+    } catch (_) {
+      try {
+        var sep = window.location.href.indexOf("?") === -1 ? "?" : "&";
+        window.location.replace(window.location.href + sep + "_t=" + Date.now().toString());
+      } catch (__) {
+        window.location.reload();
+      }
+    }
+  }
+
   var copyCatalog = {
     en: {
       overlayTitle: "Access Revoked",
@@ -460,9 +522,10 @@ export function generateAutoReloadScript(
     } else {
       localStorage.removeItem("ag_relay_revoked_at");
     }
-    if (hasPairParam || currentUrlParams.has("useWebSocket")) {
+    if (hasPairParam || currentUrlParams.has("useWebSocket") || currentUrlParams.has("_t")) {
       currentUrlParams.delete("pair");
       currentUrlParams.delete("useWebSocket");
+      currentUrlParams.delete("_t");
       var remainingSearch = currentUrlParams.toString();
       var cleanSearch = remainingSearch ? "?" + remainingSearch : "";
       var cleanPath = window.location.pathname + cleanSearch + window.location.hash;
@@ -949,7 +1012,7 @@ export function generateAutoReloadScript(
         var style = document.createElement("style");
         style.textContent = [
           ":host { position: fixed; top: max(12px, calc(env(safe-area-inset-top, 0px) + 8px)); left: 50%; transform: translateX(-50%); z-index: 2147483647; pointer-events: none; width: auto; display: flex; justify-content: center; align-items: center; margin: 0; padding: 0; border: none; }",
-          ".ag-banner, #antigravity-reload-banner { pointer-events: auto; box-sizing: border-box; display: inline-flex; align-items: center; gap: 8px; max-width: min(calc(100vw - 32px), 400px); width: max-content; padding: 8px 16px; padding-top: max(8px, env(safe-area-inset-top, 8px)); border-radius: 9999px; background: rgba(15, 23, 42, 0.90); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3); font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 500; line-height: 1.4; color: #e0f2fe; letter-spacing: -0.01em; text-align: left; word-break: break-word; user-select: none; -webkit-user-select: none; transition: border-color 0.2s ease, transform 0.2s ease; }",
+          ".ag-banner, #antigravity-reload-banner { pointer-events: auto; box-sizing: border-box; display: inline-flex; align-items: center; gap: 8px; max-width: min(calc(100vw - 32px), 400px); width: max-content; padding: 8px 16px; border-radius: 9999px; background: rgba(15, 23, 42, 0.90); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3); font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 500; line-height: 1.4; color: #e0f2fe; letter-spacing: -0.01em; text-align: left; word-break: break-word; user-select: none; -webkit-user-select: none; transition: border-color 0.2s ease, transform 0.2s ease; }",
           ".ag-banner:hover, #antigravity-reload-banner:hover { border-color: rgba(56, 189, 248, 0.55); }",
           ".ag-banner:focus-visible, #antigravity-reload-banner:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }",
           ".ag-banner--stopped, .ag-banner--amber { border-color: rgba(245, 158, 11, 0.45); }",
@@ -1000,6 +1063,7 @@ export function generateAutoReloadScript(
   try {
     window.__agMountReloadBanner = mountReloadBanner;
     window.__agUnmountReloadBanner = unmountReloadBanner;
+    window.__agHardNavigateWithCacheBuster = hardNavigateWithCacheBuster;
   } catch (_) {}
 
   function triggerReload(initialMode) {
@@ -1050,7 +1114,8 @@ export function generateAutoReloadScript(
             return;
           }
           if (data && data.isRunning && data.upstreamPort && !data.isRestarting) {
-            window.location.reload();
+            unmountReloadBanner();
+            hardNavigateWithCacheBuster();
             return;
           }
           setTimeout(check, 1000);
@@ -1146,18 +1211,27 @@ export function generateAutoReloadScript(
         var epochChanged = data && typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch;
         var isHealthy = data && data.isRunning && data.upstreamPort && !data.isRestarting;
 
-        if (portChanged || epochChanged) {
+        if (isHealthy) {
+          unmountReloadBanner();
+          if (portChanged || epochChanged || hadClosedSockets) {
+            hardNavigateWithCacheBuster();
+          }
+        } else if (portChanged || epochChanged || (data && data.isRestarting)) {
           triggerReload("restarting");
-        } else if (isHealthy && hadClosedSockets) {
-          window.location.reload();
+        } else if (hadClosedSockets) {
+          triggerReload("stopped");
         }
       })
       .catch(function() {
         if (hadClosedSockets) {
-          triggerReload();
+          triggerReload("stopped");
         }
       });
   }
+
+  window.addEventListener("focus", function() {
+    checkResumeHealth();
+  });
 
   document.addEventListener("visibilitychange", function() {
     if (document.visibilityState === "visible") {
@@ -1177,7 +1251,11 @@ export function generateAutoReloadScript(
         if (window.__antigravitySessionRevoked) return;
         var portChanged = data && data.upstreamPort && initialPort && data.upstreamPort !== initialPort;
         var epochChanged = data && typeof data.upstreamEpoch === "number" && data.upstreamEpoch > initialEpoch;
-        if (portChanged || epochChanged) {
+        var isHealthy = data && data.isRunning && data.upstreamPort && !data.isRestarting;
+        if (isHealthy && (portChanged || epochChanged)) {
+          unmountReloadBanner();
+          hardNavigateWithCacheBuster();
+        } else if (portChanged || epochChanged) {
           triggerReload("restarting");
         }
       })
@@ -1697,10 +1775,19 @@ export class RelayServer {
       consumedByDeviceId?: string;
     }
   > = new Map();
+  public static readonly MAX_MUTATION_BUFFER_SIZE = MAX_MUTATION_BUFFER_SIZE;
+  public static readonly CSRF_PROBE_TIMEOUT_MS = CSRF_PROBE_TIMEOUT_MS;
+  public static readonly CSRF_DISCOVERY_TIMEOUT_MS = CSRF_PROBE_TIMEOUT_MS;
+  public static readonly RESTART_MUTATION_QUEUE_TIMEOUT_MS =
+    RESTART_MUTATION_QUEUE_TIMEOUT_MS;
   public static readonly RETIRED_KEY_TTL_MS = 60 * 60 * 1000; // 1 hour
   public static readonly MAX_RETIRED_KEYS = 200;
   public static readonly PAIRING_GRACE_PERIOD_MS = 60 * 1000; // 60 seconds
   private currentPairingKey: string = generatePairingKey();
+  private activeCsrfToken: string | null = null;
+  private csrfRefreshPromise: Promise<string | null> | null = null;
+  private csrfRefreshPort: number | null = null;
+  private csrfRefreshController: AbortController | null = null;
 
   constructor(options?: RelayServerOptions) {
     this.config = {
@@ -1741,7 +1828,8 @@ export class RelayServer {
         rejectUnauthorized: false,
       },
       pipelining: 1,
-      keepAliveTimeout: 30000,
+      keepAliveTimeout: 5000,
+      keepAliveMaxTimeout: 10000,
     });
   }
 
@@ -1753,6 +1841,124 @@ export class RelayServer {
     } catch {
       // Suppress agent destroy error
     }
+  }
+
+  public getActiveCsrfToken(): string | null {
+    return this.activeCsrfToken;
+  }
+
+  public async refreshCsrfToken(targetPort?: number): Promise<string | null> {
+    const port = targetPort ?? this.portDiscovery.getPort();
+    if (!port) {
+      this.activeCsrfToken = null;
+      if (this.csrfRefreshController) {
+        this.csrfRefreshController.abort();
+        this.csrfRefreshController = null;
+      }
+      this.csrfRefreshPromise = null;
+      this.csrfRefreshPort = null;
+      return null;
+    }
+
+    if (this.csrfRefreshPromise) {
+      if (this.csrfRefreshPort === port) {
+        return this.csrfRefreshPromise;
+      }
+      // Target port differs or port changed - cancel/invalidate stale probe
+      if (this.csrfRefreshController) {
+        this.csrfRefreshController.abort();
+        this.csrfRefreshController = null;
+      }
+      this.csrfRefreshPromise = null;
+      this.csrfRefreshPort = null;
+    }
+
+    const controller = new AbortController();
+    this.csrfRefreshController = controller;
+    this.csrfRefreshPort = port;
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, RelayServer.CSRF_PROBE_TIMEOUT_MS);
+
+    let probePromise: Promise<string | null> | null = null;
+    probePromise = (async () => {
+      try {
+        const upstreamUrl = `https://127.0.0.1:${port}/`;
+        const res = await undiciRequest(upstreamUrl, {
+          method: "GET",
+          headers: {
+            host: `127.0.0.1:${port}`,
+            accept: "text/html",
+          },
+          dispatcher: this.upstreamDispatcher,
+          signal: controller.signal,
+        });
+
+        if (res.statusCode === 200) {
+          const html = await res.body.text();
+          const token = extractCsrfTokenFromHtml(html);
+          if (token) {
+            this.activeCsrfToken = token;
+            return token;
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timeoutId);
+        if (this.csrfRefreshPromise === probePromise) {
+          this.csrfRefreshPromise = null;
+          this.csrfRefreshPort = null;
+          this.csrfRefreshController = null;
+        }
+      }
+    })();
+
+    this.csrfRefreshPromise = probePromise;
+    return this.csrfRefreshPromise;
+  }
+
+  public async refreshActiveCsrfToken(
+    targetPort?: number,
+  ): Promise<string | null> {
+    return this.refreshCsrfToken(targetPort);
+  }
+
+  public async waitForUpstreamReady(
+    timeoutMs: number = RelayServer.RESTART_MUTATION_QUEUE_TIMEOUT_MS,
+  ): Promise<number | null> {
+    const currentPort = this.portDiscovery.getPort();
+    if (currentPort && !this.portDiscovery.isRestarting()) {
+      return currentPort;
+    }
+
+    return new Promise<number | null>((resolve) => {
+      let timer: NodeJS.Timeout | null = null;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        this.portDiscovery.off("port-discovered", onReady);
+        this.portDiscovery.off("port-changed", onReady);
+      };
+
+      const onReady = () => {
+        const p = this.portDiscovery.getPort();
+        if (p && !this.portDiscovery.isRestarting()) {
+          cleanup();
+          resolve(p);
+        }
+      };
+
+      timer = setTimeout(() => {
+        cleanup();
+        const p = this.portDiscovery.getPort();
+        resolve(p && !this.portDiscovery.isRestarting() ? p : null);
+      }, timeoutMs);
+
+      this.portDiscovery.on("port-discovered", onReady);
+      this.portDiscovery.on("port-changed", onReady);
+    });
   }
 
   public getSessionManager(): SessionManager {
@@ -2002,6 +2208,7 @@ export class RelayServer {
     const app = fastify({
       logger: false,
       forceCloseConnections: true,
+      bodyLimit: MAX_MUTATION_BUFFER_SIZE,
     });
 
     await app.register(fastifyCors, {
@@ -2433,21 +2640,133 @@ export class RelayServer {
           });
         }
 
-        if (this.portDiscovery.isRestarting()) {
-          return reply.status(503).header("Retry-After", "1").send({
-            error: "upstream_restarting",
-            message:
-              "Antigravity upstream is restarting. Please retry in 1 second.",
-            retry_after_ms: 1000,
-          });
+        const method = request.method.toUpperCase();
+        const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+
+        let port = this.portDiscovery.getPort();
+        if (this.portDiscovery.isRestarting() || !port) {
+          if (isMutation) {
+            port = await this.waitForUpstreamReady(
+              RelayServer.RESTART_MUTATION_QUEUE_TIMEOUT_MS,
+            );
+          }
         }
 
-        const port = this.portDiscovery.getPort();
-        if (!port) {
+        if (this.portDiscovery.isRestarting() || !port) {
+          if (this.portDiscovery.isRestarting()) {
+            return reply.status(503).header("Retry-After", "1").send({
+              error: "upstream_restarting",
+              message:
+                "Antigravity upstream is restarting. Please retry in 1 second.",
+              retry_after_ms: 1000,
+            });
+          }
           return reply.status(503).header("Retry-After", "2").send({
             error: "upstream_unavailable",
             retry_after_ms: 2000,
           });
+        }
+
+        let bufferedBody: Buffer | undefined = undefined;
+
+        if (isMutation) {
+          const rawContentLength = request.headers["content-length"];
+          if (rawContentLength) {
+            const parsedLen = parseInt(
+              Array.isArray(rawContentLength)
+                ? rawContentLength[0]
+                : rawContentLength,
+              10,
+            );
+            if (!isNaN(parsedLen) && parsedLen > MAX_MUTATION_BUFFER_SIZE) {
+              if (request.raw) {
+                request.raw.resume();
+              }
+              return reply.status(413).send({
+                error: "payload_too_large",
+                message:
+                  "Payload Too Large: mutation request body exceeds 10MB limit",
+              });
+            }
+          }
+
+          if (request.body !== undefined && request.body !== null) {
+            if (Buffer.isBuffer(request.body)) {
+              if (request.body.length > MAX_MUTATION_BUFFER_SIZE) {
+                return reply.status(413).send({
+                  error: "payload_too_large",
+                  message:
+                    "Payload Too Large: mutation request body exceeds 10MB limit",
+                });
+              }
+              bufferedBody = request.body;
+            } else if (typeof request.body === "string") {
+              const buf = Buffer.from(request.body, "utf-8");
+              if (buf.length > MAX_MUTATION_BUFFER_SIZE) {
+                return reply.status(413).send({
+                  error: "payload_too_large",
+                  message:
+                    "Payload Too Large: mutation request body exceeds 10MB limit",
+                });
+              }
+              bufferedBody = buf;
+            } else if (
+              typeof (request.body as any).pipe === "function" ||
+              typeof (request.body as any)[Symbol.asyncIterator] === "function"
+            ) {
+              const chunks: Buffer[] = [];
+              let totalBytes = 0;
+              let exceeded = false;
+              for await (const chunk of request.body as any) {
+                const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                totalBytes += buf.length;
+                if (totalBytes > MAX_MUTATION_BUFFER_SIZE) {
+                  exceeded = true;
+                  break;
+                }
+                chunks.push(buf);
+              }
+              if (exceeded) {
+                return reply.status(413).send({
+                  error: "payload_too_large",
+                  message:
+                    "Payload Too Large: mutation request body exceeds 10MB limit",
+                });
+              }
+              bufferedBody = Buffer.concat(chunks);
+            } else {
+              const buf = Buffer.from(JSON.stringify(request.body), "utf-8");
+              if (buf.length > MAX_MUTATION_BUFFER_SIZE) {
+                return reply.status(413).send({
+                  error: "payload_too_large",
+                  message:
+                    "Payload Too Large: mutation request body exceeds 10MB limit",
+                });
+              }
+              bufferedBody = buf;
+            }
+          } else if (request.raw) {
+            const chunks: Buffer[] = [];
+            let totalBytes = 0;
+            let exceeded = false;
+            for await (const chunk of request.raw) {
+              const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+              totalBytes += buf.length;
+              if (totalBytes > MAX_MUTATION_BUFFER_SIZE) {
+                exceeded = true;
+                break;
+              }
+              chunks.push(buf);
+            }
+            if (exceeded) {
+              return reply.status(413).send({
+                error: "payload_too_large",
+                message:
+                  "Payload Too Large: mutation request body exceeds 10MB limit",
+              });
+            }
+            bufferedBody = Buffer.concat(chunks);
+          }
         }
 
         const upstreamUrl = `https://127.0.0.1:${port}${request.url}`;
@@ -2470,28 +2789,16 @@ export class RelayServer {
         }
         upstreamHeaders["host"] = `127.0.0.1:${port}`;
 
-        const method = request.method.toUpperCase();
-        const hasBody = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-        let bodyStream: any = undefined;
+        if (bufferedBody !== undefined) {
+          upstreamHeaders["content-length"] = String(bufferedBody.length);
+        }
 
-        if (hasBody) {
-          if (request.body !== undefined && request.body !== null) {
-            if (
-              Buffer.isBuffer(request.body) ||
-              typeof request.body === "string"
-            ) {
-              bodyStream = request.body;
-            } else if (
-              typeof (request.body as any).pipe === "function" ||
-              typeof (request.body as any)[Symbol.asyncIterator] === "function"
-            ) {
-              bodyStream = request.body;
-            } else {
-              bodyStream = JSON.stringify(request.body);
-            }
-          } else if (request.raw) {
-            bodyStream = request.raw;
-          }
+        const clientCsrfToken = request.headers["x-codeium-csrf-token"];
+        if (
+          this.activeCsrfToken &&
+          (clientCsrfToken !== undefined || isMutation)
+        ) {
+          upstreamHeaders["x-codeium-csrf-token"] = this.activeCsrfToken;
         }
 
         const isPotentialHtml =
@@ -2506,24 +2813,84 @@ export class RelayServer {
         }
 
         try {
-          const upstreamRes = await undiciRequest(upstreamUrl, {
+          let upstreamRes = await undiciRequest(upstreamUrl, {
             method: method as any,
             headers: upstreamHeaders,
-            body: bodyStream,
+            body: bufferedBody,
             dispatcher: this.upstreamDispatcher,
           });
+
+          if (upstreamRes.statusCode === 401) {
+            const errorBodyText = await upstreamRes.body.text();
+            if (isUpstreamCsrfError(401, errorBodyText)) {
+              let refreshedToken = this.activeCsrfToken;
+              if (
+                !refreshedToken ||
+                refreshedToken === upstreamHeaders["x-codeium-csrf-token"]
+              ) {
+                this.activeCsrfToken = null;
+                refreshedToken = await this.refreshCsrfToken(port);
+              }
+              if (refreshedToken) {
+                upstreamHeaders["x-codeium-csrf-token"] = refreshedToken;
+                upstreamRes = await undiciRequest(upstreamUrl, {
+                  method: method as any,
+                  headers: upstreamHeaders,
+                  body: bufferedBody,
+                  dispatcher: this.upstreamDispatcher,
+                });
+              } else {
+                for (const [headerName, headerVal] of Object.entries(
+                  upstreamRes.headers,
+                )) {
+                  if (headerVal === undefined) continue;
+                  const lower = headerName.toLowerCase();
+                  if (HOP_BY_HOP_HEADERS.has(lower)) continue;
+                  reply.header(headerName, headerVal);
+                }
+                return reply.status(401).send(errorBodyText);
+              }
+            } else {
+              // Non-CSRF 401 error: pass through untouched with ZERO pairing revocation trigger
+              for (const [headerName, headerVal] of Object.entries(
+                upstreamRes.headers,
+              )) {
+                if (headerVal === undefined) continue;
+                const lower = headerName.toLowerCase();
+                if (HOP_BY_HOP_HEADERS.has(lower)) continue;
+                reply.header(headerName, headerVal);
+              }
+              return reply.status(401).send(errorBodyText);
+            }
+          }
 
           const contentType = String(
             upstreamRes.headers["content-type"] || "",
           ).toLowerCase();
 
           if (
-            this.config.injectAutoReload !== false &&
             method === "GET" &&
             upstreamRes.statusCode === 200 &&
             contentType.includes("text/html")
           ) {
             const rawHtml = await upstreamRes.body.text();
+            const harvestedToken = extractCsrfTokenFromHtml(rawHtml);
+            if (harvestedToken) {
+              this.activeCsrfToken = harvestedToken;
+            }
+
+            if (this.config.injectAutoReload === false) {
+              for (const [headerName, headerVal] of Object.entries(
+                upstreamRes.headers,
+              )) {
+                if (headerVal === undefined) continue;
+                const lower = headerName.toLowerCase();
+                if (HOP_BY_HOP_HEADERS.has(lower)) continue;
+                reply.header(headerName, headerVal);
+              }
+              return reply.status(upstreamRes.statusCode).send(rawHtml);
+            }
+
             let finalHtml = rawHtml;
 
             // Regex-strip any existing <link rel="icon"...> or <link rel="shortcut icon"...>, <link rel="apple-touch-icon"...>, and <link rel="manifest"...>
@@ -2750,6 +3117,11 @@ export class RelayServer {
       });
     }
 
+    const currentPort = this.portDiscovery.getPort();
+    if (currentPort) {
+      await this.refreshCsrfToken(currentPort);
+    }
+
     this.notifyStatusUpdated();
     return this.getStatus();
   }
@@ -2832,6 +3204,13 @@ export class RelayServer {
 
   public dispose(): void {
     this.stopHeartbeat();
+    if (this.csrfRefreshController) {
+      this.csrfRefreshController.abort();
+      this.csrfRefreshController = null;
+    }
+    this.csrfRefreshPromise = null;
+    this.csrfRefreshPort = null;
+    this.activeCsrfToken = null;
     this.portDiscovery.dispose();
     try {
       this.upstreamDispatcher.destroy();
@@ -3241,6 +3620,13 @@ export class RelayServer {
 
   private handlePortChanged(oldPort: number | null, newPort: number): void {
     this.upstreamEpoch++;
+    this.activeCsrfToken = null;
+    if (this.csrfRefreshController) {
+      this.csrfRefreshController.abort();
+      this.csrfRefreshController = null;
+    }
+    this.csrfRefreshPromise = null;
+    this.csrfRefreshPort = null;
     this.resetUpstreamDispatcher();
     this.upstreamBridge.setTarget("127.0.0.1", newPort);
     if (this.hasCustomUpstreamBridge || this.upstreamBridge.isConnected()) {
@@ -3256,11 +3642,19 @@ export class RelayServer {
       safeClose(pair.upstreamWs, 1012, "Service Restart");
     }
     this.activeWsConnections.clear();
+    this.refreshCsrfToken(newPort).catch(() => {});
     this.notifyStatusUpdated();
   }
 
   private handleRestarting(): void {
     this.upstreamEpoch++;
+    this.activeCsrfToken = null;
+    if (this.csrfRefreshController) {
+      this.csrfRefreshController.abort();
+      this.csrfRefreshController = null;
+    }
+    this.csrfRefreshPromise = null;
+    this.csrfRefreshPort = null;
     this.resetUpstreamDispatcher();
     if (!this.hasCustomUpstreamBridge) {
       this.upstreamBridge.enterBuffering("Antigravity restarting");
@@ -3292,9 +3686,14 @@ export class RelayServer {
   }
 
   private wirePortDiscoveryEvents(): void {
-    this.portDiscovery.on("port-discovered", () => {
+    this.portDiscovery.on("port-discovered", (port?: number) => {
+      this.resetUpstreamDispatcher();
       if (!this.hasCustomUpstreamBridge) {
         this.upstreamBridge.flushBuffer().catch(() => {});
+      }
+      const discoveredPort = port ?? this.portDiscovery.getPort();
+      if (discoveredPort) {
+        this.refreshCsrfToken(discoveredPort).catch(() => {});
       }
       this.notifyStatusUpdated();
     });

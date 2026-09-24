@@ -15,6 +15,11 @@ import {
   getIcon192Buffer,
   getIcon512Buffer,
   getManifestJson,
+  MAX_MUTATION_BUFFER_SIZE,
+  CSRF_PROBE_TIMEOUT_MS,
+  RESTART_MUTATION_QUEUE_TIMEOUT_MS,
+  extractCsrfTokenFromHtml,
+  isUpstreamCsrfError,
 } from "@/modules/relay/relay-server";
 import { SessionManager } from "@/modules/relay/session-manager";
 import { UpstreamBridge } from "@/modules/relay/upstream-bridge";
@@ -1581,13 +1586,105 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       );
     });
 
-    it("includes #antigravity-reload-banner safe-area styling and box-sizing in banner stylesheet", () => {
+    it("normalizes safe-area styling on :host and enforces uniform padding on #antigravity-reload-banner", () => {
       const script = generateAutoReloadScript(54518, 1);
       expect(script).toContain("#antigravity-reload-banner");
       expect(script).toContain(
-        "padding-top: max(8px, env(safe-area-inset-top, 8px))",
+        ":host { position: fixed; top: max(12px, calc(env(safe-area-inset-top, 0px) + 8px))",
+      );
+      expect(script).toContain("padding: 8px 16px; border-radius: 9999px;");
+      expect(script).not.toContain(
+        "padding-top: max(8px, env(safe-area-inset-top",
       );
       expect(script).toContain("box-sizing: border-box");
+    });
+
+    it("implements hardNavigateWithCacheBuster with _t parameter and 3000ms sessionStorage throttle", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain("function hardNavigateWithCacheBuster()");
+      expect(script).toContain(
+        'sessionStorage.getItem("ag_last_hard_navigate")',
+      );
+      expect(script).toContain("now - lastNav < 3000");
+      expect(script).toContain(
+        'sessionStorage.setItem("ag_last_hard_navigate", now.toString())',
+      );
+      expect(script).toContain('url.searchParams.set("_t", now.toString())');
+      expect(script).toContain("window.location.replace(url.toString())");
+    });
+
+    it("scrubs _t timestamp query parameter on boot via replaceState", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain('currentUrlParams.has("_t")');
+      expect(script).toContain('currentUrlParams.delete("_t")');
+      expect(script).toContain(
+        "window.history.replaceState({}, document.title, cleanPath)",
+      );
+    });
+
+    it("registers focus, visibilitychange, and pageshow event listeners for wakeup resume", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain(
+        'window.addEventListener("focus", function() {\n    checkResumeHealth();\n  });',
+      );
+      expect(script).toContain(
+        'document.addEventListener("visibilitychange", function() {',
+      );
+      expect(script).toContain(
+        'window.addEventListener("pageshow", function() {',
+      );
+      expect(script).toContain("checkResumeHealth();");
+    });
+
+    it("resets stale reloading lock after 10s watchdog and unmounts banner promptly on health", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      expect(script).toContain("Date.now() - reloadingStartedAt > 10000");
+      expect(script).toContain(
+        "reloading = false;\n        unmountReloadBanner();",
+      );
+      expect(script).toContain(
+        "if (isHealthy) {\n          unmountReloadBanner();",
+      );
+    });
+
+    it("hardNavigateWithCacheBuster enforces 3000ms cooldown and sets _t query parameter", () => {
+      const script = generateAutoReloadScript(54518, 1);
+      const scriptBody = script
+        .replace(/<script[^>]*>/, "")
+        .replace(/<\/script>/, "");
+      new Function(scriptBody)();
+
+      const hardNavFn = (window as any).__agHardNavigateWithCacheBuster;
+      expect(typeof hardNavFn).toBe("function");
+
+      sessionStorage.clear();
+      let replaceTarget = "";
+      const origReplace = window.location.replace;
+      window.location.replace = ((url: string) => {
+        replaceTarget = url;
+      }) as any;
+
+      try {
+        hardNavFn();
+        const firstNavTs = sessionStorage.getItem("ag_last_hard_navigate");
+        expect(firstNavTs).not.toBeNull();
+        expect(replaceTarget).toContain("_t=");
+
+        // Immediate subsequent call within 3000ms must be throttled (no second replace)
+        replaceTarget = "unchanged";
+        hardNavFn();
+        expect(replaceTarget).toBe("unchanged");
+
+        // After simulating >3000ms elapsed:
+        sessionStorage.setItem(
+          "ag_last_hard_navigate",
+          (Date.now() - 3500).toString(),
+        );
+        hardNavFn();
+        expect(replaceTarget).toContain("_t=");
+      } finally {
+        window.location.replace = origReplace;
+      }
     });
 
     it("exposes upstreamEpoch and isRestarting in /health endpoint", async () => {
@@ -1618,7 +1715,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(healthJson.upstreamPort).toBe(newPort);
     });
 
-    it("AC-04: returns structured 503 with Retry-After 1 during upstream restart", async () => {
+    it("returns structured 503 with Retry-After 1 during upstream restart", async () => {
       portDiscovery.setRestarting(true, upstreamPort);
 
       const res = await fetch(`http://127.0.0.1:${relayPort}/api/chat`, {
@@ -1635,7 +1732,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(json.message).toContain("restarting");
     });
 
-    it("AC-07: injects anti-caching headers and strips ETag and Last-Modified on HTML responses", async () => {
+    it("injects anti-caching headers and strips ETag and Last-Modified on HTML responses", async () => {
       const res = await fetch(`http://127.0.0.1:${relayPort}/`, {
         headers: { Accept: "text/html" },
       });
@@ -1650,7 +1747,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(res.headers.get("last-modified")).toBeNull();
     });
 
-    it("AC-08: synchronizes UpstreamBridge target port on port-changed event", () => {
+    it("synchronizes UpstreamBridge target port on port-changed event", () => {
       const bridge = relayServer.getUpstreamBridge();
       expect(bridge.getStatus().targetPort).toBe(upstreamPort);
 
@@ -1884,7 +1981,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
     });
   });
 
-  describe("Per-Device Pairing Key, Auto-Regeneration, and Revocation (PRD AC-01 to AC-04)", () => {
+  describe("Per-Device Pairing Key, Auto-Regeneration, and Revocation", () => {
     let prdServer: RelayServer;
     let prdPort: number;
 
@@ -1940,7 +2037,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       );
     });
 
-    it("AC-01: single-device consumption, decoupled session token, and rejection of consumed key", async () => {
+    it("enforces single-device consumption, decoupled session token, and rejection of consumed key", async () => {
       const keyAlpha = prdServer.getPairingKey();
       const device1Id = "dev_alpha_001";
 
@@ -2013,7 +2110,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(json3.error).toBe("invalid_key");
     });
 
-    it("AC-02: host pairing key auto-regenerates immediately and routine reload with stale ?pair= succeeds", async () => {
+    it("auto-regenerates host pairing key immediately and routine reload with stale ?pair= succeeds", async () => {
       const key1 = prdServer.getPairingKey();
       const statusUpdates: string[] = [];
       const unsub = prdServer.onStatusUpdated((status) => {
@@ -2056,7 +2153,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       unsub();
     });
 
-    it("AC-03: revocation terminates WebSocket with code 4401 in <500ms and blocks stale reconnection", async () => {
+    it("terminates WebSocket with code 4401 in <500ms on revocation and blocks stale reconnection", async () => {
       const key = prdServer.getPairingKey();
       const revokedDeviceId = "dev_target_ac03";
 
@@ -2145,7 +2242,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(consumedJson.error).toBe("key_consumed");
     });
 
-    it("AC-03: composite rate limiting (IP + deviceId) isolates failed attempts per device", () => {
+    it("isolates failed attempts per device using composite rate limiting (IP + deviceId)", () => {
       const limiter = prdServer.getRateLimiter();
       const ip = "192.168.1.100";
       const dev1 = "dev_ratelimit_1";
@@ -2164,7 +2261,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(limiter.isRateLimited(key2)).toBe(false);
     });
 
-    it("AC-04: revoked device recovery via fresh host pairing key clears revocation and regenerates key", async () => {
+    it("recovers revoked device via fresh host pairing key, clears revocation, and regenerates key", async () => {
       const initialKey = prdServer.getPairingKey();
       const deviceId = "dev_recovery_test";
 
@@ -2334,6 +2431,388 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(resOther.statusCode).toBe(401);
       const json = (await resOther.body.json()) as any;
       expect(json.error).toBe("key_consumed");
+    });
+  });
+
+  describe("CSRF Self-Healing & Transparent Mutation Replay", () => {
+    it("pure helpers: extractCsrfTokenFromHtml extracts tokens from various HTML formats", () => {
+      expect(
+        extractCsrfTokenFromHtml(
+          '<script>window.__APP_CONFIG__ = {csrfToken: "uuid-token-1"};</script>',
+        ),
+      ).toBe("uuid-token-1");
+      expect(
+        extractCsrfTokenFromHtml(
+          'window.__APP_CONFIG__ = { csrf_token: "uuid-token-2" };',
+        ),
+      ).toBe("uuid-token-2");
+      expect(
+        extractCsrfTokenFromHtml(
+          '<meta name="csrf-token" content="meta-token-3">',
+        ),
+      ).toBe("meta-token-3");
+      expect(
+        extractCsrfTokenFromHtml(
+          '<meta name="x-codeium-csrf-token" content="codeium-meta-4">',
+        ),
+      ).toBe("codeium-meta-4");
+      expect(
+        extractCsrfTokenFromHtml("<html><body>No token here</body></html>"),
+      ).toBeNull();
+    });
+
+    it("pure helpers: isUpstreamCsrfError correctly identifies CSRF errors", () => {
+      expect(
+        isUpstreamCsrfError(
+          401,
+          JSON.stringify({
+            code: "unauthenticated",
+            message: "invalid CSRF token",
+          }),
+        ),
+      ).toBe(true);
+      expect(
+        isUpstreamCsrfError(
+          401,
+          "Invalid csrf token received from reverse proxy",
+        ),
+      ).toBe(true);
+      expect(
+        isUpstreamCsrfError(
+          401,
+          JSON.stringify({
+            code: "unauthenticated",
+            message: "invalid oauth token",
+          }),
+        ),
+      ).toBe(false);
+      expect(isUpstreamCsrfError(400, "invalid CSRF token")).toBe(false);
+      expect(isUpstreamCsrfError(500, "invalid CSRF token")).toBe(false);
+    });
+
+    it("proactively discovers upstream CSRF token on start and port-discovered", async () => {
+      const activeToken = relayServer.getActiveCsrfToken();
+      // On start, proactive discovery triggers and sets activeCsrfToken
+      expect(activeToken).toBe("test-initial-csrf-token");
+
+      // Verify discovery timeout constant and buffer size constants
+      expect(RelayServer.CSRF_PROBE_TIMEOUT_MS).toBe(2000);
+      expect(RelayServer.MAX_MUTATION_BUFFER_SIZE).toBe(10 * 1024 * 1024);
+      expect(RelayServer.RESTART_MUTATION_QUEUE_TIMEOUT_MS).toBe(1500);
+    });
+
+    it("clears active CSRF token on restarting and refreshes on port-discovered", async () => {
+      expect(relayServer.getActiveCsrfToken()).toBe("test-initial-csrf-token");
+
+      // Simulate upstream restarting
+      portDiscovery.setRestarting(true, upstreamPort);
+      expect(relayServer.getActiveCsrfToken()).toBeNull();
+
+      // Update mock upstream with fresh token
+      const freshToken = "refreshed-uuid-token-999";
+      mockUpstream.setCsrfToken(freshToken);
+
+      // Discovered new port
+      portDiscovery.setRestarting(false, upstreamPort);
+      portDiscovery.emit("port-discovered", upstreamPort);
+
+      // Await refresh via vi.waitFor
+      await vi.waitFor(
+        () => {
+          expect(relayServer.getActiveCsrfToken()).toBe(freshToken);
+        },
+        { timeout: 2000, interval: 20 },
+      );
+    });
+
+    it("invalidates in-flight CSRF probe when targetPort differs or restart occurs", async () => {
+      const dummyDeadPort = 59992;
+      const p1 = relayServer.refreshCsrfToken(dummyDeadPort);
+
+      // Immediately call with actual upstreamPort; must NOT return stale p1
+      const p2 = relayServer.refreshCsrfToken(upstreamPort);
+      expect(p1).not.toBe(p2);
+
+      const token = await p2;
+      expect(token).toBe(mockUpstream.getCsrfToken());
+      expect(relayServer.getActiveCsrfToken()).toBe(mockUpstream.getCsrfToken());
+
+      // Simulate restart while probe is in flight; must reset state and not return stale probe
+      const p3 = relayServer.refreshCsrfToken(dummyDeadPort);
+      portDiscovery.setRestarting(true, upstreamPort);
+      expect(relayServer.getActiveCsrfToken()).toBeNull();
+
+      portDiscovery.setRestarting(false, upstreamPort);
+      const p4 = relayServer.refreshCsrfToken(upstreamPort);
+      expect(p4).not.toBe(p3);
+      const token4 = await p4;
+      expect(token4).toBe(mockUpstream.getCsrfToken());
+    });
+
+    it("proactively rewrites x-codeium-csrf-token on outgoing mutation requests", async () => {
+      const activeToken = "active-known-token-42";
+      mockUpstream.setCsrfToken(activeToken);
+      await relayServer.refreshCsrfToken(upstreamPort);
+      expect(relayServer.getActiveCsrfToken()).toBe(activeToken);
+
+      // Client sends a mutation carrying a stale token
+      const res = await fetch(`http://127.0.0.1:${relayPort}/api/mutation`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-codeium-csrf-token": "stale-client-token-old",
+        },
+        body: JSON.stringify({ action: "test-proactive-rewrite" }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.success).toBe(true);
+      // Verify mock upstream received the rewritten active token
+      expect(json.receivedHeaders["x-codeium-csrf-token"]).toBe(activeToken);
+    });
+
+    it("queues mutation requests up to 1500ms during upstream restart and flushes on readiness", async () => {
+      portDiscovery.setRestarting(true, upstreamPort);
+
+      // Fire a mutation request while restarting is active
+      const requestPromise = fetch(
+        `http://127.0.0.1:${relayPort}/api/mutation`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "queue-test" }),
+        },
+      );
+
+      // Upstream becomes ready after 60ms
+      setTimeout(() => {
+        portDiscovery.setRestarting(false, upstreamPort);
+        portDiscovery.emit("port-discovered", upstreamPort);
+      }, 60);
+
+      const res = await requestPromise;
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.success).toBe(true);
+      expect(json.receivedBody).toEqual({ action: "queue-test" });
+    });
+
+    it("waitForUpstreamReady resolves null if upstream does not become ready within timeout", async () => {
+      portDiscovery.setRestarting(true, upstreamPort);
+      const readyPort = await relayServer.waitForUpstreamReady(50);
+      expect(readyPort).toBeNull();
+      portDiscovery.setRestarting(false, upstreamPort);
+    });
+
+    it("intercepts 401 CSRF rejection, auto-refreshes token, and replays buffered mutation request", async () => {
+      // Set upstream to a new token without telling RelayServer (simulate out-of-sync restart)
+      const rotatedToken = "rotated-upstream-token-777";
+      mockUpstream.setCsrfToken(rotatedToken);
+
+      // Client sends Connect-RPC mutation with stale token
+      const res = await fetch(
+        `http://127.0.0.1:${relayPort}/exa.language_server_pb.LanguageServerService/ApproveDiff`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-codeium-csrf-token": "expired-mobile-token",
+          },
+          body: JSON.stringify({ diffId: "diff-456", approved: true }),
+        },
+      );
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.success).toBe(true);
+      expect(json.receivedHeaders["x-codeium-csrf-token"]).toBe(rotatedToken);
+      expect(json.receivedBody).toEqual({ diffId: "diff-456", approved: true });
+      expect(relayServer.getActiveCsrfToken()).toBe(rotatedToken);
+    });
+
+    it("coalesces concurrent 401 CSRF errors with single-flight mutex", async () => {
+      const rotatedToken = "thundering-herd-token-888";
+      mockUpstream.setCsrfToken(rotatedToken);
+
+      const initialDiscoveryCount = mockUpstream.getDiscoveryCount();
+
+      // Launch 5 concurrent mutations with stale CSRF tokens
+      const concurrentRequests = Array.from({ length: 5 }, (_, i) =>
+        fetch(
+          `http://127.0.0.1:${relayPort}/exa.language_server_pb.LanguageServerService/ApproveDiff`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-codeium-csrf-token": "stale-herd-token",
+            },
+            body: JSON.stringify({ requestId: i }),
+          },
+        ),
+      );
+
+      const responses = await Promise.all(concurrentRequests);
+      for (const res of responses) {
+        expect(res.status).toBe(200);
+        const json = (await res.json()) as any;
+        expect(json.success).toBe(true);
+        expect(json.receivedHeaders["x-codeium-csrf-token"]).toBe(rotatedToken);
+      }
+
+      // Exactly 1 upstream GET / probe should have been executed to refresh the token
+      const probesExecuted =
+        mockUpstream.getDiscoveryCount() - initialDiscoveryCount;
+      expect(probesExecuted).toBe(1);
+    });
+
+    it("accepts payloads within 10MB ceiling and rejects mutations exceeding MAX_MUTATION_BUFFER_SIZE with HTTP 413", async () => {
+      // 1. Verify valid 2MB payload passes through to upstream with HTTP 200
+      const payload2MB = "a".repeat(2 * 1024 * 1024);
+      const res2MB = await fetch(
+        `http://127.0.0.1:${relayPort}/api/large-mutation`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-codeium-csrf-token": relayServer.getActiveCsrfToken() || "",
+          },
+          body: JSON.stringify({ data: payload2MB }),
+        },
+      );
+      expect(res2MB.status).toBe(200);
+      const json2MB = (await res2MB.json()) as any;
+      expect(json2MB.success).toBe(true);
+      expect(json2MB.receivedBody.data.length).toBe(2 * 1024 * 1024);
+
+      // 2. Verify payload exceeding 10MB limit is rejected with HTTP 413
+      const oversizedLength = 10 * 1024 * 1024 + 1024;
+      const http = await import("node:http");
+      const { statusCode, body } = await new Promise<{
+        statusCode: number;
+        body: any;
+      }>((resolve, reject) => {
+        const req = http.request(
+          `http://127.0.0.1:${relayPort}/api/large-upload`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "content-length": String(oversizedLength),
+            },
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on("data", (chunk) => chunks.push(chunk));
+            res.on("end", () => {
+              try {
+                const parsed = JSON.parse(
+                  Buffer.concat(chunks).toString("utf-8"),
+                );
+                resolve({ statusCode: res.statusCode || 0, body: parsed });
+              } catch {
+                resolve({ statusCode: res.statusCode || 0, body: null });
+              }
+            });
+          },
+        );
+        req.on("error", (err) => {
+          if (
+            (err as any).code === "ECONNRESET" ||
+            (err as any).code === "EPIPE"
+          ) {
+            return;
+          }
+          reject(err);
+        });
+        req.write('{"data":"large"}');
+        req.end();
+      });
+
+      expect(statusCode).toBe(413);
+      expect(body.error).toMatch(/payload too large/i);
+    });
+
+    it("passes through non-CSRF 401 errors untouched with zero pairing revocation", async () => {
+      const res = await fetch(
+        `http://127.0.0.1:${relayPort}/api/auth-error-non-csrf`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "non-csrf-test" }),
+        },
+      );
+
+      expect(res.status).toBe(401);
+      const json = (await res.json()) as any;
+      expect(json.code).toBe("unauthenticated");
+      expect(json.message).toBe("invalid oauth token");
+
+      // Verify server is still running and session manager was not revoked
+      expect(relayServer.getStatus().isRunning).toBe(true);
+    });
+
+    it("passes through upstream 500 error without retrying CSRF", async () => {
+      const res = await fetch(`http://127.0.0.1:${relayPort}/api/error-500`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "fail" }),
+      });
+
+      expect(res.status).toBe(500);
+      const json = (await res.json()) as any;
+      expect(json.error).toBe("internal_server_error");
+    });
+
+    it("recovers mobile actions across 3 consecutive rapid upstream restarts with dynamic tokens and concurrent mutation recovery", async () => {
+      // Execute 3 consecutive rapid upstream restart cycles
+      for (let cycle = 1; cycle <= 3; cycle++) {
+        // Step 1: Upstream enters restarting state; active CSRF token is cleared
+        portDiscovery.setRestarting(true, upstreamPort);
+        expect(relayServer.getActiveCsrfToken()).toBeNull();
+
+        // Step 2: Upstream rotates its CSRF token
+        const dynamicToken = `dynamic-rapid-token-cycle-${cycle}-${Date.now()}`;
+        mockUpstream.setCsrfToken(dynamicToken);
+
+        // Step 3: Upstream restart completes; port discovered
+        portDiscovery.setRestarting(false, upstreamPort);
+        portDiscovery.emit("port-discovered", upstreamPort);
+
+        // Step 4: Dispatch concurrent mutations carrying stale CSRF tokens
+        const staleToken = `stale-token-cycle-${cycle}`;
+        const mutationPaths = [
+          "/exa.language_server_pb.LanguageServerService/ApproveDiff",
+          "/exa.language_server_pb.LanguageServerService/SendPrompt",
+          "/exa.language_server_pb.LanguageServerService/RejectDiff",
+          "/api/button-click-accept",
+          "/api/button-click-cancel",
+        ];
+
+        const requests = mutationPaths.map((path, idx) =>
+          fetch(`http://127.0.0.1:${relayPort}${path}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-codeium-csrf-token": staleToken,
+            },
+            body: JSON.stringify({ cycle, actionIndex: idx }),
+          }),
+        );
+
+        const responses = await Promise.all(requests);
+        for (const res of responses) {
+          expect(res.status).toBe(200);
+          const json = (await res.json()) as any;
+          expect(json.success).toBe(true);
+          expect(json.receivedHeaders["x-codeium-csrf-token"]).toBe(
+            dynamicToken,
+          );
+        }
+
+        // Active CSRF token on RelayServer is updated to the dynamic token
+        expect(relayServer.getActiveCsrfToken()).toBe(dynamicToken);
+      }
     });
   });
 });
