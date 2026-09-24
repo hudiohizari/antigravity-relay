@@ -51,7 +51,6 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { getProcessStatus } from "@/modules/antigravity-runtime/actions/process";
 import { formatDistanceToNow } from "date-fns";
-import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "react-i18next";
 import { useAppConfig } from "@/modules/config/hooks/useAppConfig";
 import { useProviderGrouping } from "@/modules/cloud-account/hooks/useProviderGrouping";
@@ -609,17 +608,6 @@ export function CloudAccountCard({
       <CardContent className="flex-1 pb-4">
         <div className="mb-3.5 flex items-center justify-between">
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge
-              variant={
-                account.status === "rate_limited" ||
-                account.status === "expired"
-                  ? "destructive"
-                  : "outline"
-              }
-              className="px-2 py-0.5 text-[10px] font-bold tracking-wide"
-            >
-              {account.provider.toUpperCase()}
-            </Badge>
             <AccountTierBadge
               account={account}
               unknownLabel={t("cloud.tierFilter.unknown")}
@@ -1078,16 +1066,6 @@ export function CompactCloudAccountCard({
           <span className="truncate text-sm font-semibold">
             {account.name || t("cloud.card.unknown")}
           </span>
-          <Badge
-            variant={
-              account.status === "rate_limited" || account.status === "expired"
-                ? "destructive"
-                : "outline"
-            }
-            className="shrink-0 text-[10px]"
-          >
-            {account.provider.toUpperCase()}
-          </Badge>
           <AccountTierBadge
             account={account}
             unknownLabel={t("cloud.tierFilter.unknown")}
