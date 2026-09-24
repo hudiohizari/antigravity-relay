@@ -87,6 +87,28 @@ vi.mock("better-sqlite3", () => {
               rows: [],
             });
           }
+        } else if (/CREATE\s+TABLE\s+trajectory_meta/i.test(trimmed)) {
+          if (!db.tables.some((t) => t.name === "trajectory_meta")) {
+            db.tables.push({
+              name: "trajectory_meta",
+              columns: [
+                "id",
+                "parent_cascade_id",
+                "parent_trajectory_id",
+                "parent_id",
+                "caller_id",
+              ],
+              rows: [],
+            });
+          }
+        } else if (/CREATE\s+TABLE\s+parent_references/i.test(trimmed)) {
+          if (!db.tables.some((t) => t.name === "parent_references")) {
+            db.tables.push({
+              name: "parent_references",
+              columns: ["parent_cascade_id"],
+              rows: [],
+            });
+          }
         } else if (/CREATE\s+TABLE\s+gen_metadata/i.test(trimmed)) {
           if (!db.tables.some((t) => t.name === "gen_metadata")) {
             db.tables.push({
@@ -135,11 +157,33 @@ vi.mock("better-sqlite3", () => {
               const table = db.tables.find((t) => t.name === "steps");
               if (!table) return [];
               const minIdx = typeof args[0] === "number" ? args[0] : 0;
-              return table.rows
+              let rows = table.rows
                 .filter((r) =>
                   typeof r.idx === "number" ? r.idx >= minIdx : true,
                 )
                 .sort((a, b) => (b.idx ?? 0) - (a.idx ?? 0));
+              if (
+                q.includes("status = 2 OR status = 8") ||
+                q.includes("status = 2 OR status = 8")
+              ) {
+                rows = rows.filter((r) => r.status === 2 || r.status === 8);
+              } else if (q.includes("status = 2")) {
+                rows = rows.filter((r) => r.status === 2);
+              }
+              if (q.includes("LIMIT 1")) {
+                rows = rows.slice(0, 1);
+              }
+              return rows;
+            }
+            if (q.includes("trajectory_metadata_blob")) {
+              const table = db.tables.find(
+                (t) => t.name === "trajectory_metadata_blob",
+              );
+              return table ? [...table.rows] : [];
+            }
+            if (q.includes("trajectory_meta")) {
+              const table = db.tables.find((t) => t.name === "trajectory_meta");
+              return table ? [...table.rows] : [];
             }
             if (q.includes("ItemTable")) {
               const table = db.tables.find((t) => t.name === "ItemTable");
@@ -158,7 +202,9 @@ vi.mock("better-sqlite3", () => {
             if (q.includes("FROM gen_metadata")) {
               const table = db.tables.find((t) => t.name === "gen_metadata");
               if (!table) return [];
-              return [...table.rows].sort((a, b) => (b.idx ?? 0) - (a.idx ?? 0));
+              return [...table.rows].sort(
+                (a, b) => (b.idx ?? 0) - (a.idx ?? 0),
+              );
             }
             return [];
           },
@@ -181,15 +227,27 @@ vi.mock("better-sqlite3", () => {
               const maxVal = Math.max(...idxRows.map((r) => r.idx));
               return { max_idx: maxVal };
             }
-            if (q.includes("WHERE status = 2")) {
+            if (q.includes("status = 2") || q.includes("status = 8")) {
               for (const table of db.tables) {
-                const row = table.rows.find((r) => r.status === 2);
+                const row = table.rows.find(
+                  (r) => r.status === 2 || r.status === 8,
+                );
                 if (row) return { ...row };
               }
             }
             if (q.includes("trajectory_metadata_blob")) {
               const table = db.tables.find(
                 (t) => t.name === "trajectory_metadata_blob",
+              );
+              return table && table.rows[0] ? { ...table.rows[0] } : undefined;
+            }
+            if (q.includes("trajectory_meta")) {
+              const table = db.tables.find((t) => t.name === "trajectory_meta");
+              return table && table.rows[0] ? { ...table.rows[0] } : undefined;
+            }
+            if (q.includes("parent_references")) {
+              const table = db.tables.find(
+                (t) => t.name === "parent_references",
               );
               return table && table.rows[0] ? { ...table.rows[0] } : undefined;
             }
@@ -228,6 +286,26 @@ vi.mock("better-sqlite3", () => {
                   data: args[1],
                 });
               }
+            } else if (/INSERT\s+INTO\s+trajectory_meta/i.test(q)) {
+              const table = db.tables.find((t) => t.name === "trajectory_meta");
+              if (table) {
+                table.rows.push({
+                  id: args[0],
+                  parent_cascade_id: args[1],
+                  parent_trajectory_id: args[1],
+                  parent_id: args[1],
+                  caller_id: args[1],
+                });
+              }
+            } else if (/INSERT\s+INTO\s+parent_references/i.test(q)) {
+              const table = db.tables.find(
+                (t) => t.name === "parent_references",
+              );
+              if (table) {
+                table.rows.push({
+                  parent_cascade_id: args[0],
+                });
+              }
             } else if (/INSERT\s+INTO\s+gen_metadata/i.test(q)) {
               const table = db.tables.find((t) => t.name === "gen_metadata");
               if (table) {
@@ -251,11 +329,15 @@ import Database from "better-sqlite3";
 import { checkpointStateDatabases } from "@/modules/chat-resume/walCheckpoint";
 import {
   detectActiveTurn,
+  detectAllActiveTurns,
+  captureAndBufferActiveTurn,
   detectActiveTurnInDatabase,
   extractModelFromDatabase,
   inspectTranscriptForActiveTurn,
   isCliTarget,
   isSubagentConversation,
+  resolveParentCascadeIdFromSubagent,
+  hasActiveSubagentForParent,
 } from "@/modules/chat-resume/activeTurnDetector";
 import { SessionContinuityBuffer } from "@/modules/chat-resume/SessionContinuityBuffer";
 
@@ -794,6 +876,33 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
         db.close();
       });
 
+      it("returns false for empty cascadeId or missing conversation files", () => {
+        expect(isSubagentConversation("", "app")).toBe(false);
+        expect(isSubagentConversation("non-existent-sub", "app")).toBe(false);
+      });
+
+      it("returns false when db has no trajectory_metadata_blob table", () => {
+        const dbPath = path.join(tempDir, "noblob-sub.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(`CREATE TABLE steps (id TEXT);`);
+        expect(isSubagentConversation("cascade-123", "app", db)).toBe(false);
+        db.close();
+      });
+
+      it("returns true when trajectory_metadata_blob does not contain 2$<cascadeId>", () => {
+        const dbPath = path.join(tempDir, "subblob-positive.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE trajectory_metadata_blob (id TEXT PRIMARY KEY, data BLOB);`,
+        );
+        db.prepare(`INSERT INTO trajectory_metadata_blob VALUES (?, ?)`).run(
+          "main",
+          Buffer.from("subagent_task_worker_metadata_without_prefix"),
+        );
+        expect(isSubagentConversation("child-sub-999", "app", db)).toBe(true);
+        db.close();
+      });
+
       it("skips subagent conversation database in detectActiveTurnInDatabase even with active status = 2", async () => {
         const dbPath = path.join(tempDir, "active-subagent.db");
         const db = new DatabaseConstructor(dbPath);
@@ -952,8 +1061,7 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
 
         // Schema-compliant cascadeConfig with authentic enum
         const cascadeConfig = detected?.promptPayload.cascadeConfig as
-          | Record<string, any>
-          | undefined;
+          Record<string, any> | undefined;
         expect(cascadeConfig?.requestedModel).toEqual({
           model: "MODEL_PLACEHOLDER_M26",
         });
@@ -1003,8 +1111,7 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
 
         // RequestedModel override is omitted so Language Server natively inherits conversation model
         const nativeCascadeConfig = detected?.promptPayload.cascadeConfig as
-          | Record<string, any>
-          | undefined;
+          Record<string, any> | undefined;
         expect(nativeCascadeConfig?.requestedModel).toBeUndefined();
         expect(nativeCascadeConfig?.plannerConfig?.planModel).toBeUndefined();
         expect(nativeCascadeConfig?.plannerConfig?.modelName).toBe(
@@ -1013,6 +1120,779 @@ describe("WAL Checkpoint & Active Turn Detection", () => {
 
         // Verify fabricated enum is NEVER present
         expect(JSON.stringify(detected)).not.toContain("MODEL_CLAUDE_4_SONNET");
+      });
+
+      it("does not extract conversational words like 'and' or '...' as modelName from text containing model_name", () => {
+        const dbPath = path.join(tempDir, "conversational-words.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE gen_metadata (id TEXT PRIMARY KEY, idx INTEGER, data BLOB);`,
+        );
+
+        // Conversational text mentioning model_name followed by 'and' or '...'
+        const conversationalPayload = Buffer.from(
+          "prefix context with only model_name and omits requestedModel override while model_name... remains unquoted",
+          "latin1",
+        );
+        db.prepare(`INSERT INTO gen_metadata VALUES (?, ?, ?)`).run(
+          "meta-conv",
+          1,
+          conversationalPayload,
+        );
+
+        const extracted = extractModelFromDatabase(db);
+        expect(extracted?.modelName).toBeUndefined();
+        expect(extracted?.modelName).not.toBe("and");
+        expect(extracted?.modelName).not.toBe("...");
+        db.close();
+      });
+
+      it("extracts modelName when properly structured with quotes or valid model pattern", () => {
+        const dbPath = path.join(tempDir, "structured-model-name.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE gen_metadata (id TEXT PRIMARY KEY, idx INTEGER, data BLOB);`,
+        );
+
+        const structuredPayload = Buffer.from(
+          '{"model_name": "claude-sonnet-4-5", "status": "active"}',
+          "latin1",
+        );
+        db.prepare(`INSERT INTO gen_metadata VALUES (?, ?, ?)`).run(
+          "meta-struct",
+          1,
+          structuredPayload,
+        );
+
+        const extracted = extractModelFromDatabase(db);
+        expect(extracted?.modelName).toBe("claude-sonnet-4-5");
+        db.close();
+      });
+    });
+
+    describe("AC-01: Subagent Yielding Turn Detection in inspectTranscriptForActiveTurn", () => {
+      it("detects active turn when tail is PLANNER_RESPONSE with text and 0 tools after invoke_subagent in transcript", () => {
+        const transcriptPath = path.join(
+          tempDir,
+          "subagent-yield-invoke.jsonl",
+        );
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "Please execute subagent task",
+          }),
+          JSON.stringify({
+            type: "TOOL_CALL",
+            name: "invoke_subagent",
+            args: {
+              subagent_type: "fiqry_frontend",
+              prompt: "Build UI component",
+            },
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "I have invoked the subagent to build the UI component. Waiting for results.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        expect(result).not.toBeNull();
+        expect(result?.hasActiveTurn).toBe(true);
+        expect(result?.isInterrupted).toBe(true);
+        expect(result?.promptText).toBe("Continue your previous response.");
+      });
+
+      it("detects active turn when tail is PLANNER_RESPONSE with text and 0 tools after send_message in transcript", () => {
+        const transcriptPath = path.join(tempDir, "subagent-yield-send.jsonl");
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "Check worker status",
+          }),
+          JSON.stringify({
+            type: "TOOL_CALL",
+            name: "send_message",
+            args: { Recipient: "subagent-sub-1", Message: "Ping status" },
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "Sent ping to worker. Waiting for response.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        expect(result).not.toBeNull();
+        expect(result?.hasActiveTurn).toBe(true);
+        expect(result?.isInterrupted).toBe(true);
+        expect(result?.promptText).toBe("Continue your previous response.");
+      });
+
+      it("detects active turn when tail is PLANNER_RESPONSE with text and 0 tools after manage_subagents in transcript", () => {
+        const transcriptPath = path.join(
+          tempDir,
+          "subagent-yield-manage.jsonl",
+        );
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "List active tasks",
+          }),
+          JSON.stringify({
+            type: "TOOL_CALL",
+            name: "manage_subagents",
+            args: { action: "list" },
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "Checked running subagents list.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        expect(result).not.toBeNull();
+        expect(result?.hasActiveTurn).toBe(true);
+        expect(result?.isInterrupted).toBe(true);
+        expect(result?.promptText).toBe("Continue your previous response.");
+      });
+
+      it("returns null when tail is PLANNER_RESPONSE with text and 0 tools without subagent calls or background tasks", () => {
+        const transcriptPath = path.join(tempDir, "standard-completed.jsonl");
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "What is 2 + 2?",
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "2 + 2 = 4.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        expect(result).toBeNull();
+      });
+
+      it("returns null when past turn used invoke_subagent but current turn completed normally with PLANNER_RESPONSE text and 0 tools", () => {
+        const transcriptPath = path.join(
+          tempDir,
+          "multi-turn-subagent-completed.jsonl",
+        );
+        const lines = [
+          // Turn 1: Used subagent
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "Run subagent research task",
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            tool_calls: [
+              {
+                name: "invoke_subagent",
+                args: { TypeName: "research", Prompt: "Research topic" },
+              },
+            ],
+          }),
+          JSON.stringify({
+            type: "GENERIC",
+            content: "Subagent finished successfully",
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "Research completed.",
+            tools: [],
+          }),
+          // Turn 2: Follow-up question completed normally
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "What is 2 + 2?",
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "2 + 2 = 4.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        expect(result).toBeNull();
+      });
+    });
+
+    describe("AC-02: Subagent Database Parent Resolution & Parent Database Preservation", () => {
+      it("resolves parent cascade ID from subagent trajectory_metadata_blob containing 2$<parentCascadeId>", () => {
+        const dbPath = path.join(tempDir, "subagent-blob.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE trajectory_metadata_blob (id TEXT PRIMARY KEY, data BLOB);`,
+        );
+        const parentCascadeId = "parent-cascade-uuid-111";
+        db.prepare("INSERT INTO trajectory_metadata_blob VALUES (?, ?)").run(
+          "meta",
+          Buffer.from(`wire_header_2$${parentCascadeId}:tail_data`),
+        );
+
+        const resolved = resolveParentCascadeIdFromSubagent(
+          "child-subagent-1",
+          "app",
+          db,
+        );
+        expect(resolved).toBe(parentCascadeId);
+        db.close();
+      });
+
+      it("resolves parent cascade ID from subagent trajectory_meta table", () => {
+        const dbPath = path.join(tempDir, "subagent-meta.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE trajectory_meta (id TEXT, parent_cascade_id TEXT, parent_trajectory_id TEXT, parent_id TEXT, caller_id TEXT);`,
+        );
+        const parentCascadeId = "parent-cascade-meta-222";
+        db.prepare("INSERT INTO trajectory_meta VALUES (?, ?)").run(
+          "1",
+          parentCascadeId,
+        );
+
+        const resolved = resolveParentCascadeIdFromSubagent(
+          "child-subagent-2",
+          "app",
+          db,
+        );
+        expect(resolved).toBe(parentCascadeId);
+        db.close();
+      });
+
+      it("resolves parent cascade ID from subagent parent_references table", () => {
+        const dbPath = path.join(tempDir, "subagent-pref.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(`CREATE TABLE parent_references (parent_cascade_id TEXT);`);
+        const parentCascadeId = "parent-cascade-ref-333";
+        db.prepare("INSERT INTO parent_references VALUES (?)").run(
+          parentCascadeId,
+        );
+
+        const resolved = resolveParentCascadeIdFromSubagent(
+          "child-subagent-3",
+          "app",
+          db,
+        );
+        expect(resolved).toBe(parentCascadeId);
+        db.close();
+      });
+
+      it("resolves active subagent database with status = 2 to parent cascade ID in detectActiveTurnInDatabase", async () => {
+        const dbPath = path.join(tempDir, "child-active.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        db.exec(
+          `CREATE TABLE trajectory_metadata_blob (id TEXT PRIMARY KEY, data BLOB);`,
+        );
+
+        const parentCascadeId = "parent-cascade-active-999";
+        // Child active step status = 2
+        db.prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+          "step-c1",
+          "child-active",
+          "Running tests",
+          2,
+          "gemini-3.8-flash-high",
+          10,
+          "",
+          null,
+        );
+        // Trajectory metadata blob referencing parent
+        db.prepare("INSERT INTO trajectory_metadata_blob VALUES (?, ?)").run(
+          "meta",
+          Buffer.from(`wire_2$${parentCascadeId}:data`),
+        );
+        db.close();
+
+        const detected = await detectActiveTurnInDatabase(dbPath);
+        expect(detected).not.toBeNull();
+        expect(detected?.cascadeId).toBe(parentCascadeId);
+        expect(detected?.promptPayload.prompt).toBe(
+          "Continue your previous response.",
+        );
+      });
+
+      it("resolves active subagent database with status = 8 to parent cascade ID in detectActiveTurnInDatabase", async () => {
+        const dbPath = path.join(tempDir, "child-status8.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        db.exec(
+          `CREATE TABLE trajectory_metadata_blob (id TEXT PRIMARY KEY, data BLOB);`,
+        );
+
+        const parentCascadeId = "parent-cascade-status8-888";
+        // Child step status = 8
+        db.prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+          "step-c8",
+          "child-status8",
+          "Executing background work",
+          8,
+          "claude-opus-4-6-thinking",
+          12,
+          "",
+          null,
+        );
+        db.prepare("INSERT INTO trajectory_metadata_blob VALUES (?, ?)").run(
+          "meta",
+          Buffer.from(`wire_2$${parentCascadeId}:data`),
+        );
+        db.close();
+
+        const detected = await detectActiveTurnInDatabase(dbPath);
+        expect(detected).not.toBeNull();
+        expect(detected?.cascadeId).toBe(parentCascadeId);
+        expect(detected?.promptPayload.prompt).toBe(
+          "Continue your previous response.",
+        );
+      });
+
+      it("hasActiveSubagentForParent handles empty parentCascadeId gracefully", () => {
+        expect(hasActiveSubagentForParent("")).toBe(false);
+      });
+
+      it("resolveParentCascadeIdFromSubagent returns null for empty subagentCascadeId", () => {
+        expect(resolveParentCascadeIdFromSubagent("", "app")).toBeNull();
+      });
+
+      it("resolveParentCascadeIdFromSubagent resolves parent from parent_references table in database", () => {
+        const dbPath = path.join(tempDir, "sub-parent-ref.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec("CREATE TABLE parent_references (parent_cascade_id TEXT);");
+        db.prepare("INSERT INTO parent_references VALUES (?)").run(
+          "parent-from-ref-111",
+        );
+
+        const parentId = resolveParentCascadeIdFromSubagent(
+          "child-ref-test",
+          "app",
+          db,
+        );
+        expect(parentId).toBe("parent-from-ref-111");
+        db.close();
+      });
+
+      it("resolveParentCascadeIdFromSubagent resolves parent from trajectory_meta table in database", () => {
+        const dbPath = path.join(tempDir, "sub-trajectory-meta.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          "CREATE TABLE trajectory_meta (id TEXT, caller_id TEXT, parent_cascade_id TEXT);",
+        );
+        db.prepare("INSERT INTO trajectory_meta VALUES (?, ?, ?)").run(
+          "t1",
+          "parent-from-caller-222",
+          "parent-from-caller-222",
+        );
+
+        const parentId = resolveParentCascadeIdFromSubagent(
+          "child-meta-test",
+          "app",
+          db,
+        );
+        expect(parentId).toBe("parent-from-caller-222");
+        db.close();
+      });
+
+      it("resolveParentCascadeIdFromSubagent returns null when database contains no parent references", () => {
+        const dbPath = path.join(tempDir, "sub-no-parent.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec("CREATE TABLE steps (id TEXT);");
+
+        const parentId = resolveParentCascadeIdFromSubagent(
+          "child-orphan-test",
+          "app",
+          db,
+        );
+        expect(parentId).toBeNull();
+        db.close();
+      });
+
+      it("detectActiveTurnInDatabase returns null on non-existent database file", async () => {
+        const nonExistentDb = path.join(tempDir, "ghost-database.db");
+        const result = await detectActiveTurnInDatabase(nonExistentDb);
+        expect(result).toBeNull();
+      });
+
+      it("detectActiveTurnInDatabase returns null on corrupt database file without throwing", async () => {
+        const corruptPath = path.join(tempDir, "corrupt-turn.db");
+        fs.writeFileSync(corruptPath, "NOT A VALID SQLITE DATABASE HEADER");
+        const result = await detectActiveTurnInDatabase(corruptPath);
+        expect(result).toBeNull();
+      });
+
+      it("detectActiveTurnInDatabase returns null when database has no steps table", async () => {
+        const noStepsPath = path.join(tempDir, "no-steps-table.db");
+        const db = new DatabaseConstructor(noStepsPath);
+        db.exec("CREATE TABLE dummy_info (key TEXT);");
+        db.close();
+
+        const result = await detectActiveTurnInDatabase(noStepsPath);
+        expect(result).toBeNull();
+      });
+
+      it("detectActiveTurnInDatabase detects active turn when latest step has status = 8", async () => {
+        const status8DbPath = path.join(tempDir, "status8-direct.db");
+        const db = new DatabaseConstructor(status8DbPath);
+        db.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        db.prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+          "step-s8-direct",
+          "cascade-s8-direct",
+          "Execute long running task",
+          8,
+          "gemini-3.8-flash-high",
+          10,
+          "",
+          null,
+        );
+        db.close();
+
+        const detected = await detectActiveTurnInDatabase(status8DbPath);
+        expect(detected).not.toBeNull();
+        expect(detected?.cascadeId).toBe("cascade-s8-direct");
+        expect(detected?.promptPayload.prompt).toBe(
+          "Execute long running task",
+        );
+        expect(detected?.isInterrupted).toBe(true);
+      });
+    });
+
+    describe("AC-03: Broadened Quota Error Parsing & Freshness Window", () => {
+      it("detects quota error in step.error in inspectTranscriptForActiveTurn", () => {
+        const transcriptPath = path.join(tempDir, "quota-error-field.jsonl");
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "Refactor backend service",
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            error: "GoogleJsonResponseException: 429 RESOURCE_EXHAUSTED",
+            text: "",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        expect(result).not.toBeNull();
+        expect(result?.hasActiveTurn).toBe(true);
+        expect(result?.isInterrupted).toBe(true);
+        expect(result?.promptText).toBe("Refactor backend service");
+      });
+
+      it("detects quota error in step.message in inspectTranscriptForActiveTurn", () => {
+        const transcriptPath = path.join(tempDir, "quota-message-field.jsonl");
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "Run test suite",
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            message:
+              "Individual quota reached for the requested model. Try again later.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        expect(result).not.toBeNull();
+        expect(result?.hasActiveTurn).toBe(true);
+        expect(result?.isInterrupted).toBe(true);
+        expect(result?.promptText).toBe("Run test suite");
+      });
+
+      it("detects quota error in step.text in inspectTranscriptForActiveTurn", () => {
+        const transcriptPath = path.join(tempDir, "quota-text-field.jsonl");
+        const lines = [
+          JSON.stringify({
+            type: "USER_INPUT",
+            content: "Deploy application",
+          }),
+          JSON.stringify({
+            type: "PLANNER_RESPONSE",
+            text: "API error: Rate limit reached, quota exceeded for current tier.",
+            tools: [],
+          }),
+        ];
+        fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+        const result = inspectTranscriptForActiveTurn(transcriptPath);
+        expect(result).not.toBeNull();
+        expect(result?.hasActiveTurn).toBe(true);
+        expect(result?.isInterrupted).toBe(true);
+        expect(result?.promptText).toBe("Deploy application");
+      });
+
+      it("detects active turn in database when mtime is within 60 minutes", async () => {
+        const dbPath = path.join(tempDir, "freshness-60m.db");
+        const db = new DatabaseConstructor(dbPath);
+        db.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+
+        db.prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+          "step-fresh",
+          "cascade-fresh-60m",
+          "Fix background job processor",
+          2,
+          "gemini-3.8-flash-high",
+          5,
+          "",
+          null,
+        );
+        db.close();
+
+        // Set mtime to 25 minutes ago (1500s ago, well within the 60m window, but previously beyond 10m window)
+        const pastMtime = new Date(Date.now() - 25 * 60 * 1000);
+        fs.utimesSync(dbPath, pastMtime, pastMtime);
+
+        const detected = await detectActiveTurnInDatabase(dbPath);
+        expect(detected).not.toBeNull();
+        expect(detected?.cascadeId).toBe("cascade-fresh-60m");
+        expect(detected?.promptPayload.prompt).toBe(
+          "Fix background job processor",
+        );
+      });
+
+      it("returns null when transcript file does not exist", () => {
+        const nonExistentPath = path.join(tempDir, "does-not-exist.jsonl");
+        const result = inspectTranscriptForActiveTurn(nonExistentPath);
+        expect(result).toBeNull();
+      });
+
+      it("returns null when transcript file is empty", () => {
+        const emptyPath = path.join(tempDir, "empty.jsonl");
+        fs.writeFileSync(emptyPath, "", "utf-8");
+        const result = inspectTranscriptForActiveTurn(emptyPath);
+        expect(result).toBeNull();
+      });
+
+      it("detects active turn in database when db is older than 60m but subagent db is within 15m", async () => {
+        const testSubDir = path.join(tempDir, "subagent-fresh-isolated");
+        fs.mkdirSync(testSubDir, { recursive: true });
+
+        const mainDbPath = path.join(testSubDir, "main-parent.db");
+        const subDbPath = path.join(testSubDir, "child-worker.db");
+
+        const db = new DatabaseConstructor(mainDbPath);
+        db.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        db.prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+          "step-p",
+          "main-parent",
+          "Parent orchestrating subagent",
+          2,
+          "gemini-3.8-flash-high",
+          1,
+          "",
+          null,
+        );
+        db.close();
+
+        // Create associated subagent db
+        fs.writeFileSync(subDbPath, "subagent content");
+
+        // Main DB is 65 min old (> 60m), but subagent DB is 5 min old (< 15m)
+        const oldMtime = new Date(Date.now() - 65 * 60 * 1000);
+        fs.utimesSync(mainDbPath, oldMtime, oldMtime);
+
+        const subMtime = new Date(Date.now() - 5 * 60 * 1000);
+        fs.utimesSync(subDbPath, subMtime, subMtime);
+
+        const detected = await detectActiveTurnInDatabase(mainDbPath);
+        expect(detected).not.toBeNull();
+        expect(detected?.cascadeId).toBe("main-parent");
+      });
+
+      it("rejects database when both db is older than 60m and subagent db is older than 15m", async () => {
+        const testSubDir = path.join(tempDir, "all-expired-isolated");
+        fs.mkdirSync(testSubDir, { recursive: true });
+
+        const mainDbPath = path.join(testSubDir, "expired-parent.db");
+        const subDbPath = path.join(testSubDir, "expired-child.db");
+
+        const db = new DatabaseConstructor(mainDbPath);
+        db.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        db.prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+          "step-exp",
+          "expired-parent",
+          "Old prompt",
+          2,
+          "gemini-3.8-flash-high",
+          1,
+          "",
+          null,
+        );
+        db.close();
+
+        fs.writeFileSync(subDbPath, "subagent content");
+
+        const dbOldMtime = new Date(Date.now() - 65 * 60 * 1000); // 65m
+        fs.utimesSync(mainDbPath, dbOldMtime, dbOldMtime);
+
+        const subOldMtime = new Date(Date.now() - 25 * 60 * 1000); // 25m (> 15m)
+        fs.utimesSync(subDbPath, subOldMtime, subOldMtime);
+
+        const detected = await detectActiveTurnInDatabase(mainDbPath);
+        expect(detected).toBeNull();
+      });
+
+      it("rejects database when mtime is older than 60 minutes and no subagents exist", async () => {
+        const isolatedDir = path.join(tempDir, "single-expired-isolated");
+        fs.mkdirSync(isolatedDir, { recursive: true });
+        const expiredDbPath = path.join(isolatedDir, "expired-65m.db");
+
+        const expDb = new DatabaseConstructor(expiredDbPath);
+        expDb.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        expDb
+          .prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(
+            "step-exp",
+            "cascade-exp-65m",
+            "Expired task prompt",
+            2,
+            "gemini-3.8-flash-high",
+            1,
+            "",
+            null,
+          );
+        expDb.close();
+
+        const expiredMtime = new Date(Date.now() - 65 * 60 * 1000); // 65 min ago
+        fs.utimesSync(expiredDbPath, expiredMtime, expiredMtime);
+
+        const expiredResult = await detectActiveTurnInDatabase(expiredDbPath);
+        expect(expiredResult).toBeNull();
+      });
+    });
+
+    describe("Multi-Chat False-Positive Prevention & Turn Isolation", () => {
+      it("detectAllActiveTurns isolates single active chat among multiple completed chats with subagents", async () => {
+        // Chat 1: Active conversation with status = 2
+        const activeDbPath = path.join(tempDir, "active-single.db");
+        const activeDb = new DatabaseConstructor(activeDbPath);
+        activeDb.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        activeDb
+          .prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(
+            "step-active",
+            "cascade-active-single",
+            "Generate financial report",
+            2,
+            "gemini-3.8-flash-high",
+            5,
+            "",
+            null,
+          );
+        activeDb.close();
+
+        // Chat 2: Completed chat that used subagents in the past (status = 3)
+        const completedDbPath1 = path.join(tempDir, "completed-subagent.db");
+        const completedDb1 = new DatabaseConstructor(completedDbPath1);
+        completedDb1.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        completedDb1
+          .prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(
+            "step-comp1",
+            "cascade-comp-subagent",
+            "Completed subagent task",
+            3,
+            "gemini-3.8-flash-high",
+            5,
+            "",
+            null,
+          );
+        completedDb1.close();
+
+        // Chat 3: Completed chat with background task markers in past (status = 3)
+        const completedDbPath2 = path.join(tempDir, "completed-bg.db");
+        const completedDb2 = new DatabaseConstructor(completedDbPath2);
+        completedDb2.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        completedDb2
+          .prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(
+            "step-comp2",
+            "cascade-comp-bg",
+            "Completed bg task",
+            3,
+            "gemini-3.8-flash-high",
+            5,
+            "",
+            null,
+          );
+        completedDb2.close();
+
+        const detectedList = await detectAllActiveTurns("app", {
+          dbPaths: [activeDbPath, completedDbPath1, completedDbPath2],
+          buffer,
+        });
+
+        // Must ONLY detect the single active conversation, zero completed chats
+        expect(detectedList).toHaveLength(1);
+        expect(detectedList[0]?.cascadeId).toBe("cascade-active-single");
+        expect(detectedList[0]?.promptPayload.prompt).toBe(
+          "Generate financial report",
+        );
+      });
+
+      it("captureAndBufferActiveTurn returns null and buffers 0 when all candidate chats are completed", async () => {
+        const testBuffer = new SessionContinuityBuffer();
+
+        const completedDbPath = path.join(tempDir, "all-completed-chat.db");
+        const completedDb = new DatabaseConstructor(completedDbPath);
+        completedDb.exec(
+          `CREATE TABLE steps (id TEXT, idx INTEGER, cascade_id TEXT, prompt TEXT, status INTEGER, model TEXT, step_payload BLOB, error_details BLOB);`,
+        );
+        completedDb
+          .prepare("INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(
+            "step-c",
+            "cascade-all-comp",
+            "Already completed turn",
+            3,
+            "gemini-3.8-flash-high",
+            10,
+            "",
+            null,
+          );
+        completedDb.close();
+
+        const snapshot = await captureAndBufferActiveTurn("app", {
+          dbPaths: [completedDbPath],
+          buffer: testBuffer,
+        });
+
+        expect(snapshot).toBeNull();
+        expect(testBuffer.getAllPendingForTarget("app")).toHaveLength(0);
       });
     });
   });

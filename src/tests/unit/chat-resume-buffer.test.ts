@@ -253,4 +253,248 @@ describe("SessionContinuityBuffer", () => {
       expect(buffer.getActivePrompt("ide")).toBeNull();
     });
   });
+
+  describe("revertToPending", () => {
+    it("reverts claimed in-flight snapshot back to pending and increments retryCount", () => {
+      const snap = buffer.store({
+        appTarget: "app",
+        cascadeId: "cascade-revert",
+        promptPayload: { prompt: "Test prompt" },
+      });
+
+      expect(snap.status).toBe("pending");
+      expect(snap.retryCount).toBeUndefined();
+
+      // Claim as in_flight
+      const claimed = buffer.claimInFlight(snap.resumptionId);
+      expect(claimed?.status).toBe("in_flight");
+
+      // Revert to pending on transient connection error
+      const reverted = buffer.revertToPending(snap.resumptionId);
+      expect(reverted).not.toBeNull();
+      expect(reverted?.status).toBe("pending");
+      expect(reverted?.retryCount).toBe(1);
+
+      // Subsequent revert increments retryCount again
+      const secondRevert = buffer.revertToPending(snap.resumptionId);
+      expect(secondRevert?.retryCount).toBe(2);
+      expect(secondRevert?.status).toBe("pending");
+
+      // Appears in getAllPendingForTarget
+      const pending = buffer.getAllPendingForTarget("app");
+      expect(pending).toHaveLength(1);
+      expect(pending[0].resumptionId).toBe(snap.resumptionId);
+    });
+
+    it("returns null when trying to revert a non-existent resumption ID", () => {
+      expect(buffer.revertToPending("non-existent-id")).toBeNull();
+    });
+
+    it("returns null and archives draft when reverting an expired snapshot", () => {
+      vi.useFakeTimers();
+      const baseTime = 1000000;
+      vi.setSystemTime(baseTime);
+
+      const snap = buffer.store({
+        appTarget: "ide",
+        cascadeId: "cascade-revert-expired",
+        promptPayload: { prompt: "Expired revert prompt" },
+      });
+
+      buffer.claimInFlight(snap.resumptionId);
+
+      // Advance past TTL (301 seconds)
+      vi.advanceTimersByTime(301_000);
+
+      const reverted = buffer.revertToPending(snap.resumptionId);
+      expect(reverted).toBeNull();
+      expect(buffer.get(snap.resumptionId)).toBeNull();
+
+      const draft = buffer.getLatestDraft("ide");
+      expect(draft?.prompt).toBe("Expired revert prompt");
+      expect(draft?.reason).toBe("ttl_expired");
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("claimInFlight Edge Cases", () => {
+    it("returns null when claiming non-existent resumption ID", () => {
+      expect(buffer.claimInFlight("missing-claim-id")).toBeNull();
+    });
+
+    it("returns null and archives draft when claiming an expired snapshot", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1000000);
+
+      const snap = buffer.store({
+        appTarget: "app",
+        cascadeId: "c-claim-expired",
+        promptPayload: { prompt: "Expired claim prompt" },
+      });
+
+      vi.advanceTimersByTime(301_000);
+
+      const claimed = buffer.claimInFlight(snap.resumptionId);
+      expect(claimed).toBeNull();
+      expect(buffer.has(snap.resumptionId)).toBe(false);
+
+      const draft = buffer.getLatestDraft("app");
+      expect(draft?.prompt).toBe("Expired claim prompt");
+      expect(draft?.reason).toBe("ttl_expired");
+
+      vi.useRealTimers();
+    });
+
+    it("returns null when snapshot status is not pending (already in_flight or completed)", () => {
+      const snap = buffer.store({
+        appTarget: "ide",
+        cascadeId: "c-claim-twice",
+        promptPayload: { prompt: "Claim twice prompt" },
+      });
+
+      const firstClaim = buffer.claimInFlight(snap.resumptionId);
+      expect(firstClaim?.status).toBe("in_flight");
+
+      // Second claim attempt should fail
+      const secondClaim = buffer.claimInFlight(snap.resumptionId);
+      expect(secondClaim).toBeNull();
+    });
+  });
+
+  describe("claimLatestForTarget Edge Cases", () => {
+    it("returns null when no snapshots exist for target", () => {
+      expect(buffer.claimLatestForTarget("ide")).toBeNull();
+      expect(buffer.claimLatestForTarget("app")).toBeNull();
+    });
+
+    it("returns null when latest snapshot status is already in_flight or resumed", () => {
+      const snap = buffer.store({
+        appTarget: "ide",
+        cascadeId: "c-latest-not-pending",
+        promptPayload: { prompt: "Already in flight" },
+      });
+
+      buffer.claimInFlight(snap.resumptionId);
+
+      // Latest exists, but is in_flight, so claimLatestForTarget returns null
+      expect(buffer.claimLatestForTarget("ide")).toBeNull();
+    });
+
+    it("successfully claims pending latest snapshot", () => {
+      const snap = buffer.store({
+        appTarget: "ide",
+        cascadeId: "c-latest-valid",
+        promptPayload: { prompt: "Valid latest prompt" },
+      });
+
+      const claimed = buffer.claimLatestForTarget("ide");
+      expect(claimed).not.toBeNull();
+      expect(claimed?.resumptionId).toBe(snap.resumptionId);
+      expect(claimed?.status).toBe("in_flight");
+    });
+  });
+
+  describe("peek, has, and clear Edge Cases", () => {
+    it("peek returns a shallow clone of active snapshot or null for missing/expired", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1000000);
+
+      expect(buffer.peek("missing-peek")).toBeNull();
+
+      const snap = buffer.store({
+        appTarget: "app",
+        cascadeId: "c-peek",
+        promptPayload: { prompt: "Peek prompt" },
+      });
+
+      const peeked = buffer.peek(snap.resumptionId);
+      expect(peeked).not.toBeNull();
+      expect(peeked?.cascadeId).toBe("c-peek");
+
+      // Verify peek returns a clone (mutation does not affect buffer)
+      if (peeked) {
+        peeked.cascadeId = "mutated-cascade";
+      }
+      expect(buffer.get(snap.resumptionId)?.cascadeId).toBe("c-peek");
+
+      // Expire and verify peek returns null
+      vi.advanceTimersByTime(301_000);
+      expect(buffer.peek(snap.resumptionId)).toBeNull();
+
+      vi.useRealTimers();
+    });
+
+    it("has returns false for non-existent and expired snapshots", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1000000);
+
+      expect(buffer.has("missing-has")).toBe(false);
+
+      const snap = buffer.store({
+        appTarget: "ide",
+        cascadeId: "c-has",
+        promptPayload: { prompt: "Has prompt" },
+      });
+
+      expect(buffer.has(snap.resumptionId)).toBe(true);
+
+      vi.advanceTimersByTime(301_000);
+      expect(buffer.has(snap.resumptionId)).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it("clear wipes all snapshots from memory immediately", () => {
+      buffer.store({
+        appTarget: "ide",
+        cascadeId: "c-clear-1",
+        promptPayload: { prompt: "P1" },
+      });
+      buffer.store({
+        appTarget: "app",
+        cascadeId: "c-clear-2",
+        promptPayload: { prompt: "P2" },
+      });
+
+      expect(buffer.size()).toBe(2);
+      buffer.clear();
+      expect(buffer.size()).toBe(0);
+      expect(buffer.getAllPendingForTarget("ide")).toEqual([]);
+      expect(buffer.getAllPendingForTarget("app")).toEqual([]);
+    });
+
+    it("pruneExpired selectively expires only past-TTL snapshots and preserves active ones", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1000000);
+
+      const oldSnap = buffer.store({
+        appTarget: "ide",
+        cascadeId: "c-old",
+        promptPayload: { prompt: "Old prompt" },
+      });
+
+      // 100 seconds later, store fresh snapshot
+      vi.advanceTimersByTime(100_000);
+
+      const freshSnap = buffer.store({
+        appTarget: "ide",
+        cascadeId: "c-fresh",
+        promptPayload: { prompt: "Fresh prompt" },
+      });
+
+      // Advance by another 201 seconds (total 301 seconds for oldSnap, 201 seconds for freshSnap)
+      vi.advanceTimersByTime(201_000);
+
+      const pruned = buffer.pruneExpired();
+      expect(pruned).toBe(1);
+
+      // Old is gone, fresh is still active
+      expect(buffer.has(oldSnap.resumptionId)).toBe(false);
+      expect(buffer.has(freshSnap.resumptionId)).toBe(true);
+      expect(buffer.size()).toBe(1);
+
+      vi.useRealTimers();
+    });
+  });
 });

@@ -1,7 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import {
   ChatResumeDispatcher,
+  defaultHttpRequester,
   extractCsrfTokenFromHtml,
+  isTransientConnectionError,
+  isValidModelName,
   isValidProtoModelEnum,
   normalizeModelToProtoEnum,
   type HttpRequester,
@@ -545,6 +550,89 @@ describe("ChatResumeDispatcher", () => {
       chatResumeEvents.off("resumption-status", statusListener);
     });
 
+    it("AC-05: preserves snapshot in buffer with status pending and increments retryCount on transient ECONNREFUSED error", async () => {
+      const statusListener = vi.fn();
+      chatResumeEvents.on("resumption-status", statusListener);
+
+      const snapshot = buffer.store({
+        appTarget: "app",
+        cascadeId: "cascade-transient-retry",
+        promptPayload: {
+          prompt: "Keep this in buffer during restart",
+        },
+      });
+
+      // Both primary and fallback endpoints fail with ECONNREFUSED (dying process)
+      mockRequester.mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:54321"));
+      mockRequester.mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:54321"));
+
+      const result = await dispatcher.dispatchSnapshot(
+        snapshot,
+        54321,
+        "csrf-tok",
+      );
+
+      expect(result.success).toBe(false);
+
+      // Snapshot MUST NOT be evicted from buffer!
+      const buffered = buffer.get(snapshot.resumptionId);
+      expect(buffered).not.toBeNull();
+      expect(buffered?.status).toBe("pending");
+      expect(buffered?.retryCount).toBe(1);
+
+      // Draft scratch must NOT be saved prematurely
+      expect(buffer.getDraft(snapshot.resumptionId)).toBeNull();
+
+      // UI failed status toast must NOT be emitted
+      expect(statusListener).not.toHaveBeenCalled();
+
+      // Telemetry recorded
+      const history = chatResumeEvents.getTelemetryHistory();
+      expect(history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "chat_resumption_transient_retry",
+            resumptionId: snapshot.resumptionId,
+            appTarget: "app",
+            retryCount: 1,
+            status: "pending",
+          }),
+        ]),
+      );
+
+      chatResumeEvents.off("resumption-status", statusListener);
+    });
+
+    it("AC-05: evicts snapshot and saves to draft scratch when transient retries exceed maxRetries", async () => {
+      const snapshot = buffer.store({
+        appTarget: "app",
+        cascadeId: "cascade-max-retries",
+        promptPayload: {
+          prompt: "Exhausted retries prompt",
+        },
+        retryCount: 3, // Already at max retries
+      });
+
+      mockRequester.mockRejectedValueOnce(new Error("ECONNRESET"));
+      mockRequester.mockRejectedValueOnce(new Error("ECONNRESET"));
+
+      const result = await dispatcher.dispatchSnapshot(
+        snapshot,
+        54321,
+        "csrf-tok",
+      );
+
+      expect(result.success).toBe(false);
+
+      // Evicted from buffer
+      expect(buffer.get(snapshot.resumptionId)).toBeNull();
+
+      // Preserved in draft scratch
+      const draft = buffer.getDraft(snapshot.resumptionId);
+      expect(draft).not.toBeNull();
+      expect(draft?.prompt).toBe("Exhausted retries prompt");
+    });
+
     it("prevents concurrent duplicate dispatch for the same resumptionId", async () => {
       const snapshot = buffer.store({
         appTarget: "ide",
@@ -558,6 +646,62 @@ describe("ChatResumeDispatcher", () => {
       const result = await dispatcher.dispatchSnapshot(snapshot, 9000, "csrf");
       expect(result.success).toBe(false);
       expect(result.reason).toBe("duplicate_dispatch_in_flight");
+    });
+
+    it("evicts snapshot when transient retry occurs but capturedAt exceeds 60s limit", async () => {
+      const snapshot = buffer.store({
+        appTarget: "app",
+        cascadeId: "cascade-expired-retry",
+        promptPayload: {
+          prompt: "Expired retry prompt",
+        },
+        retryCount: 0,
+      });
+      // Age beyond 60s
+      snapshot.capturedAt = Date.now() - 65_000;
+
+      mockRequester.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+      mockRequester.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      const result = await dispatcher.dispatchSnapshot(
+        snapshot,
+        54321,
+        "csrf-tok",
+      );
+
+      expect(result.success).toBe(false);
+      expect(buffer.get(snapshot.resumptionId)).toBeNull();
+      expect(buffer.getDraft(snapshot.resumptionId)?.prompt).toBe(
+        "Expired retry prompt",
+      );
+    });
+
+    it("immediately fails and saves draft scratch on non-transient HTTP 400 error without retrying", async () => {
+      const snapshot = buffer.store({
+        appTarget: "app",
+        cascadeId: "cascade-bad-req",
+        promptPayload: {
+          prompt: "Invalid syntax prompt",
+        },
+      });
+
+      mockRequester.mockResolvedValueOnce({
+        status: 400,
+        headers: {},
+        data: "Bad Request: invalid payload",
+      });
+
+      const result = await dispatcher.dispatchSnapshot(
+        snapshot,
+        54321,
+        "csrf-tok",
+      );
+
+      expect(result.success).toBe(false);
+      expect(buffer.get(snapshot.resumptionId)).toBeNull();
+      expect(buffer.getDraft(snapshot.resumptionId)?.prompt).toBe(
+        "Invalid syntax prompt",
+      );
     });
   });
 
@@ -854,6 +998,109 @@ describe("ChatResumeDispatcher", () => {
       expect(result.ready).toBe(false);
       expect(result.error).toBe("Handshake aborted");
     });
+
+    it("returns null if port discovery wait times out without discovering a port", async () => {
+      const { PortDiscoveryService } =
+        await import("@/modules/relay/port-discovery");
+      const mockPortDiscovery = new PortDiscoveryService();
+      dispatcher.bindPortDiscovery(mockPortDiscovery);
+      vi.spyOn(dispatcher as any, "waitForPort").mockResolvedValue(null);
+
+      buffer.store({
+        appTarget: "app",
+        cascadeId: "c-timeout-wait",
+        promptPayload: { prompt: "Waiting for port timeout" },
+      });
+
+      const result = await dispatcher.triggerResumptionForTarget("app", {
+        timeoutMs: 100,
+      });
+      expect(result).toBeNull();
+    });
+
+    it("skips duplicate handshake invocation if target already has an active handshake on the exact same port", async () => {
+      buffer.store({
+        appTarget: "ide",
+        cascadeId: "c-dup-handshake",
+        promptPayload: { prompt: "Duplicate handshake test" },
+      });
+
+      const activeController = new AbortController();
+      (dispatcher as any).activeHandshakes.set("ide", activeController);
+      (dispatcher as any).activeHandshakePorts.set("ide", 9000);
+
+      const result = await dispatcher.triggerResumptionForTarget("ide", {
+        explicitPort: 9000,
+      });
+
+      expect(result).toBeNull();
+      expect(activeController.signal.aborted).toBe(false);
+    });
+
+    it("aborts active handshake and restarts on new port when triggered with a different explicitPort", async () => {
+      const snapshot = buffer.store({
+        appTarget: "ide",
+        cascadeId: "c-diff-port",
+        promptPayload: { prompt: "Different port test" },
+      });
+
+      const oldController = new AbortController();
+      (dispatcher as any).activeHandshakes.set("ide", oldController);
+      (dispatcher as any).activeHandshakePorts.set("ide", 9000);
+
+      mockRequester.mockImplementation((url: string) => {
+        if (url.includes("9001")) {
+          if (url.endsWith("/")) {
+            return Promise.resolve({
+              status: 200,
+              headers: {},
+              data: '<script>window.__APP_CONFIG__ = {csrfToken: "t-9001"};</script>',
+            });
+          }
+          return Promise.resolve({
+            status: 200,
+            headers: {},
+            data: JSON.stringify({ ok: true }),
+          });
+        }
+        return Promise.reject(new Error("Old port access"));
+      });
+
+      const result = await dispatcher.triggerResumptionForTarget("ide", {
+        explicitPort: 9001,
+      });
+
+      expect(oldController.signal.aborted).toBe(true);
+      expect(result?.success).toBe(true);
+      expect(result?.resumptionId).toBe(snapshot.resumptionId);
+    });
+
+    it("handles handshake failure by recording failure and saving draft scratch", async () => {
+      const snapshot = buffer.store({
+        appTarget: "classic",
+        cascadeId: "c-handshake-fail",
+        promptPayload: { prompt: "Handshake fail prompt" },
+      });
+
+      // Handshake GET / returns 500
+      mockRequester.mockResolvedValueOnce({
+        status: 500,
+        headers: {},
+        data: "Internal Server Error",
+      });
+
+      const result = await dispatcher.triggerResumptionForTarget("classic", {
+        explicitPort: 8888,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.success).toBe(false);
+      expect(result?.status).toBe("failed");
+      expect(buffer.get(snapshot.resumptionId)).toBeNull();
+      expect(buffer.getDraft(snapshot.resumptionId)?.prompt).toBe(
+        "Handshake fail prompt",
+      );
+    });
   });
 
   describe("RelayServer Lifecycle Decoupling", () => {
@@ -891,6 +1138,46 @@ describe("ChatResumeDispatcher", () => {
       expect(isValidProtoModelEnum("   ")).toBe(false);
       expect(isValidProtoModelEnum(undefined)).toBe(false);
       expect(isValidProtoModelEnum(null)).toBe(false);
+    });
+  });
+
+  describe("isValidModelName", () => {
+    it("returns true for valid vendor and hyphenated model names", () => {
+      expect(isValidModelName("claude-opus-4-6-thinking")).toBe(true);
+      expect(isValidModelName("claude-sonnet-4-5")).toBe(true);
+      expect(isValidModelName("gemini-3.8-flash-high")).toBe(true);
+      expect(isValidModelName("gemini-2.5-pro")).toBe(true);
+      expect(isValidModelName("gpt-4o")).toBe(true);
+      expect(isValidModelName("o3-mini")).toBe(true);
+      expect(isValidModelName("deepseek-r1")).toBe(true);
+      expect(isValidModelName("custom-model-v1")).toBe(true);
+    });
+
+    it("returns false for common English words, punctuation, and metadata tokens", () => {
+      expect(isValidModelName("and")).toBe(false);
+      expect(isValidModelName("the")).toBe(false);
+      expect(isValidModelName("or")).toBe(false);
+      expect(isValidModelName("with")).toBe(false);
+      expect(isValidModelName("model")).toBe(false);
+      expect(isValidModelName("none")).toBe(false);
+      expect(isValidModelName("null")).toBe(false);
+      expect(isValidModelName("undefined")).toBe(false);
+      expect(isValidModelName("...")).toBe(false);
+      expect(isValidModelName("model_name")).toBe(false);
+      expect(isValidModelName("step_payload")).toBe(false);
+    });
+
+    it("returns false for protobuf enums", () => {
+      expect(isValidModelName("MODEL_PLACEHOLDER_M318")).toBe(false);
+      expect(isValidModelName("MODEL_PLACEHOLDER_M26")).toBe(false);
+    });
+
+    it("returns false for invalid types and out-of-range strings", () => {
+      expect(isValidModelName(undefined)).toBe(false);
+      expect(isValidModelName(null)).toBe(false);
+      expect(isValidModelName("")).toBe(false);
+      expect(isValidModelName("ab")).toBe(false);
+      expect(isValidModelName("a".repeat(65))).toBe(false);
     });
   });
 
@@ -938,10 +1225,225 @@ describe("ChatResumeDispatcher", () => {
       expect(JSON.stringify(res3)).not.toContain("MODEL_CLAUDE_4_SONNET");
     });
 
+    it("rejects non-model words like 'and' or '...' from modelNameOverride", () => {
+      const resAnd = normalizeModelToProtoEnum("MODEL_PLACEHOLDER_M318", "and");
+      expect(resAnd).toEqual({
+        enumModel: "MODEL_PLACEHOLDER_M318",
+      });
+      expect(resAnd.modelName).toBeUndefined();
+
+      const resDots = normalizeModelToProtoEnum(
+        "MODEL_PLACEHOLDER_M318",
+        "...",
+      );
+      expect(resDots).toEqual({
+        enumModel: "MODEL_PLACEHOLDER_M318",
+      });
+      expect(resDots.modelName).toBeUndefined();
+    });
+
+    it("rejects non-model words like 'and' or '...' when passed as rawModel without valid enum", () => {
+      expect(normalizeModelToProtoEnum("and")).toEqual({});
+      expect(normalizeModelToProtoEnum("...")).toEqual({});
+      expect(normalizeModelToProtoEnum("with")).toEqual({});
+    });
+
     it("returns empty object without enumModel for empty or undefined inputs", () => {
       expect(normalizeModelToProtoEnum(undefined)).toEqual({});
       expect(normalizeModelToProtoEnum("")).toEqual({});
       expect(normalizeModelToProtoEnum("   ")).toEqual({});
+    });
+  });
+
+  describe("defaultHttpRequester", () => {
+    let server: http.Server | null = null;
+
+    afterEach(async () => {
+      if (server) {
+        await new Promise<void>((resolve) => server!.close(() => resolve()));
+        server = null;
+      }
+    });
+
+    it("performs successful GET request and reads response body", async () => {
+      server = http.createServer((_req, res) => {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("server response text");
+      });
+      await new Promise<void>((resolve) =>
+        server!.listen(0, "127.0.0.1", () => resolve()),
+      );
+      const serverPort = (server.address() as AddressInfo).port;
+
+      const res = await defaultHttpRequester(
+        `http://127.0.0.1:${serverPort}/test`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.data).toBe("server response text");
+    });
+
+    it("handles HTTP error status codes correctly", async () => {
+      server = http.createServer((_req, res) => {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Service Unavailable" }));
+      });
+      await new Promise<void>((resolve) =>
+        server!.listen(0, "127.0.0.1", () => resolve()),
+      );
+      const serverPort = (server.address() as AddressInfo).port;
+
+      const res = await defaultHttpRequester(
+        `http://127.0.0.1:${serverPort}/status-test`,
+      );
+      expect(res.status).toBe(503);
+      expect(res.data).toContain("Service Unavailable");
+    });
+
+    it("sends POST body and custom headers to server", async () => {
+      let receivedHeader = "";
+      let receivedBody = "";
+
+      server = http.createServer((req, res) => {
+        receivedHeader = (req.headers["x-custom-header"] as string) ?? "";
+        let body = "";
+        req.on("data", (chunk) => {
+          body += chunk;
+        });
+        req.on("end", () => {
+          receivedBody = body;
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ received: true }));
+        });
+      });
+      await new Promise<void>((resolve) =>
+        server!.listen(0, "127.0.0.1", () => resolve()),
+      );
+      const serverPort = (server.address() as AddressInfo).port;
+
+      const res = await defaultHttpRequester(
+        `http://127.0.0.1:${serverPort}/post-test`,
+        {
+          method: "POST",
+          headers: { "x-custom-header": "custom-val" },
+          body: JSON.stringify({ key: "value" }),
+        },
+      );
+
+      expect(res.status).toBe(200);
+      expect(receivedHeader).toBe("custom-val");
+      expect(JSON.parse(receivedBody)).toEqual({ key: "value" });
+    });
+
+    it("rejects when request exceeds timeoutMs", async () => {
+      server = http.createServer((_req, _res) => {
+        // Deliberately hold connection open without responding
+      });
+      await new Promise<void>((resolve) =>
+        server!.listen(0, "127.0.0.1", () => resolve()),
+      );
+      const serverPort = (server.address() as AddressInfo).port;
+
+      await expect(
+        defaultHttpRequester(`http://127.0.0.1:${serverPort}/timeout`, {
+          timeoutMs: 50,
+        }),
+      ).rejects.toThrow(/timed out after 50ms/);
+    });
+
+    it("rejects immediately when AbortSignal is already aborted", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        defaultHttpRequester("http://127.0.0.1:9999/aborted", {
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow("Request aborted");
+    });
+
+    it("aborts active request when AbortSignal triggers mid-flight", async () => {
+      server = http.createServer((_req, _res) => {
+        // Deliberately hold connection open
+      });
+      await new Promise<void>((resolve) =>
+        server!.listen(0, "127.0.0.1", () => resolve()),
+      );
+      const serverPort = (server.address() as AddressInfo).port;
+
+      const controller = new AbortController();
+      const reqPromise = defaultHttpRequester(
+        `http://127.0.0.1:${serverPort}/abort-inflight`,
+        {
+          signal: controller.signal,
+        },
+      );
+
+      setTimeout(() => controller.abort(), 20);
+
+      await expect(reqPromise).rejects.toThrow("Request aborted");
+    });
+  });
+
+  describe("isTransientConnectionError", () => {
+    it("returns true for status codes 502 and 503", () => {
+      expect(isTransientConnectionError(null, 502)).toBe(true);
+      expect(isTransientConnectionError(null, 503)).toBe(true);
+      expect(isTransientConnectionError("error", 502)).toBe(true);
+      expect(isTransientConnectionError("error", 503)).toBe(true);
+    });
+
+    it("returns true for Error instances with transient error messages or codes", () => {
+      expect(
+        isTransientConnectionError(
+          new Error("connect ECONNREFUSED 127.0.0.1:8888"),
+        ),
+      ).toBe(true);
+      expect(isTransientConnectionError(new Error("read ECONNRESET"))).toBe(
+        true,
+      );
+      expect(isTransientConnectionError(new Error("write EPIPE"))).toBe(true);
+      expect(isTransientConnectionError(new Error("socket hang up"))).toBe(
+        true,
+      );
+      expect(isTransientConnectionError(new Error("socket hangup"))).toBe(true);
+      expect(
+        isTransientConnectionError(new Error("UND_ERR_CONNECT_TIMEOUT")),
+      ).toBe(true);
+      expect(isTransientConnectionError(new Error("ETIMEDOUT"))).toBe(true);
+      expect(isTransientConnectionError(new Error("ECONNABORTED"))).toBe(true);
+      expect(
+        isTransientConnectionError(
+          new Error("Client network socket disconnected"),
+        ),
+      ).toBe(true);
+    });
+
+    it("returns true for string messages matching transient patterns case-insensitively", () => {
+      expect(isTransientConnectionError("econnrefused")).toBe(true);
+      expect(
+        isTransientConnectionError("Server dropped connection: Socket Hang Up"),
+      ).toBe(true);
+      expect(isTransientConnectionError("und_err_connect_timeout")).toBe(true);
+    });
+
+    it("returns false for non-transient status codes and errors", () => {
+      expect(isTransientConnectionError(null, 400)).toBe(false);
+      expect(isTransientConnectionError(null, 401)).toBe(false);
+      expect(isTransientConnectionError(null, 403)).toBe(false);
+      expect(isTransientConnectionError(null, 404)).toBe(false);
+      expect(isTransientConnectionError(null, 500)).toBe(false);
+      expect(
+        isTransientConnectionError(new Error("SyntaxError: Unexpected token")),
+      ).toBe(false);
+      expect(isTransientConnectionError("Model not found in catalog")).toBe(
+        false,
+      );
+      expect(isTransientConnectionError("Quota exceeded for project")).toBe(
+        false,
+      );
+      expect(isTransientConnectionError(null)).toBe(false);
+      expect(isTransientConnectionError(undefined)).toBe(false);
+      expect(isTransientConnectionError("")).toBe(false);
     });
   });
 });

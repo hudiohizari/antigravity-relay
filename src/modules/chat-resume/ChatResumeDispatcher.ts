@@ -136,8 +136,57 @@ export function extractCsrfTokenFromHtml(html: string): string | null {
   return null;
 }
 
+export function isTransientConnectionError(
+  errOrMessage: unknown,
+  status?: number,
+): boolean {
+  if (status === 502 || status === 503) {
+    return true;
+  }
+  const msg =
+    errOrMessage instanceof Error
+      ? `${errOrMessage.message} ${(errOrMessage as any).code ?? ""}`
+      : String(errOrMessage ?? "");
+  const transientPatterns = [
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "EPIPE",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "socket hang up",
+    "socket hangup",
+    "ETIMEDOUT",
+    "ECONNABORTED",
+    "Client network socket disconnected",
+  ];
+  return transientPatterns.some((p) =>
+    msg.toLowerCase().includes(p.toLowerCase()),
+  );
+}
+
 export function isValidProtoModelEnum(model?: unknown): boolean {
   return typeof model === "string" && /^MODEL_[A-Z0-9_]+$/.test(model.trim());
+}
+
+export function isValidModelName(name?: unknown): boolean {
+  if (typeof name !== "string") {
+    return false;
+  }
+  const trimmed = name.trim();
+  if (trimmed.length < 3 || trimmed.length > 64) {
+    return false;
+  }
+  if (isValidProtoModelEnum(trimmed)) {
+    return false;
+  }
+  const rejectedTokens =
+    /^(?:and|the|or|with|model|none|null|undefined|\.\.\.|model_name|step_payload)$/i;
+  if (rejectedTokens.test(trimmed)) {
+    return false;
+  }
+  const validVendorPrefix =
+    /^(?:claude|gemini|gpt|o[1-9]|deepseek|custom)[_\-\.][a-z0-9_\-\.]+$/i;
+  const validHyphenated = /^[a-z0-9]+(?:-[a-z0-9]+)+$/i;
+  return validVendorPrefix.test(trimmed) || validHyphenated.test(trimmed);
 }
 
 export interface NormalizedModelResult {
@@ -149,12 +198,17 @@ export function normalizeModelToProtoEnum(
   rawModel?: string,
   modelNameOverride?: string,
 ): NormalizedModelResult {
+  const validOverride =
+    modelNameOverride && isValidModelName(modelNameOverride)
+      ? modelNameOverride.trim()
+      : undefined;
+
   if (
     !rawModel ||
     typeof rawModel !== "string" ||
     rawModel.trim().length === 0
   ) {
-    return modelNameOverride ? { modelName: modelNameOverride } : {};
+    return validOverride ? { modelName: validOverride } : {};
   }
 
   const trimmed = rawModel.trim();
@@ -162,21 +216,26 @@ export function normalizeModelToProtoEnum(
   if (isValidProtoModelEnum(trimmed)) {
     return {
       enumModel: trimmed,
-      ...(modelNameOverride ? { modelName: modelNameOverride } : {}),
+      ...(validOverride ? { modelName: validOverride } : {}),
     };
   }
 
   const lower = trimmed.toLowerCase();
   if (lower.includes("gemini")) {
+    const rawValid = isValidModelName(trimmed) ? trimmed : undefined;
     return {
       enumModel: "MODEL_PLACEHOLDER_M318",
-      modelName: modelNameOverride ?? trimmed,
+      ...(validOverride
+        ? { modelName: validOverride }
+        : rawValid
+          ? { modelName: rawValid }
+          : {}),
     };
   }
 
-  return {
-    modelName: modelNameOverride ?? trimmed,
-  };
+  const rawValid = isValidModelName(trimmed) ? trimmed : undefined;
+  const finalName = validOverride ?? rawValid;
+  return finalName ? { modelName: finalName } : {};
 }
 
 export interface ChatResumeDispatcherOptions {
@@ -718,6 +777,42 @@ export class ChatResumeDispatcher {
       const failureReason = isQuotaError
         ? "model_quota_restricted"
         : lastErrorBody || `Language server returned HTTP ${lastErrorStatus}`;
+
+      const isTransient = isTransientConnectionError(
+        lastErrorBody,
+        lastErrorStatus,
+      );
+      const retryCount = snapshot.retryCount ?? 0;
+      const maxRetries = 3;
+      const maxRetryTimeMs = 60_000;
+      const withinRetryLimit =
+        retryCount < maxRetries &&
+        Date.now() - snapshot.capturedAt < maxRetryTimeMs;
+
+      // Preserve snapshot in buffer on transient network drops during restart
+      if (isTransient && withinRetryLimit && !isQuotaError) {
+        this.buffer.revertToPending(resumptionId);
+
+        logger.info(
+          `Transient error during dispatch for ${resumptionId} (retry ${snapshot.retryCount ?? 1}/${maxRetries}): ${failureReason}. Preserving in buffer for port recovery.`,
+        );
+
+        chatResumeEvents.recordResumptionTransientRetry({
+          resumptionId,
+          appTarget,
+          error: failureReason,
+          retryCount: snapshot.retryCount ?? 1,
+          status: "pending",
+        });
+
+        return {
+          success: false,
+          resumptionId,
+          status: "failed",
+          reason: failureReason,
+          latencyMs: totalDurationMs,
+        };
+      }
 
       this.handleResumptionFailure(snapshot, failureReason, totalDurationMs);
 

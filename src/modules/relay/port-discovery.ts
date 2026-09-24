@@ -66,6 +66,8 @@ export interface PortDiscoveryOptions {
   initialPort?: number | null;
   appTarget?: AntigravityAppTarget;
   readinessProbe?: ReadinessProbeFn;
+  isProcessAlive?: (target: AntigravityAppTarget) => Promise<boolean>;
+  isProcessTerminating?: () => boolean;
 }
 
 export function getDefaultLogPath(
@@ -100,8 +102,8 @@ export function parsePortFromLog(content: string): number | null {
 }
 
 export class PortDiscoveryService extends EventEmitter {
-  public static readonly STALE_PORT_MIN_QUIET_MS = 400;
-  public static readonly STALE_PORT_TTL_MS = 3000;
+  public static readonly STALE_PORT_MIN_QUIET_MS = 5000;
+  public static readonly STALE_PORT_TTL_MS = 15000;
 
   private currentPort: number | null = null;
   private stalePort: number | null = null;
@@ -112,6 +114,10 @@ export class PortDiscoveryService extends EventEmitter {
   private readonly pollIntervalMs: number;
   private readonly debounceMs: number;
   private readonly readinessProbe: ReadinessProbeFn;
+  private readonly isProcessAlive?: (
+    target: AntigravityAppTarget,
+  ) => Promise<boolean>;
+  private readonly isProcessTerminating?: () => boolean;
 
   private pollTimer: NodeJS.Timeout | null = null;
   private debounceTimer: NodeJS.Timeout | null = null;
@@ -125,6 +131,8 @@ export class PortDiscoveryService extends EventEmitter {
     this.logPath = options?.logPath ?? getDefaultLogPath(this.appTarget);
     this.pollIntervalMs = options?.pollIntervalMs ?? 1500;
     this.debounceMs = options?.debounceMs ?? 50;
+    this.isProcessAlive = options?.isProcessAlive;
+    this.isProcessTerminating = options?.isProcessTerminating;
     if (options?.readinessProbe) {
       this.readinessProbe = options.readinessProbe;
     } else if (process.env.NODE_ENV === "test" || process.env.VITEST) {
@@ -275,15 +283,53 @@ export class PortDiscoveryService extends EventEmitter {
               stalePort: currentStalePort,
               discoveredPort,
               elapsedMs,
+              reason: "graceful_shutdown_quiet_window",
             });
             this.emit("stale-port-rejected", {
               stalePort: currentStalePort,
               discoveredPort,
+              reason: "graceful_shutdown_quiet_window",
             });
             return null;
           }
 
-          // 2. Beyond quiet window, verify whether the new process has re-bound to this same port via active TLS probe
+          // 2. Beyond quiet window, verify whether old process is still terminating or alive
+          if (this.isProcessTerminating && this.isProcessTerminating()) {
+            chatResumeEvents.recordPortDiscoveryStaleRejected({
+              appTarget: this.appTarget,
+              stalePort: currentStalePort,
+              discoveredPort,
+              elapsedMs,
+              reason: "old_process_still_terminating",
+            });
+            this.emit("stale-port-rejected", {
+              stalePort: currentStalePort,
+              discoveredPort,
+              reason: "old_process_still_terminating",
+            });
+            return null;
+          }
+
+          if (this.isProcessAlive) {
+            const alive = await this.isProcessAlive(this.appTarget);
+            if (alive) {
+              chatResumeEvents.recordPortDiscoveryStaleRejected({
+                appTarget: this.appTarget,
+                stalePort: currentStalePort,
+                discoveredPort,
+                elapsedMs,
+                reason: "old_process_still_terminating",
+              });
+              this.emit("stale-port-rejected", {
+                stalePort: currentStalePort,
+                discoveredPort,
+                reason: "old_process_still_terminating",
+              });
+              return null;
+            }
+          }
+
+          // 3. Old process exit confirmed and quiet window elapsed: verify active TLS probe on fresh re-bind
           const isAlive = await this.readinessProbe(discoveredPort);
           if (isAlive) {
             this.stalePort = null;
@@ -293,7 +339,7 @@ export class PortDiscoveryService extends EventEmitter {
             return this.currentPort;
           }
 
-          // 3. Probe failed; check if stalePort TTL expired
+          // 4. Probe failed; check if stalePort TTL expired
           if (
             elapsedMs !== undefined &&
             elapsedMs >= PortDiscoveryService.STALE_PORT_TTL_MS
@@ -306,10 +352,12 @@ export class PortDiscoveryService extends EventEmitter {
             stalePort: currentStalePort,
             discoveredPort,
             elapsedMs,
+            reason: "probe_unreachable",
           });
           this.emit("stale-port-rejected", {
             stalePort: currentStalePort,
             discoveredPort,
+            reason: "probe_unreachable",
           });
           return null;
         }

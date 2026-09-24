@@ -14,6 +14,7 @@ import {
   SessionContinuityBuffer,
 } from "./SessionContinuityBuffer";
 import {
+  isValidModelName,
   isValidProtoModelEnum,
   normalizeModelToProtoEnum,
 } from "./ChatResumeDispatcher";
@@ -87,6 +88,298 @@ export function isSubagentConversation(
     } catch {
       // Ignore query error
     }
+  }
+
+  return false;
+}
+
+export function resolveParentCascadeIdFromSubagent(
+  subagentCascadeId: string,
+  appTarget: AntigravityAppTarget = "app",
+  dbInstance?: Database.Database | null,
+): string | null {
+  if (!subagentCascadeId) {
+    return null;
+  }
+
+  const brainDir = getAntigravityBrainDir(appTarget);
+
+  // 1. Inspect subagent transcript for caller agent reminder:
+  // e.g. caller agent (name: "parent", id: "<parentCascadeId>")
+  // or caller agent (name: 'parent', id: '<parentCascadeId>')
+  // or "Recipient": "<parentCascadeId>"
+  // or "parent_cascade_id": "<parentCascadeId>"
+  const transcriptPath = path.join(
+    brainDir,
+    subagentCascadeId,
+    ".system_generated",
+    "logs",
+    "transcript.jsonl",
+  );
+
+  if (fs.existsSync(transcriptPath)) {
+    try {
+      const content = fs.readFileSync(transcriptPath, "utf-8");
+
+      // Match: caller agent (name: "parent", id: "...")
+      const callerMatch = content.match(
+        /caller\s+agent\s*\(\s*name:\s*["']parent["'],\s*id:\s*["']([a-zA-Z0-9_\-\.]+)["']\s*\)/i,
+      );
+      if (
+        callerMatch &&
+        callerMatch[1] &&
+        callerMatch[1] !== subagentCascadeId
+      ) {
+        return callerMatch[1];
+      }
+
+      // Match: Recipient: "..." when sending message to parent
+      const recipientMatch = content.match(
+        /Recipient["']?\s*[:=]\s*["']([a-zA-Z0-9_\-\.]{8,})["']/i,
+      );
+      if (
+        recipientMatch &&
+        recipientMatch[1] &&
+        recipientMatch[1] !== subagentCascadeId
+      ) {
+        return recipientMatch[1];
+      }
+
+      // Match: parentCascadeId / parent_cascade_id
+      const parentIdMatch = content.match(
+        /["'](?:parent_cascade_id|parentCascadeId)["']\s*:\s*["']([a-zA-Z0-9_\-\.]+)["']/i,
+      );
+      if (
+        parentIdMatch &&
+        parentIdMatch[1] &&
+        parentIdMatch[1] !== subagentCascadeId
+      ) {
+        return parentIdMatch[1];
+      }
+    } catch {
+      // Continue to next resolution strategies
+    }
+  }
+
+  // 2. Inspect SQLite trajectory_meta or trajectory_metadata_blob or parent_references
+  if (dbInstance) {
+    try {
+      // Check trajectory_meta table
+      const hasTrajectoryMeta = dbInstance
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='trajectory_meta'",
+        )
+        .get();
+      if (hasTrajectoryMeta) {
+        const columns = (
+          dbInstance.pragma("table_info(trajectory_meta)") as Array<{
+            name: string;
+          }>
+        ).map((c) => c.name.toLowerCase());
+        for (const col of [
+          "parent_cascade_id",
+          "parent_trajectory_id",
+          "parent_id",
+          "caller_id",
+        ]) {
+          if (columns.includes(col)) {
+            const row = dbInstance
+              .prepare(
+                `SELECT ${col} FROM trajectory_meta WHERE ${col} IS NOT NULL LIMIT 1`,
+              )
+              .get() as Record<string, unknown> | undefined;
+            if (row && row[col] && String(row[col]) !== subagentCascadeId) {
+              return String(row[col]);
+            }
+          }
+        }
+      }
+
+      // Check trajectory_metadata_blob table
+      const hasBlobTable = dbInstance
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='trajectory_metadata_blob'",
+        )
+        .get();
+      if (hasBlobTable) {
+        const rows = dbInstance
+          .prepare("SELECT data FROM trajectory_metadata_blob LIMIT 5")
+          .all() as Array<{ data: Buffer | string | null }>;
+        for (const row of rows) {
+          if (!row.data) continue;
+          const raw = Buffer.isBuffer(row.data)
+            ? row.data.toString("utf-8")
+            : String(row.data);
+
+          const uuidMatch = raw.match(
+            /2\$([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/i,
+          );
+          if (uuidMatch && uuidMatch[1] && uuidMatch[1] !== subagentCascadeId) {
+            return uuidMatch[1];
+          }
+
+          const wireMatch = raw.match(
+            /2\$([a-zA-Z0-9_\-\.]+?)(?=[:"'\s\0\x00-\x1f]|$)/,
+          );
+          if (wireMatch && wireMatch[1] && wireMatch[1] !== subagentCascadeId) {
+            return wireMatch[1];
+          }
+
+          const callerMatch = raw.match(
+            /(?:parent_cascade_id|parentCascadeId|caller_id|callerId)["']?\s*[:=]\s*["']([a-zA-Z0-9_\-\.]+)["']/i,
+          );
+          if (
+            callerMatch &&
+            callerMatch[1] &&
+            callerMatch[1] !== subagentCascadeId
+          ) {
+            return callerMatch[1];
+          }
+        }
+      }
+
+      // Check parent_references table if it exists
+      const hasParentRefTable = dbInstance
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='parent_references'",
+        )
+        .get();
+      if (hasParentRefTable) {
+        const row = dbInstance
+          .prepare(
+            "SELECT parent_cascade_id FROM parent_references WHERE parent_cascade_id IS NOT NULL LIMIT 1",
+          )
+          .get() as { parent_cascade_id?: string } | undefined;
+        if (
+          row?.parent_cascade_id &&
+          String(row.parent_cascade_id) !== subagentCascadeId
+        ) {
+          return String(row.parent_cascade_id);
+        }
+      }
+    } catch {
+      // Continue to annotations check
+    }
+  }
+
+  // 3. Annotations pbtxt
+  const annotationsDir = getAntigravityAnnotationsDir(appTarget);
+  if (annotationsDir && fs.existsSync(annotationsDir)) {
+    const pbtxtPath = path.join(annotationsDir, `${subagentCascadeId}.pbtxt`);
+    if (fs.existsSync(pbtxtPath)) {
+      try {
+        const content = fs.readFileSync(pbtxtPath, "utf-8");
+        const parentMatch = content.match(
+          /(?:parent_cascade_id|parent_id|caller_id):\s*["']?([a-zA-Z0-9_\-\.]+)["']?/i,
+        );
+        if (
+          parentMatch &&
+          parentMatch[1] &&
+          parentMatch[1] !== subagentCascadeId
+        ) {
+          return parentMatch[1];
+        }
+      } catch {
+        // Suppress
+      }
+    }
+  }
+
+  return null;
+}
+
+export function hasActiveSubagentForParent(
+  parentCascadeId: string,
+  appTarget: AntigravityAppTarget = "app",
+): boolean {
+  if (!parentCascadeId) return false;
+  try {
+    const candidateDbs = getAntigravityConversationDbPaths(appTarget);
+    for (const dbPath of candidateDbs) {
+      const filename = path.basename(dbPath, ".db");
+      if (filename === parentCascadeId) continue;
+
+      try {
+        const stat = fs.statSync(dbPath);
+        if (Date.now() - stat.mtimeMs > 5 * 60 * 1000) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+
+      let db: Database.Database | null = null;
+      try {
+        const DatabaseConstructor =
+          typeof Database === "function"
+            ? Database
+            : (Database as any)?.default;
+        db = new DatabaseConstructor(dbPath, {
+          readonly: true,
+          fileMustExist: true,
+          timeout: 200,
+        });
+        if (!db) continue;
+
+        const hasSteps = db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='steps'",
+          )
+          .get();
+        if (!hasSteps) continue;
+
+        const activeStep = db
+          .prepare(
+            "SELECT status, idx, step_payload, task_details, metadata FROM steps ORDER BY idx DESC LIMIT 1",
+          )
+          .get() as
+          | {
+              status?: number;
+              idx?: number;
+              step_payload?: unknown;
+              task_details?: unknown;
+              metadata?: unknown;
+            }
+          | undefined;
+        if (!activeStep || (activeStep.status !== 2 && activeStep.status !== 8))
+          continue;
+
+        const raw =
+          activeStep.step_payload ??
+          activeStep.task_details ??
+          activeStep.metadata;
+        const rawStr = raw
+          ? Buffer.isBuffer(raw)
+            ? raw.toString("utf-8")
+            : String(raw)
+          : "";
+        const isDaemon =
+          rawStr.includes('"IsDaemon":true') ||
+          rawStr.includes('"IsDaemon": true');
+        if (isDaemon) continue;
+
+        const resolvedParent = resolveParentCascadeIdFromSubagent(
+          filename,
+          appTarget,
+          db,
+        );
+        if (resolvedParent === parentCascadeId) {
+          return true;
+        }
+      } catch {
+        // Ignore single db error
+      } finally {
+        if (db) {
+          try {
+            db.close();
+          } catch {
+            // Ignore close error
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore scan failure
   }
 
   return false;
@@ -236,25 +529,60 @@ export function inspectTranscriptForActiveTurn(
       };
     }
 
+    const pathParts = transcriptPath.split(path.sep);
+    const sysGenIdx = pathParts.indexOf(".system_generated");
+    const cascadeIdFromPath = sysGenIdx > 0 ? pathParts[sysGenIdx - 1] : "";
+
+    const subagentToolNames = new Set([
+      "invoke_subagent",
+      "send_message",
+      "manage_subagents",
+    ]);
+
     // Case 2: Quota or rate limit exhaustion occurred in steps after user prompt
+    const quotaPatterns = [
+      "RESOURCE_EXHAUSTED",
+      "Individual quota reached",
+      "code 429",
+      "quota exceeded",
+    ];
+
+    const errorFields = [
+      "error",
+      "error_details",
+      "message",
+      "text",
+      "content",
+      "thinking",
+    ] as const;
+
     for (const step of stepsAfter) {
-      const rawText = `${String(step.content ?? "")} ${String(step.thinking ?? "")} ${String(step.error_details ?? "")}`;
-      if (
-        rawText.includes("RESOURCE_EXHAUSTED") ||
-        rawText.includes("Individual quota reached") ||
-        rawText.includes("code 429")
-      ) {
-        return {
-          hasActiveTurn: true,
-          isInterrupted: true,
-          promptText: userPrompt || "Continue your previous response.",
-          stepIndex:
-            typeof step.step_index === "number"
-              ? step.step_index
-              : typeof userStep.step_index === "number"
-                ? userStep.step_index
-                : undefined,
-        };
+      for (const field of errorFields) {
+        const val = step[field];
+        if (val !== undefined && val !== null) {
+          const valStr = typeof val === "string" ? val : JSON.stringify(val);
+          for (const pattern of quotaPatterns) {
+            if (valStr.includes(pattern)) {
+              chatResumeEvents.recordQuotaExhaustionDetected({
+                cascadeId: String(step.cascade_id || cascadeIdFromPath),
+                matchedField: field,
+                pattern,
+              });
+
+              return {
+                hasActiveTurn: true,
+                isInterrupted: true,
+                promptText: userPrompt || "Continue your previous response.",
+                stepIndex:
+                  typeof step.step_index === "number"
+                    ? step.step_index
+                    : typeof userStep.step_index === "number"
+                      ? userStep.step_index
+                      : undefined,
+              };
+            }
+          }
+        }
       }
     }
 
@@ -276,11 +604,11 @@ export function inspectTranscriptForActiveTurn(
     }
 
     if (lastStep.type === "PLANNER_RESPONSE") {
+      const rawContent = lastStep.content ?? lastStep.text ?? lastStep.message;
       const hasContent =
-        typeof lastStep.content === "string" &&
-        lastStep.content.trim().length > 0;
-      const hasTools =
-        Array.isArray(lastStep.tool_calls) && lastStep.tool_calls.length > 0;
+        typeof rawContent === "string" && rawContent.trim().length > 0;
+      const tools = lastStep.tool_calls ?? lastStep.tools;
+      const hasTools = Array.isArray(tools) && tools.length > 0;
 
       // Model cut off mid-thinking or produced empty output
       if (!hasContent && !hasTools) {
@@ -312,39 +640,37 @@ export function inspectTranscriptForActiveTurn(
         };
       }
 
-      // Model output text with no tools: check if subagents were invoked in stepsAfter
-      const hasSubagents = stepsAfter.some((s) => {
-        const tools = s.tool_calls;
+      // Model output text with no tools: check if subagents or background tasks were invoked in stepsAfter OR in history
+      const hasSubagentsInStepsAfter = stepsAfter.some((s) => {
+        const sTools = s.tool_calls ?? s.tools;
+        const sName = s.name;
         return (
-          Array.isArray(tools) &&
-          tools.some((t: any) => t?.name === "invoke_subagent")
+          (typeof sName === "string" && subagentToolNames.has(sName)) ||
+          (Array.isArray(sTools) &&
+            sTools.some((t: any) => subagentToolNames.has(String(t?.name))))
         );
       });
 
-      if (hasSubagents) {
-        return {
-          hasActiveTurn: true,
-          isInterrupted: true,
-          promptText: "Continue your previous response.",
-          stepIndex:
-            typeof lastStep.step_index === "number"
-              ? lastStep.step_index
-              : typeof userStep.step_index === "number"
-                ? userStep.step_index
-                : undefined,
-        };
-      }
-
-      // Check if any background tasks were launched in stepsAfter
-      const hasBackgroundTasks = stepsAfter.some((s) => {
+      const hasBackgroundTasksInStepsAfter = stepsAfter.some((s) => {
         return (
-          s.type === "GENERIC" &&
-          typeof s.content === "string" &&
-          s.content.includes("Tool is running as a background task")
+          (s.type === "GENERIC" &&
+            typeof s.content === "string" &&
+            s.content.includes("Tool is running as a background task")) ||
+          (Array.isArray(s.tool_calls) &&
+            s.tool_calls.some(
+              (t: any) =>
+                t?.name === "manage_task" ||
+                (t?.name === "run_command" &&
+                  (t?.args?.IsDaemon === true ||
+                    t?.arguments?.IsDaemon === true)),
+            ))
         );
       });
 
-      if (hasBackgroundTasks) {
+      const isSubagentOrchestrating =
+        hasSubagentsInStepsAfter || hasBackgroundTasksInStepsAfter;
+
+      if (isSubagentOrchestrating) {
         return {
           hasActiveTurn: true,
           isInterrupted: true,
@@ -473,28 +799,27 @@ export function extractModelFromDatabase(
         if (!modelName) {
           // 1. Binary protobuf wire format: model_name\x12<len><value>
           const wireName = extractProtoWireString(text, "model_name");
-          if (wireName && !wireName.startsWith("MODEL_")) {
+          if (wireName && isValidModelName(wireName)) {
             modelName = wireName;
           } else {
-            // 2. Text / JSON key: model_name: "..." or model_name=...
-            const jsonNameMatch =
-              text.match(
-                /model_name["']?\s*[:=]\s*["']?([A-Za-z0-9_\-\.]+)["']?/,
-              ) || text.match(/model_name[^\w]*([a-zA-Z0-9_\-\.]+)/i);
+            // 2. Structured key: model_name: "..." or model_name='...'
+            const structuredMatch = text.match(
+              /model_name["']?\s*[:=]\s*["']([A-Za-z0-9_\-\.]+)["']/i,
+            );
 
             if (
-              jsonNameMatch &&
-              jsonNameMatch[1] &&
-              !jsonNameMatch[1].startsWith("MODEL_")
+              structuredMatch &&
+              structuredMatch[1] &&
+              isValidModelName(structuredMatch[1])
             ) {
-              modelName = jsonNameMatch[1];
+              modelName = structuredMatch[1];
             } else {
               // 3. Fallback for recognizable model family prefixes
-              const fallbackName = text.match(
-                /(?:claude-[a-z0-9_\-\.]+|gemini-[a-z0-9_\-\.]+)/i,
+              const fallbackMatch = text.match(
+                /(?:claude-[a-z0-9_\-\.]+|gemini-[a-z0-9_\-\.]+|gpt-[a-z0-9_\-\.]+|o[13]-[a-z0-9_\-\.]+)/i,
               );
-              if (fallbackName) {
-                modelName = fallbackName[0];
+              if (fallbackMatch && isValidModelName(fallbackMatch[0])) {
+                modelName = fallbackMatch[0];
               }
             }
           }
@@ -560,7 +885,53 @@ export async function detectActiveTurnInDatabase(
         // Ignore wal stat error
       }
     }
-    isRecent = Date.now() - mtime < 10 * 60 * 1000;
+    const dbAge = Date.now() - mtime;
+    // 1. Parent database mtime within 60 minutes
+    const isDbRecent = dbAge < 60 * 60 * 1000;
+
+    // 2. Conversation transcript modified within 15 minutes
+    const cascadeIdCandidate = path.basename(dbPath, ".db");
+    const brainDir = getAntigravityBrainDir(appTarget);
+    const transcriptPath = path.join(
+      brainDir,
+      cascadeIdCandidate,
+      ".system_generated",
+      "logs",
+      "transcript.jsonl",
+    );
+    let isTranscriptRecent = false;
+    if (fs.existsSync(transcriptPath)) {
+      try {
+        const transcriptStat = fs.statSync(transcriptPath);
+        isTranscriptRecent =
+          Date.now() - transcriptStat.mtimeMs < 15 * 60 * 1000;
+      } catch {
+        // Ignore stat error
+      }
+    }
+
+    // 3. Associated subagent database modified within 15 minutes
+    let isSubagentRecent = false;
+    if (!isDbRecent && !isTranscriptRecent) {
+      try {
+        const convDir = path.dirname(dbPath);
+        const files = fs.readdirSync(convDir);
+        for (const file of files) {
+          if (file.endsWith(".db") && file !== path.basename(dbPath)) {
+            const subPath = path.join(convDir, file);
+            const subStat = fs.statSync(subPath);
+            if (Date.now() - subStat.mtimeMs < 15 * 60 * 1000) {
+              isSubagentRecent = true;
+              break;
+            }
+          }
+        }
+      } catch {
+        // Ignore dir read error
+      }
+    }
+
+    isRecent = isDbRecent || isTranscriptRecent || isSubagentRecent;
   } catch {
     // Ignore stat error
   }
@@ -621,10 +992,153 @@ export async function detectActiveTurnInDatabase(
       }
 
       if (isSubagentConversation(cascadeId, appTarget, dbInstance)) {
-        logger.debug(
-          `Skipping internal subagent conversation ${cascadeId} (${dbPath})`,
+        try {
+          const stat = fs.statSync(dbPath);
+          if (Date.now() - stat.mtimeMs > 5 * 60 * 1000) {
+            return null;
+          }
+        } catch {
+          return null;
+        }
+
+        let subagentActiveStep: Record<string, unknown> | undefined;
+        try {
+          const activeRows = dbInstance
+            .prepare(
+              "SELECT * FROM steps WHERE status = 2 OR status = 8 ORDER BY idx DESC LIMIT 1",
+            )
+            .all() as Array<Record<string, unknown>>;
+          if (activeRows.length > 0) {
+            const step = activeRows[0];
+            const raw = step.step_payload ?? step.task_details ?? step.metadata;
+            const rawStr = raw
+              ? Buffer.isBuffer(raw)
+                ? raw.toString("utf-8")
+                : String(raw)
+              : "";
+            const isDaemon =
+              rawStr.includes('"IsDaemon":true') ||
+              rawStr.includes('"IsDaemon": true');
+            if (!isDaemon) {
+              subagentActiveStep = step;
+            }
+          }
+        } catch {
+          // steps table might not have idx or status
+        }
+
+        if (!subagentActiveStep) {
+          logger.debug(
+            `Skipping internal subagent conversation ${cascadeId} (${dbPath})`,
+          );
+          return null;
+        }
+
+        const parentCascadeId = resolveParentCascadeIdFromSubagent(
+          cascadeId,
+          appTarget,
+          dbInstance,
         );
-        return null;
+
+        if (!parentCascadeId) {
+          logger.warn(
+            `Active subagent conversation ${cascadeId} (${dbPath}) could not resolve parent cascade ID; skipping`,
+          );
+          return null;
+        }
+
+        chatResumeEvents.recordSubagentParentResolved({
+          subagentCascadeId: cascadeId,
+          parentCascadeId,
+          stepIndex:
+            typeof subagentActiveStep.idx === "number"
+              ? subagentActiveStep.idx
+              : undefined,
+        });
+
+        const dbModel = extractModelFromDatabase(dbInstance);
+        const rawStepModel = subagentActiveStep.model
+          ? String(subagentActiveStep.model)
+          : undefined;
+
+        const authenticEnum =
+          (rawStepModel && isValidProtoModelEnum(rawStepModel)
+            ? rawStepModel
+            : undefined) ?? dbModel?.enumModel;
+
+        const rawNameCandidate =
+          dbModel?.modelName ??
+          (rawStepModel && !isValidProtoModelEnum(rawStepModel)
+            ? rawStepModel
+            : undefined);
+        const authenticName =
+          rawNameCandidate && isValidModelName(rawNameCandidate)
+            ? rawNameCandidate
+            : undefined;
+
+        const modelToReport = authenticEnum ?? authenticName;
+        const normalized = modelToReport
+          ? normalizeModelToProtoEnum(modelToReport, authenticName)
+          : undefined;
+
+        chatResumeEvents.recordActiveTurnDetected({
+          appTarget,
+          conversationId: parentCascadeId,
+          cascadeId: parentCascadeId,
+          stepIndex:
+            typeof subagentActiveStep.idx === "number"
+              ? subagentActiveStep.idx
+              : undefined,
+          modelEnum: authenticEnum,
+          modelName: authenticName,
+          reason: "subagent_orchestration_yielding",
+          hasSubagents: true,
+          isInterrupted: true,
+        });
+
+        const parentDbCandidate = path.join(
+          path.dirname(dbPath),
+          `${parentCascadeId}.db`,
+        );
+        const resolvedDbPath = fs.existsSync(parentDbCandidate)
+          ? parentDbCandidate
+          : dbPath;
+
+        return {
+          cascadeId: parentCascadeId,
+          conversationDbPath: resolvedDbPath,
+          isInterrupted: true,
+          promptPayload: {
+            prompt: "Continue your previous response.",
+            requestedModel: modelToReport,
+            modelName: authenticName ?? normalized?.modelName,
+            cascadeConfig:
+              normalized && isValidProtoModelEnum(normalized.enumModel)
+                ? {
+                    requestedModel: { model: normalized.enumModel },
+                    plannerConfig: {
+                      requestedModel: {
+                        model: normalized.enumModel,
+                        choice: {
+                          case: "model",
+                          value: normalized.enumModel,
+                        },
+                      },
+                      planModel: normalized.enumModel,
+                      ...(normalized.modelName
+                        ? { modelName: normalized.modelName }
+                        : {}),
+                    },
+                  }
+                : normalized?.modelName
+                  ? {
+                      plannerConfig: {
+                        modelName: normalized.modelName,
+                      },
+                    }
+                  : undefined,
+          },
+        };
       }
 
       const brainDir = getAntigravityBrainDir(appTarget);
@@ -681,26 +1195,61 @@ export async function detectActiveTurnInDatabase(
             }
           }
 
-          // Fallback check on head step in SQLite for quota exhaustion
+          // If still not active, check if any child subagent is active for this parent cascade
+          if (!activeStep && hasActiveSubagentForParent(cascadeId, appTarget)) {
+            activeStep = {
+              idx: maxIdx,
+              cascade_id: cascadeId,
+            };
+            isInterrupted = true;
+            promptText = "Continue your previous response.";
+          }
+
+          // Fallback check on recent steps in SQLite for quota exhaustion
           if (!activeStep && recentSteps.length > 0) {
-            const headStep = recentSteps[0];
-            const rawErr =
-              headStep.error_details ??
-              headStep.step_payload ??
-              headStep.metadata;
-            const rawErrStr = rawErr
-              ? Buffer.isBuffer(rawErr)
-                ? rawErr.toString("utf-8")
-                : String(rawErr)
-              : "";
-            if (
-              rawErrStr.includes("RESOURCE_EXHAUSTED") ||
-              rawErrStr.includes("Individual quota reached") ||
-              rawErrStr.includes("code 429")
-            ) {
-              activeStep = headStep;
-              isInterrupted = true;
-              promptText = "Continue your previous response.";
+            const quotaPatterns = [
+              "RESOURCE_EXHAUSTED",
+              "Individual quota reached",
+              "code 429",
+              "quota exceeded",
+            ];
+            const checkFields = [
+              "error",
+              "error_details",
+              "message",
+              "text",
+              "content",
+              "thinking",
+              "step_payload",
+              "metadata",
+            ] as const;
+
+            for (const step of recentSteps) {
+              for (const field of checkFields) {
+                const val = (step as any)[field];
+                if (val !== undefined && val !== null) {
+                  const valStr = Buffer.isBuffer(val)
+                    ? val.toString("utf-8")
+                    : typeof val === "string"
+                      ? val
+                      : JSON.stringify(val);
+                  for (const pattern of quotaPatterns) {
+                    if (valStr.includes(pattern)) {
+                      activeStep = step;
+                      isInterrupted = true;
+                      promptText = "Continue your previous response.";
+                      chatResumeEvents.recordQuotaExhaustionDetected({
+                        cascadeId,
+                        matchedField: field,
+                        pattern,
+                      });
+                      break;
+                    }
+                  }
+                  if (activeStep) break;
+                }
+              }
+              if (activeStep) break;
             }
           }
         } else {
@@ -769,11 +1318,15 @@ export async function detectActiveTurnInDatabase(
             ? rawStepModel
             : undefined) ?? dbModel?.enumModel;
 
-        const authenticName =
+        const rawNameCandidate =
           dbModel?.modelName ??
           (rawStepModel && !isValidProtoModelEnum(rawStepModel)
             ? rawStepModel
             : undefined);
+        const authenticName =
+          rawNameCandidate && isValidModelName(rawNameCandidate)
+            ? rawNameCandidate
+            : undefined;
 
         const modelToReport = authenticEnum ?? authenticName;
 
@@ -781,10 +1334,16 @@ export async function detectActiveTurnInDatabase(
           chatResumeEvents.recordActiveTurnDetected({
             appTarget,
             conversationId: cascadeId,
+            cascadeId,
             stepIndex:
               typeof activeStep.idx === "number" ? activeStep.idx : undefined,
             modelEnum: authenticEnum,
             modelName: authenticName,
+            reason: isInterrupted
+              ? "subagent_orchestration_yielding"
+              : undefined,
+            hasSubagents: isInterrupted,
+            isInterrupted,
           });
 
           const normalized = modelToReport

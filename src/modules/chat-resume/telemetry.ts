@@ -10,10 +10,30 @@ export interface ActiveTurnDetectedTelemetry {
   event: "chat_active_turn_detected";
   appTarget: AntigravityAppTarget;
   conversationId: string;
+  cascadeId?: string;
   stepIndex?: number;
   modelEnum?: string;
   modelName?: string;
+  reason?: string;
+  hasSubagents?: boolean;
+  isInterrupted?: boolean;
   status: 2;
+  occurredAt: number;
+}
+
+export interface SubagentParentResolvedTelemetry {
+  event: "chat_subagent_parent_resolved";
+  subagentCascadeId: string;
+  parentCascadeId: string;
+  stepIndex?: number;
+  occurredAt: number;
+}
+
+export interface QuotaExhaustionDetectedTelemetry {
+  event: "chat_quota_exhaustion_detected";
+  cascadeId: string;
+  matchedField: string;
+  pattern: string;
   occurredAt: number;
 }
 
@@ -103,6 +123,17 @@ export interface PortDiscoveryStaleRejectedTelemetry {
   stalePort: number;
   discoveredPort: number;
   elapsedMs?: number;
+  reason?: string;
+  occurredAt: number;
+}
+
+export interface ResumptionTransientRetryTelemetry {
+  event: "chat_resumption_transient_retry";
+  resumptionId: string;
+  appTarget: AntigravityAppTarget;
+  error: string;
+  retryCount: number;
+  status: "pending";
   occurredAt: number;
 }
 
@@ -124,6 +155,8 @@ export interface PortDiscoveryLifecycleTelemetry {
 
 export type ChatResumeTelemetry =
   | ActiveTurnDetectedTelemetry
+  | SubagentParentResolvedTelemetry
+  | QuotaExhaustionDetectedTelemetry
   | ModelResolvedTelemetry
   | SnapshotCapturedTelemetry
   | WalCheckpointExecutedTelemetry
@@ -134,6 +167,7 @@ export type ChatResumeTelemetry =
   | TurnDrainedTelemetry
   | AccountDepletedModelScopedTelemetry
   | PortDiscoveryStaleRejectedTelemetry
+  | ResumptionTransientRetryTelemetry
   | HandshakePortSwitchedTelemetry
   | PortDiscoveryLifecycleTelemetry;
 
@@ -144,17 +178,25 @@ class ChatResumeEventEmitter extends EventEmitter {
   public recordActiveTurnDetected(params: {
     appTarget: AntigravityAppTarget;
     conversationId: string;
+    cascadeId?: string;
     stepIndex?: number;
     modelEnum?: string;
     modelName?: string;
+    reason?: string;
+    hasSubagents?: boolean;
+    isInterrupted?: boolean;
   }): ActiveTurnDetectedTelemetry {
     const payload: ActiveTurnDetectedTelemetry = {
       event: "chat_active_turn_detected",
       appTarget: params.appTarget,
       conversationId: params.conversationId,
+      cascadeId: params.cascadeId ?? params.conversationId,
       stepIndex: params.stepIndex,
       modelEnum: params.modelEnum,
       modelName: params.modelName,
+      reason: params.reason,
+      hasSubagents: params.hasSubagents,
+      isInterrupted: params.isInterrupted,
       status: 2,
       occurredAt: Date.now(),
     };
@@ -162,6 +204,44 @@ class ChatResumeEventEmitter extends EventEmitter {
     this.pushTelemetry(payload);
     logger.info("[chat-resume-telemetry] Active turn detected", payload);
     this.emit("telemetry:active-turn-detected", payload);
+    return payload;
+  }
+
+  public recordSubagentParentResolved(params: {
+    subagentCascadeId: string;
+    parentCascadeId: string;
+    stepIndex?: number;
+  }): SubagentParentResolvedTelemetry {
+    const payload: SubagentParentResolvedTelemetry = {
+      event: "chat_subagent_parent_resolved",
+      subagentCascadeId: params.subagentCascadeId,
+      parentCascadeId: params.parentCascadeId,
+      stepIndex: params.stepIndex,
+      occurredAt: Date.now(),
+    };
+
+    this.pushTelemetry(payload);
+    logger.info("[chat-resume-telemetry] Subagent parent resolved", payload);
+    this.emit("telemetry:subagent-parent-resolved", payload);
+    return payload;
+  }
+
+  public recordQuotaExhaustionDetected(params: {
+    cascadeId: string;
+    matchedField: string;
+    pattern: string;
+  }): QuotaExhaustionDetectedTelemetry {
+    const payload: QuotaExhaustionDetectedTelemetry = {
+      event: "chat_quota_exhaustion_detected",
+      cascadeId: params.cascadeId,
+      matchedField: params.matchedField,
+      pattern: params.pattern,
+      occurredAt: Date.now(),
+    };
+
+    this.pushTelemetry(payload);
+    logger.info("[chat-resume-telemetry] Quota exhaustion detected", payload);
+    this.emit("telemetry:quota-exhaustion-detected", payload);
     return payload;
   }
 
@@ -357,6 +437,7 @@ class ChatResumeEventEmitter extends EventEmitter {
     stalePort: number;
     discoveredPort: number;
     elapsedMs?: number;
+    reason?: string;
   }): PortDiscoveryStaleRejectedTelemetry {
     const payload: PortDiscoveryStaleRejectedTelemetry = {
       event: "chat_port_discovery_stale_rejected",
@@ -367,12 +448,36 @@ class ChatResumeEventEmitter extends EventEmitter {
         params.elapsedMs !== undefined
           ? Math.max(0, Math.round(params.elapsedMs))
           : undefined,
+      reason: params.reason,
       occurredAt: Date.now(),
     };
 
     this.pushTelemetry(payload);
     logger.info("[chat-resume-telemetry] Stale port rejected", payload);
     this.emit("telemetry:stale-port-rejected", payload);
+    return payload;
+  }
+
+  public recordResumptionTransientRetry(params: {
+    resumptionId: string;
+    appTarget: AntigravityAppTarget;
+    error: string;
+    retryCount: number;
+    status?: "pending";
+  }): ResumptionTransientRetryTelemetry {
+    const payload: ResumptionTransientRetryTelemetry = {
+      event: "chat_resumption_transient_retry",
+      resumptionId: params.resumptionId,
+      appTarget: params.appTarget,
+      error: params.error,
+      retryCount: params.retryCount,
+      status: "pending",
+      occurredAt: Date.now(),
+    };
+
+    this.pushTelemetry(payload);
+    logger.info("[chat-resume-telemetry] Resumption transient retry", payload);
+    this.emit("telemetry:transient-retry", payload);
     return payload;
   }
 

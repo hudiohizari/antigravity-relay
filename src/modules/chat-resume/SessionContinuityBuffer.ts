@@ -201,6 +201,22 @@ export class SessionContinuityBuffer {
     return this.claimInFlight(latest.resumptionId);
   }
 
+  public revertToPending(resumptionId: string): InFlightChatSnapshot | null {
+    const snapshot = this.snapshots.get(resumptionId);
+    if (!snapshot) {
+      return null;
+    }
+
+    if (Date.now() > snapshot.expiresAt) {
+      this.expireSnapshot(snapshot, "ttl_expired");
+      return null;
+    }
+
+    snapshot.status = "pending";
+    snapshot.retryCount = (snapshot.retryCount ?? 0) + 1;
+    return snapshot;
+  }
+
   public has(resumptionId: string): boolean {
     const snapshot = this.snapshots.get(resumptionId);
     if (!snapshot) {

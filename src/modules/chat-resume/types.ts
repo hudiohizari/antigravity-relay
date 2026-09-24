@@ -26,6 +26,7 @@ export interface InFlightChatSnapshot {
   accountEmail?: string;
   status: "pending" | "in_flight" | "resumed" | "failed" | "expired";
   isInterrupted?: boolean;
+  retryCount?: number;
 }
 
 export interface ChatDraftScratch {

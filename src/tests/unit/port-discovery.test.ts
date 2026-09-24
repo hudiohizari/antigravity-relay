@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import tls from "node:tls";
 import {
   PortDiscoveryService,
   parsePortFromLog,
   getDefaultLogPath,
+  defaultTlsReadinessProbe,
 } from "@/modules/relay/port-discovery";
 import { chatResumeEvents } from "@/modules/chat-resume/telemetry";
 
@@ -395,6 +397,7 @@ describe("PortDiscoveryService", () => {
       expect(rejectedEventPayload).toEqual({
         stalePort: 54321,
         discoveredPort: 54321,
+        reason: "graceful_shutdown_quiet_window",
       });
 
       const history = chatResumeEvents.getTelemetryHistory();
@@ -405,6 +408,7 @@ describe("PortDiscoveryService", () => {
             stalePort: 54321,
             discoveredPort: 54321,
             appTarget: "app",
+            reason: "graceful_shutdown_quiet_window",
           }),
         ]),
       );
@@ -488,7 +492,7 @@ describe("PortDiscoveryService", () => {
       expect(service.getStalePort()).toBeNull();
     });
 
-    it("AC-01: should reject same-port rebind within quiet window (<400ms)", async () => {
+    it("AC-04: should reject same-port rebind within quiet window (<5000ms)", async () => {
       service = new PortDiscoveryService({
         logPath: testLogPath,
         readinessProbe: async () => true,
@@ -510,10 +514,44 @@ describe("PortDiscoveryService", () => {
       expect(service.getStalePort()).toBe(55555);
     });
 
-    it("AC-01: should accept same-port rebind after quiet window (>=400ms) when probe succeeds", async () => {
+    it("AC-04: should reject same-port rebind while process is still terminating even after quiet window (>=5000ms)", async () => {
       service = new PortDiscoveryService({
         logPath: testLogPath,
         readinessProbe: async () => true,
+        isProcessTerminating: () => true,
+      });
+
+      fs.writeFileSync(
+        testLogPath,
+        "listening on https://127.0.0.1:55555/\n",
+        "utf-8",
+      );
+
+      service.setRestarting(true, 55555);
+      (service as any).restartingStartedAt = Date.now() - 6000;
+
+      const result = await service.checkOnce();
+      expect(result).toBeNull();
+      expect(service.isRestarting()).toBe(true);
+      expect(service.getStalePort()).toBe(55555); // Still preserved
+
+      const history = chatResumeEvents.getTelemetryHistory();
+      expect(history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "chat_port_discovery_stale_rejected",
+            stalePort: 55555,
+            reason: "old_process_still_terminating",
+          }),
+        ]),
+      );
+    });
+
+    it("AC-04: should accept same-port rebind after quiet window (>=5000ms) when probe succeeds and process is not terminating", async () => {
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        readinessProbe: async () => true,
+        isProcessTerminating: () => false,
       });
 
       fs.writeFileSync(
@@ -524,8 +562,8 @@ describe("PortDiscoveryService", () => {
 
       service.setRestarting(true, 55555);
 
-      // Fast-forward restartingStartedAt beyond quiet window
-      (service as any).restartingStartedAt = Date.now() - 500;
+      // Fast-forward restartingStartedAt beyond quiet window (>= 5000ms)
+      (service as any).restartingStartedAt = Date.now() - 5500;
 
       let portChangedEvent: { oldPort: number | null; newPort: number } | null = null;
       service.on("port-changed", (evt) => {
@@ -540,7 +578,7 @@ describe("PortDiscoveryService", () => {
       expect(portChangedEvent).toEqual({ oldPort: null, newPort: 55555 });
     });
 
-    it("AC-01: should clear stalePort after TTL (>=3000ms) even if probe fails", async () => {
+    it("AC-04: should clear stalePort after TTL (>=15000ms) even if probe fails", async () => {
       service = new PortDiscoveryService({
         logPath: testLogPath,
         readinessProbe: async () => false,
@@ -553,7 +591,7 @@ describe("PortDiscoveryService", () => {
       );
 
       service.setRestarting(true, 55555);
-      (service as any).restartingStartedAt = Date.now() - 3500;
+      (service as any).restartingStartedAt = Date.now() - 16000;
 
       const result = await service.checkOnce();
       expect(result).toBeNull();
@@ -576,6 +614,216 @@ describe("PortDiscoveryService", () => {
       expect(result).toBeNull();
       expect(service.getPort()).toBeNull();
       expect(service.isDiscovered()).toBe(false);
+    });
+
+    it("should reject same-port rebind after quiet window when isProcessAlive returns true", async () => {
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        readinessProbe: async () => true,
+        isProcessAlive: async () => true,
+      });
+
+      fs.writeFileSync(
+        testLogPath,
+        "listening on https://127.0.0.1:55555/\n",
+        "utf-8",
+      );
+
+      service.setRestarting(true, 55555);
+      (service as any).restartingStartedAt = Date.now() - 6000;
+
+      let staleRejectedEvent: any = null;
+      service.on("stale-port-rejected", (evt) => {
+        staleRejectedEvent = evt;
+      });
+
+      const result = await service.checkOnce();
+      expect(result).toBeNull();
+      expect(service.isRestarting()).toBe(true);
+      expect(service.getStalePort()).toBe(55555);
+      expect(staleRejectedEvent).toEqual({
+        stalePort: 55555,
+        discoveredPort: 55555,
+        reason: "old_process_still_terminating",
+      });
+
+      const history = chatResumeEvents.getTelemetryHistory();
+      expect(history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "chat_port_discovery_stale_rejected",
+            stalePort: 55555,
+            reason: "old_process_still_terminating",
+          }),
+        ]),
+      );
+    });
+  });
+
+  describe("defaultTlsReadinessProbe", () => {
+    it("returns false when port is unreachable or connection fails", async () => {
+      const ready = await defaultTlsReadinessProbe(65431, 80, 20);
+      expect(ready).toBe(false);
+    });
+
+    it("returns true when tls socket connects successfully", async () => {
+      const { EventEmitter } = await import("node:events");
+      const mockSocket = new EventEmitter() as any;
+      mockSocket.destroy = vi.fn();
+      mockSocket.removeAllListeners = vi.fn();
+      const connectSpy = vi
+        .spyOn(tls, "connect")
+        .mockReturnValueOnce(mockSocket);
+
+      const probePromise = defaultTlsReadinessProbe(54321, 500, 20);
+      mockSocket.emit("secureConnect");
+
+      const ready = await probePromise;
+      expect(ready).toBe(true);
+      expect(mockSocket.destroy).toHaveBeenCalled();
+      connectSpy.mockRestore();
+    });
+
+    it("retries and returns false when tls socket emits error or timeout", async () => {
+      const { EventEmitter } = await import("node:events");
+      const connectSpy = vi.spyOn(tls, "connect").mockImplementation(() => {
+        const s = new EventEmitter() as any;
+        s.destroy = vi.fn();
+        s.removeAllListeners = vi.fn();
+        setTimeout(() => s.emit("error", new Error("TLS fail")), 5);
+        return s;
+      });
+
+      const ready = await defaultTlsReadinessProbe(54321, 60, 20);
+      expect(ready).toBe(false);
+      connectSpy.mockRestore();
+    });
+  });
+
+  describe("getDefaultLogPath Cross-Platform", () => {
+    const originalPlatform = process.platform;
+
+    afterEach(() => {
+      Object.defineProperty(process, "platform", {
+        value: originalPlatform,
+        configurable: true,
+      });
+    });
+
+    it("returns Darwin paths for app and ide", () => {
+      Object.defineProperty(process, "platform", {
+        value: "darwin",
+        configurable: true,
+      });
+      expect(getDefaultLogPath("app")).toBe(
+        path.join(os.homedir(), "Library/Logs/Antigravity/main.log"),
+      );
+      expect(getDefaultLogPath("ide")).toBe(
+        path.join(os.homedir(), "Library/Logs/Antigravity IDE/main.log"),
+      );
+    });
+
+    it("returns Windows paths for app and ide with APPDATA env", () => {
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+        configurable: true,
+      });
+      const originalAppData = process.env.APPDATA;
+      process.env.APPDATA = "C:\\Users\\Test\\AppData\\Roaming";
+      try {
+        expect(getDefaultLogPath("app")).toBe(
+          path.join(
+            "C:\\Users\\Test\\AppData\\Roaming",
+            "Antigravity/logs/main.log",
+          ),
+        );
+        expect(getDefaultLogPath("ide")).toBe(
+          path.join(
+            "C:\\Users\\Test\\AppData\\Roaming",
+            "Antigravity IDE/logs/main.log",
+          ),
+        );
+      } finally {
+        process.env.APPDATA = originalAppData;
+      }
+    });
+
+    it("returns Linux paths for app and ide", () => {
+      Object.defineProperty(process, "platform", {
+        value: "linux",
+        configurable: true,
+      });
+      expect(getDefaultLogPath("app")).toBe(
+        path.join(os.homedir(), ".config/Antigravity/logs/main.log"),
+      );
+      expect(getDefaultLogPath("ide")).toBe(
+        path.join(os.homedir(), ".config/Antigravity IDE/logs/main.log"),
+      );
+    });
+  });
+
+  describe("Chunked File Reading for Large Logs", () => {
+    it("reads last 64KB chunk in readPortFromLogSync when log file exceeds 65536 bytes", () => {
+      service = new PortDiscoveryService({ logPath: testLogPath });
+      const padding = "A".repeat(70_000) + "\n";
+      const portLog = "listening on https://127.0.0.1:58765/\n";
+      fs.writeFileSync(testLogPath, padding + portLog, "utf-8");
+
+      const port = service.readPortFromLogSync();
+      expect(port).toBe(58765);
+    });
+
+    it("reads last 64KB chunk in checkOnce when log file exceeds 65536 bytes", async () => {
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        readinessProbe: async () => true,
+      });
+      const padding = "B".repeat(70_000) + "\n";
+      const portLog = "listening on https://127.0.0.1:59123/\n";
+      fs.writeFileSync(testLogPath, padding + portLog, "utf-8");
+
+      const port = await service.checkOnce();
+      expect(port).toBe(59123);
+      expect(service.getPort()).toBe(59123);
+    });
+  });
+
+  describe("File Watcher Interactions", () => {
+    it("handles file watcher error event cleanly without throwing and clears reference", async () => {
+      fs.writeFileSync(testLogPath, "initial log\n");
+
+      service = new PortDiscoveryService({
+        logPath: testLogPath,
+        pollIntervalMs: 200,
+        readinessProbe: async () => true,
+      });
+
+      await service.start();
+      const fileWatcher = (service as any).fileWatcher;
+      expect(fileWatcher).not.toBeNull();
+
+      expect(() => {
+        fileWatcher.emit("error", new Error("EPERM"));
+      }).not.toThrow();
+
+      expect((service as any).fileWatcher).toBeNull();
+    });
+
+    it("creates dirWatcher when log file does not exist, and tears down cleanly on stop()", async () => {
+      const nonExistentPath = path.join(tempDir, "sub", "main.log");
+      fs.mkdirSync(path.join(tempDir, "sub"));
+
+      service = new PortDiscoveryService({
+        logPath: nonExistentPath,
+        pollIntervalMs: 500,
+      });
+
+      await service.start();
+      expect((service as any).dirWatcher).not.toBeNull();
+
+      service.stop();
+      expect((service as any).dirWatcher).toBeNull();
+      expect((service as any).fileWatcher).toBeNull();
     });
   });
 });
