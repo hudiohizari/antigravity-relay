@@ -4,6 +4,10 @@ import { configRouter } from "@/modules/config/ipc/router";
 import { antigravityRuntimeRouter } from "@/modules/antigravity-runtime/ipc/router";
 import { appShellRouter } from "@/modules/app-shell/ipc/router";
 import { relayRouter, tunnelRouter } from "@/modules/relay/ipc/router";
+import {
+  contextTelemetryRouter,
+  chatContextRouter,
+} from "@/modules/context-telemetry/ipc/router";
 
 import { ORPCError, os } from "@orpc/server";
 import { isString } from "lodash-es";
@@ -163,6 +167,8 @@ export const router = os.use(logMiddleware).router({
   account: accountRouter,
   cloud: cloudRouter,
   config: configRouter,
+  context: contextTelemetryRouter,
+  chat: chatContextRouter,
   relay: relayRouter,
   tunnel: tunnelRouter,
 });

@@ -51,11 +51,23 @@ Preserves in-flight generations across account rotations.
 - **Desktop Scoped**: Operates on App and IDE; CLI runs headlessly without restarts.
 - **Configurable**: Toggle on/off under Settings.
 
+### 5. Active Chat Context Window Telemetry & Compaction Monitoring
+
+Inspect real-time token utilization, memory pressure, and compaction risks across active and concurrent cascade sessions.
+
+![Chat Context Telemetry & Compaction Monitoring](images/context-preview.png)
+
+- **Ground-Truth Budgets**: Dynamically decodes `ContextWindowMetadata` directly from Antigravity session protobufs (e.g. 160k for Claude Opus, 256k for Gemini Flash).
+- **Multi-Card Stack**: Dedicated cards for active and concurrent sessions with full token strips (Prompt Cached, Fresh Input, Thinking, Output).
+- **Subagent Telemetry**: Real-time token breakdown for spawned subagents.
+- **Compaction Alerting**: Visual risk badges (Normal, High Pressure, Critical Risk) with live compaction detection.
+
 ---
 
 ## Features
 
 - **Multi-Target Sync**: Manage credentials across App, IDE, and CLI independently or unified.
+- **Chat Context Telemetry**: Real-time context window usage, dynamic token ceilings, and compaction risk tracking across active chats.
 - **Chat Auto-Resume**: Recovers in-flight prompts across account switches without manual re-typing.
 - **Account Pooling**: Multiple Google accounts with automated failover on quota exhaustion.
 - **Local Account Import**: Discovers existing sign-ins from system credential stores, CLI sessions, and IDE storage.

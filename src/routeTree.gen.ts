@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ContextRouteImport } from './routes/context'
 import { Route as RelayRouteImport } from './routes/relay'
 import { Route as SettingsRouteImport } from './routes/settings'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContextRoute = ContextRouteImport.update({
+  id: '/context',
+  path: '/context',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RelayRoute = RelayRouteImport.update({
@@ -31,30 +37,34 @@ const SettingsRoute = SettingsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/context': typeof ContextRoute
   '/relay': typeof RelayRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/context': typeof ContextRoute
   '/relay': typeof RelayRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/context': typeof ContextRoute
   '/relay': typeof RelayRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/relay' | '/settings'
+  fullPaths: '/' | '/context' | '/relay' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/relay' | '/settings'
-  id: '__root__' | '/' | '/relay' | '/settings'
+  to: '/' | '/context' | '/relay' | '/settings'
+  id: '__root__' | '/' | '/context' | '/relay' | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ContextRoute: typeof ContextRoute
   RelayRoute: typeof RelayRoute
   SettingsRoute: typeof SettingsRoute
 }
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/context': {
+      id: '/context'
+      path: '/context'
+      fullPath: '/context'
+      preLoaderRoute: typeof ContextRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/relay': {
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ContextRoute: ContextRoute,
   RelayRoute: RelayRoute,
   SettingsRoute: SettingsRoute,
 }

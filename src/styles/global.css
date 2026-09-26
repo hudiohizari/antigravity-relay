@@ -232,6 +232,35 @@
     --action-resync-hover-bg: var(--primitive-zinc-800);
     --action-resync-ring: var(--primitive-zinc-950);
 
+    /* Active Chat Context Telemetry Semantic Tokens (Light) */
+    --context-normal-bg: rgba(16, 185, 129, 0.1);
+    --context-normal-border: rgba(16, 185, 129, 0.3);
+    --context-normal-text: #047857;
+    --context-normal-bar: #10b981;
+    --context-normal-dot: #059669;
+
+    --context-warning-bg: rgba(245, 158, 11, 0.12);
+    --context-warning-border: rgba(245, 158, 11, 0.35);
+    --context-warning-text: #92400e;
+    --context-warning-bar: #f59e0b;
+    --context-warning-dot: #d97706;
+
+    --context-critical-bg: rgba(244, 63, 94, 0.12);
+    --context-critical-border: rgba(244, 63, 94, 0.35);
+    --context-critical-text: #be123c;
+    --context-critical-bar: #e11d48;
+    --context-critical-dot: #e11d48;
+
+    --context-compaction-pill-bg: rgba(244, 63, 94, 0.12);
+    --context-compaction-pill-border: rgba(244, 63, 94, 0.35);
+    --context-compaction-pill-text: #be123c;
+
+    --context-gauge-track: hsl(223.8136 0% 92%);
+    --context-gauge-track-border: hsl(223.8136 0.0001% 85%);
+
+    --context-subagent-row-bg: rgba(0, 0, 0, 0.02);
+    --context-subagent-row-border: hsl(223.8136 0.0001% 90%);
+
     /* Component Tokens */
     --summary-status-badge-radius: var(--radius-md);
     --summary-status-badge-padding-x: 0.75rem;
@@ -341,6 +370,35 @@
     --action-resync-primary-fg: var(--primitive-zinc-950);
     --action-resync-hover-bg: var(--primitive-zinc-100);
     --action-resync-ring: var(--primitive-zinc-400);
+
+    /* Active Chat Context Telemetry Semantic Tokens (Dark) */
+    --context-normal-bg: rgba(16, 185, 129, 0.15);
+    --context-normal-border: rgba(16, 185, 129, 0.35);
+    --context-normal-text: #34d399;
+    --context-normal-bar: #10b981;
+    --context-normal-dot: #10b981;
+
+    --context-warning-bg: rgba(245, 158, 11, 0.15);
+    --context-warning-border: rgba(245, 158, 11, 0.4);
+    --context-warning-text: #fbbf24;
+    --context-warning-bar: #fbbf24;
+    --context-warning-dot: #fbbf24;
+
+    --context-critical-bg: rgba(244, 63, 94, 0.18);
+    --context-critical-border: rgba(244, 63, 94, 0.4);
+    --context-critical-text: #fda4af;
+    --context-critical-bar: #f43f5e;
+    --context-critical-dot: #f43f5e;
+
+    --context-compaction-pill-bg: rgba(244, 63, 94, 0.18);
+    --context-compaction-pill-border: rgba(244, 63, 94, 0.4);
+    --context-compaction-pill-text: #fda4af;
+
+    --context-gauge-track: hsl(223.8136 0% 12%);
+    --context-gauge-track-border: hsl(223.8136 0% 22%);
+
+    --context-subagent-row-bg: rgba(255, 255, 255, 0.03);
+    --context-subagent-row-border: hsl(223.8136 0% 16%);
   }
 }
 
@@ -398,6 +456,34 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-context-normal-bg: var(--context-normal-bg);
+  --color-context-normal-border: var(--context-normal-border);
+  --color-context-normal-text: var(--context-normal-text);
+  --color-context-normal-bar: var(--context-normal-bar);
+  --color-context-normal-dot: var(--context-normal-dot);
+
+  --color-context-warning-bg: var(--context-warning-bg);
+  --color-context-warning-border: var(--context-warning-border);
+  --color-context-warning-text: var(--context-warning-text);
+  --color-context-warning-bar: var(--context-warning-bar);
+  --color-context-warning-dot: var(--context-warning-dot);
+
+  --color-context-critical-bg: var(--context-critical-bg);
+  --color-context-critical-border: var(--context-critical-border);
+  --color-context-critical-text: var(--context-critical-text);
+  --color-context-critical-bar: var(--context-critical-bar);
+  --color-context-critical-dot: var(--context-critical-dot);
+
+  --color-context-compaction-pill-bg: var(--context-compaction-pill-bg);
+  --color-context-compaction-pill-border: var(--context-compaction-pill-border);
+  --color-context-compaction-pill-text: var(--context-compaction-pill-text);
+
+  --color-context-gauge-track: var(--context-gauge-track);
+  --color-context-gauge-track-border: var(--context-gauge-track-border);
+
+  --color-context-subagent-row-bg: var(--context-subagent-row-bg);
+  --color-context-subagent-row-border: var(--context-subagent-row-border);
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);

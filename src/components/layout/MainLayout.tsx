@@ -9,6 +9,7 @@ import {
   ChevronRight,
   RefreshCw,
   Radio,
+  Activity,
 } from "lucide-react";
 import appIcon from "@/assets/icon.png";
 import { useTranslation } from "react-i18next";
@@ -51,6 +52,11 @@ export const MainLayout: React.FC = () => {
       to: "/relay",
       icon: Radio,
       label: t("nav.relay"),
+    },
+    {
+      to: "/context",
+      icon: Activity,
+      label: t("nav.context"),
     },
     {
       to: "/settings",
