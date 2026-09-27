@@ -421,6 +421,56 @@ const fr = {
       failedTitle: "Échec du nettoyage du cache",
       notFoundTitle: "Aucun cache Antigravity App trouvé",
     },
+    conversationCleaner: {
+      title: "Nettoyeur de conversations corrompues",
+      description:
+        "Analysez et supprimez les entrées de conversation orphelines dont les fichiers d'historique local ont été supprimés, résolvant l'erreur 'Conversation unavailable'.",
+      scanAndClean: "Nettoyer les conversations corrompues",
+      dialogTitle: "Nettoyer les conversations corrompues ?",
+      dialogDescription:
+        "Analyser le stockage des conversations pour détecter les entrées orphelines sans données locales.",
+      targetToggleLabel: "Environnement cible",
+      targetApp: "Application (Antigravity 2.0)",
+      targetIde: "IDE (Antigravity IDE)",
+      targetCli: "CLI (agy)",
+      scanning: "Analyse des conversations...",
+      scanningAria:
+        "Analyse des enregistrements de conversation et des fichiers locaux",
+      totalLabel: "Total enregistré",
+      validLabel: "Intact",
+      invalidLabel: "Corrompu",
+      noInvalidChats:
+        "Toutes les conversations enregistrées disposent de données locales valides. Aucun nettoyage requis.",
+      zeroStateSubtext:
+        "Votre historique de conversation est parfaitement synchronisé pour cet environnement.",
+      hasInvalidChats:
+        "{{count}} entrées de conversation corrompues trouvées sans données locales.",
+      warning:
+        "Redémarrez Antigravity après le nettoyage pour actualiser la liste des conversations.",
+      cancel: "Annuler",
+      confirm: "Purger les conversations corrompues",
+      pruning: "Purge en cours...",
+      successTitle: "Conversations corrompues nettoyées",
+      successDescription:
+        "{{count}} entrées orphelines ont été purgées avec succès.",
+      failedTitle: "Échec du nettoyage des conversations",
+      failedDescription:
+        "Le stockage des conversations n'a pas pu être mis à jour. Veuillez vérifier qu'Antigravity est inactif et réessayer.",
+      notFoundTitle: "Base de données des conversations introuvable",
+      notFoundDescription:
+        "Aucune base de données de conversation détectée pour l'environnement sélectionné.",
+      errorTitle: "Base de données temporairement occupée",
+      errorDescription:
+        "La base de données des conversations est actuellement utilisée par un autre processus. Veuillez patienter un instant et réessayer.",
+      retry: "Réessayer l'analyse",
+      projectGroupsTitle: "Projets concernés",
+      noWorkspaceGroup: "Global / Sans espace de travail",
+      untitledConversation: "Conversation sans titre",
+      brokenCountBadge: "{{count}} corrompu(s)",
+      showChats: "Afficher les conversations",
+      hideChats: "Masquer les conversations",
+      toggleProjectAria: "Basculer la liste des conversations pour {{project}}",
+    },
     version: "Version",
     platform: "Plateforme",
     license: "Licence",

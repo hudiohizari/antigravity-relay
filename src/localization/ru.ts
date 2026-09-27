@@ -404,6 +404,54 @@ const ru = {
       failedTitle: "Не удалось очистить кэш",
       notFoundTitle: "Кэш Antigravity App не найден",
     },
+    conversationCleaner: {
+      title: "Очистка поврежденных чатов",
+      description:
+        "Сканирование и удаление потерянных записей чатов, чьи файлы локальной истории были удалены, для устранения ошибки 'Conversation unavailable'.",
+      scanAndClean: "Очистить поврежденные чаты",
+      dialogTitle: "Очистить поврежденные чаты?",
+      dialogDescription:
+        "Сканировать хранилище чатов на наличие записей без локальных данных истории.",
+      targetToggleLabel: "Целевая среда",
+      targetApp: "Приложение (Antigravity 2.0)",
+      targetIde: "IDE (Antigravity IDE)",
+      targetCli: "CLI (agy)",
+      scanning: "Сканирование чатов...",
+      scanningAria: "Сканирование записей чатов и файлов локального хранилища",
+      totalLabel: "Всего записей",
+      validLabel: "Исправные",
+      invalidLabel: "Поврежденные",
+      noInvalidChats:
+        "Все чаты содержат действительные локальные данные. Очистка не требуется.",
+      zeroStateSubtext:
+        "История чатов полностью синхронизирована в этой среде.",
+      hasInvalidChats:
+        "Найдено {{count}} поврежденных чатов без локальных файлов данных.",
+      warning:
+        "Перезапустите Antigravity после очистки, чтобы обновить список чатов.",
+      cancel: "Отмена",
+      confirm: "Удалить поврежденные чаты",
+      pruning: "Очистка...",
+      successTitle: "Поврежденные чаты очищены",
+      successDescription: "Успешно удалено {{count}} потерянных записей чатов.",
+      failedTitle: "Не удалось очистить чаты",
+      failedDescription:
+        "Не удалось обновить хранилище чатов. Убедитесь, что Antigravity не выполняет задач, и повторите попытку.",
+      notFoundTitle: "База данных чатов не найдена",
+      notFoundDescription:
+        "База данных чатов не обнаружена для выбранной среды.",
+      errorTitle: "База данных временно занята",
+      errorDescription:
+        "База данных чатов в настоящее время используется другим процессом. Пожалуйста, подождите и повторите попытку.",
+      retry: "Повторить сканирование",
+      projectGroupsTitle: "Затронутые проекты",
+      noWorkspaceGroup: "Глобальный / Без рабочей области",
+      untitledConversation: "Безымянный чат",
+      brokenCountBadge: "{{count}} поврежд.",
+      showChats: "Показать чаты",
+      hideChats: "Скрыть чаты",
+      toggleProjectAria: "Переключить список чатов для {{project}}",
+    },
     version: "Версия",
     platform: "Платформа",
     license: "Лицензия",

@@ -62,11 +62,24 @@ Inspect real-time token utilization, memory pressure, and compaction risks acros
 - **Subagent Telemetry**: Real-time token breakdown for spawned subagents.
 - **Compaction Alerting**: Visual risk badges (Normal, High Pressure, Critical Risk) with live compaction detection.
 
+### 6. Project-Grouped Broken Chat Cleaner
+
+Scans and prunes orphaned conversation summaries whose trajectory database files were evicted by Google Antigravity FIFO session limits (approx. 500 conversations), resolving "Conversation unavailable" errors.
+
+![Broken Chat Cleaner](images/cleaner-preview.png)
+
+- **Multi-Target Coverage**: Independent inspection and cleanup across Antigravity App, Antigravity IDE, and Antigravity CLI.
+- **Project-Grouped Accordions**: Automatically aggregates broken conversations by workspace folder with PII-masked paths.
+- **Adaptive Disclosure**: Clean overview with auto-expansion for small workloads and collapsed views for larger project trees.
+- **Transactional Purge**: Atomic SQLite deletion with immediate protobuf mirror cache invalidation (`agyhub_summaries_proto.pb`).
+- **Resilient Concurrency**: Defends against `SQLITE_BUSY` database lock collisions with inline retry affordance.
+
 ---
 
 ## Features
 
 - **Multi-Target Sync**: Manage credentials across App, IDE, and CLI independently or unified.
+- **Broken Chat Cleaner**: Project-grouped cleanup of orphaned conversation summaries missing trajectory files across App, IDE, and CLI environments.
 - **Chat Context Telemetry**: Real-time context window usage, dynamic token ceilings, and compaction risk tracking across active chats.
 - **Chat Auto-Resume**: Recovers in-flight prompts across account switches without manual re-typing.
 - **Account Pooling**: Multiple Google accounts with automated failover on quota exhaustion.

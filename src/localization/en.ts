@@ -403,6 +403,55 @@ const en = {
       failedTitle: "Failed to clear cache",
       notFoundTitle: "No Antigravity App cache found",
     },
+    conversationCleaner: {
+      title: "Broken Chat Cleaner",
+      description:
+        "Scan and remove orphaned chat entries whose trajectory database files were pruned, resolving 'Conversation unavailable' errors.",
+      scanAndClean: "Clean Broken Chats",
+      dialogTitle: "Clean Broken Chats?",
+      dialogDescription:
+        "Scan conversation database for orphaned entries missing their local trajectory data.",
+      targetToggleLabel: "Target Environment",
+      targetApp: "App (Antigravity 2.0)",
+      targetIde: "IDE (Antigravity IDE)",
+      targetCli: "CLI (agy)",
+      scanning: "Scanning conversations...",
+      scanningAria: "Scanning conversation records and local storage files",
+      totalLabel: "Total registered",
+      validLabel: "Intact",
+      invalidLabel: "Broken",
+      noInvalidChats:
+        "All registered chats have valid local data. No cleanup needed.",
+      zeroStateSubtext:
+        "Your conversation history is fully synchronized across this environment.",
+      hasInvalidChats:
+        "{{count}} broken chat entries found without local trajectory data.",
+      warning:
+        "Restart Antigravity after pruning to refresh the conversation list.",
+      cancel: "Cancel",
+      confirm: "Prune Broken Chats",
+      pruning: "Pruning...",
+      successTitle: "Cleaned broken chats",
+      successDescription:
+        "Successfully pruned {{count}} orphaned chat entries.",
+      failedTitle: "Failed to clean chats",
+      failedDescription:
+        "The conversation store could not be updated. Please ensure Antigravity is idle and try again.",
+      notFoundTitle: "Conversation database not found",
+      notFoundDescription:
+        "No conversation database was detected for the selected environment.",
+      errorTitle: "Database locked or inaccessible",
+      errorDescription:
+        "The conversation database is currently in use by another process. Please wait a moment and try again.",
+      retry: "Retry Scan",
+      projectGroupsTitle: "Affected Projects",
+      noWorkspaceGroup: "Global / No Workspace",
+      untitledConversation: "Untitled Conversation",
+      brokenCountBadge: "{{count}} broken",
+      showChats: "Show conversations",
+      hideChats: "Hide conversations",
+      toggleProjectAria: "Toggle conversation list for {{project}}",
+    },
     version: "Version",
     platform: "Platform",
     license: "License",

@@ -404,6 +404,56 @@ const vi = {
       failedTitle: "Không thể xóa bộ nhớ đệm",
       notFoundTitle: "Không tìm thấy bộ nhớ đệm Antigravity App",
     },
+    conversationCleaner: {
+      title: "Dọn dẹp cuộc trò chuyện bị hỏng",
+      description:
+        "Quét và xóa các mục trò chuyện mồ côi đã bị mất dữ liệu lịch sử cục bộ, khắc phục lỗi 'Conversation unavailable'.",
+      scanAndClean: "Dọn dẹp trò chuyện bị hỏng",
+      dialogTitle: "Dọn dẹp cuộc trò chuyện bị hỏng?",
+      dialogDescription:
+        "Quét bộ lưu trữ cuộc trò chuyện để tìm các mục bị thiếu dữ liệu lịch sử cục bộ.",
+      targetToggleLabel: "Môi trường mục tiêu",
+      targetApp: "Ứng dụng (Antigravity 2.0)",
+      targetIde: "IDE (Antigravity IDE)",
+      targetCli: "CLI (agy)",
+      scanning: "Đang quét các cuộc trò chuyện...",
+      scanningAria:
+        "Đang quét các bản ghi cuộc trò chuyện và tệp lưu trữ cục bộ",
+      totalLabel: "Tổng đã đăng ký",
+      validLabel: "Nguyên vẹn",
+      invalidLabel: "Bị hỏng",
+      noInvalidChats:
+        "Tất cả các cuộc trò chuyện đã đăng ký đều có dữ liệu hợp lệ. Không cần dọn dẹp.",
+      zeroStateSubtext:
+        "Lịch sử cuộc trò chuyện của bạn đã được đồng bộ hóa hoàn toàn trong môi trường này.",
+      hasInvalidChats:
+        "Tìm thấy {{count}} mục trò chuyện bị hỏng không có dữ liệu lịch sử cục bộ.",
+      warning:
+        "Khởi động lại Antigravity sau khi dọn dẹp để làm mới danh sách cuộc trò chuyện.",
+      cancel: "Hủy",
+      confirm: "Cắt bỏ trò chuyện hỏng",
+      pruning: "Đang dọn dẹp...",
+      successTitle: "Đã dọn dẹp trò chuyện bị hỏng",
+      successDescription:
+        "Đã cắt bỏ thành công {{count}} mục trò chuyện mồ côi.",
+      failedTitle: "Không thể dọn dẹp cuộc trò chuyện",
+      failedDescription:
+        "Không thể cập nhật bộ lưu trữ cuộc trò chuyện. Vui lòng đảm bảo Antigravity đang rảnh rồi thử lại.",
+      notFoundTitle: "Không tìm thấy cơ sở dữ liệu cuộc trò chuyện",
+      notFoundDescription:
+        "Không phát hiện cơ sở dữ liệu cuộc trò chuyện nào cho môi trường đã chọn.",
+      errorTitle: "Cơ sở dữ liệu đang bận",
+      errorDescription:
+        "Cơ sở dữ liệu cuộc trò chuyện hiện đang được sử dụng bởi một tiến trình khác. Vui lòng đợi trong giây lát rồi thử lại.",
+      retry: "Thử quét lại",
+      projectGroupsTitle: "Dự án bị ảnh hưởng",
+      noWorkspaceGroup: "Toàn cục / Không có không gian làm việc",
+      untitledConversation: "Cuộc trò chuyện không có tiêu đề",
+      brokenCountBadge: "{{count}} bị hỏng",
+      showChats: "Hiển thị cuộc trò chuyện",
+      hideChats: "Ẩn cuộc trò chuyện",
+      toggleProjectAria: "Bật tắt danh sách cuộc trò chuyện cho {{project}}",
+    },
     version: "Phiên bản",
     platform: "Nền tảng",
     license: "Giấy phép",

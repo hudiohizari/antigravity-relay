@@ -404,6 +404,55 @@ const tr = {
       failedTitle: "Önbellek temizlenemedi",
       notFoundTitle: "Antigravity App önbelleği bulunamadı",
     },
+    conversationCleaner: {
+      title: "Bozuk Sohbet Temizleyici",
+      description:
+        "Yerel geçmiş verileri silinmiş sahipsiz sohbet kayıtlarını tarayıp temizleyin, 'Conversation unavailable' hatasını çözün.",
+      scanAndClean: "Bozuk Sohbetleri Temizle",
+      dialogTitle: "Bozuk Sohbetler Temizlensin mi?",
+      dialogDescription:
+        "Yerel geçmiş verileri eksik olan sahipsiz kayıtlar için sohbet deposunu tarayın.",
+      targetToggleLabel: "Hedef Ortam",
+      targetApp: "Uygulama (Antigravity 2.0)",
+      targetIde: "IDE (Antigravity IDE)",
+      targetCli: "CLI (agy)",
+      scanning: "Sohbetler taranıyor...",
+      scanningAria: "Sohbet kayıtları ve yerel depolama dosyaları taranıyor",
+      totalLabel: "Toplam kayıtlı",
+      validLabel: "Sağlam",
+      invalidLabel: "Bozuk",
+      noInvalidChats:
+        "Kayıtlı tüm sohbetler geçerli yerel verilere sahip. Temizliğe gerek yok.",
+      zeroStateSubtext:
+        "Sohbet geçmişiniz bu ortam için tamamen senkronize durumda.",
+      hasInvalidChats:
+        "Yerel geçmiş verisi bulunmayan {{count}} bozuk sohbet kaydı bulundu.",
+      warning:
+        "Sohbet listesini yenilemek için temizlikten sonra Antigravity'yi yeniden başlatın.",
+      cancel: "İptal",
+      confirm: "Bozuk Sohbetleri Temizle",
+      pruning: "Temizleniyor...",
+      successTitle: "Bozuk sohbetler temizlendi",
+      successDescription:
+        "{{count}} sahipsiz sohbet kaydı başarıyla temizlendi.",
+      failedTitle: "Sohbetler temizlenemedi",
+      failedDescription:
+        "Sohbet deposu güncellenemedi. Antigravity'nin boşta olduğundan emin olup tekrar deneyin.",
+      notFoundTitle: "Sohbet veritabanı bulunamadı",
+      notFoundDescription:
+        "Seçilen ortam için sohbet veritabanı tespit edilemedi.",
+      errorTitle: "Veritabanı geçici olarak meşgul",
+      errorDescription:
+        "Sohbet veritabanı şu anda başka bir işlem tarafından kullanılıyor. Lütfen biraz bekleyip tekrar deneyin.",
+      retry: "Taramayı Yeniden Dene",
+      projectGroupsTitle: "Etkilenen Projeler",
+      noWorkspaceGroup: "Genel / Çalışma Alanı Yok",
+      untitledConversation: "Başlıksız Sohbet",
+      brokenCountBadge: "{{count}} bozuk",
+      showChats: "Sohbetleri göster",
+      hideChats: "Sohbetleri gizle",
+      toggleProjectAria: "{{project}} için sohbet listesini göster veya gizle",
+    },
     version: "Sürüm",
     platform: "Platform",
     license: "Lisans",

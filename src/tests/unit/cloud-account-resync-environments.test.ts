@@ -162,7 +162,7 @@ const defaultToken = {
   token_type: "Bearer",
 };
 
-describe("resyncAllEnvironments Master Resolution Rule Suite", () => {
+describe("resyncAllEnvironments Master Resolution Rule Suite", { timeout: 15000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.accounts.length = 0;

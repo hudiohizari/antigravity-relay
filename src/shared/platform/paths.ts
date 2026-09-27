@@ -1238,16 +1238,29 @@ export function getCloudAccountsDbPath(
   );
 }
 
+/**
+ * Maps an AntigravityAppTarget to its canonical filesystem directory subfolder.
+ */
+export function getAntigravityTargetSubfolder(
+  target?: AntigravityAppTarget | null,
+): string {
+  const resolvedTarget = resolveAntigravityAppTarget(target);
+  switch (resolvedTarget) {
+    case "ide":
+      return "antigravity-ide";
+    case "cli":
+      return "antigravity-cli";
+    case "app":
+    default:
+      return "antigravity";
+  }
+}
+
 export function getAntigravityConversationsDir(
   target?: AntigravityAppTarget | null,
   options?: PathResolutionOptions,
 ): string {
-  const resolvedTarget = resolveAntigravityAppTarget(target);
-  if (resolvedTarget === "cli") {
-    return "";
-  }
-  const subfolder =
-    resolvedTarget === "ide" ? "antigravity-ide" : "antigravity";
+  const subfolder = getAntigravityTargetSubfolder(target);
 
   if (resolveIsWsl(options)) {
     const winUser = getWindowsUser();
@@ -1266,12 +1279,7 @@ export function getAntigravityConversationSummariesDbPath(
   target?: AntigravityAppTarget | null,
   options?: PathResolutionOptions,
 ): string {
-  const resolvedTarget = resolveAntigravityAppTarget(target);
-  if (resolvedTarget === "cli") {
-    return "";
-  }
-  const subfolder =
-    resolvedTarget === "ide" ? "antigravity-ide" : "antigravity";
+  const subfolder = getAntigravityTargetSubfolder(target);
 
   if (resolveIsWsl(options)) {
     const winUser = getWindowsUser();

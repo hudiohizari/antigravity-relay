@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { AntigravityAppTarget } from "@/shared/platform/antigravityAppTarget";
+import {
+  type AntigravityAppTarget,
+  resolveAntigravityAppTarget,
+} from "@/shared/platform/antigravityAppTarget";
 import {
   getAntigravityConversationSummariesDbPath,
   getAntigravityConversationsDir,
@@ -373,6 +376,18 @@ export class ContextTelemetryService {
     target: AntigravityAppTarget = "app",
   ): Promise<ContextTelemetryResponse> {
     const availableModels = getAvailableModelCeilings();
+    const resolvedTarget = resolveAntigravityAppTarget(target);
+    if (resolvedTarget === "cli") {
+      return {
+        runtimeState: "antigravity_not_detected",
+        hasActiveChat: false,
+        pollingIntervalMs: 15000,
+        primaryChat: null,
+        concurrentChats: [],
+        recentCompactionEvent: null,
+        availableModels,
+      };
+    }
     const summariesDbPath = getAntigravityConversationSummariesDbPath(target);
 
     if (!summariesDbPath || !fs.existsSync(summariesDbPath)) {

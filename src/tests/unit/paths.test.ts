@@ -1656,10 +1656,30 @@ describe("getAgyCliTokenPaths", () => {
       expect(result).toContain(".gemini/antigravity-ide/conversation_summaries.db");
     });
 
-    it("returns empty string for cli target", async () => {
+    it("returns correct path for cli target", async () => {
       const paths = await import("../../shared/platform/paths");
-      expect(paths.getAntigravityConversationSummariesDbPath("cli")).toBe("");
-      expect(paths.getAntigravityConversationSummariesDbPath("agy" as any)).toBe("");
+      expect(
+        paths.getAntigravityConversationSummariesDbPath("cli", {
+          platform: "darwin",
+          isWsl: false,
+        }),
+      ).toContain(".gemini/antigravity-cli/conversation_summaries.db");
+      expect(
+        paths.getAntigravityConversationSummariesDbPath("agy" as any, {
+          platform: "linux",
+          isWsl: false,
+        }),
+      ).toContain(".gemini/antigravity-cli/conversation_summaries.db");
+      expect(
+        paths.getAntigravityConversationsDir("cli", {
+          platform: "darwin",
+          isWsl: false,
+        }),
+      ).toContain(".gemini/antigravity-cli/conversations");
+      expect(paths.getAntigravityConversationDbPaths("cli")).toEqual([]);
+      expect(paths.getAntigravityTargetSubfolder("cli")).toBe("antigravity-cli");
+      expect(paths.getAntigravityTargetSubfolder("ide")).toBe("antigravity-ide");
+      expect(paths.getAntigravityTargetSubfolder("app")).toBe("antigravity");
     });
 
     it("returns windows path on win32", async () => {

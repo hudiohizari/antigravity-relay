@@ -408,6 +408,55 @@ const id = {
       failedTitle: "Gagal menghapus cache",
       notFoundTitle: "Cache Antigravity App tidak ditemukan",
     },
+    conversationCleaner: {
+      title: "Pembersih Percakapan Rusak",
+      description:
+        "Pindai dan hapus entri percakapan yang kehilangan berkas riwayat lokalnya untuk mengatasi galat 'Conversation unavailable'.",
+      scanAndClean: "Bersihkan Percakapan Rusak",
+      dialogTitle: "Bersihkan Percakapan Rusak?",
+      dialogDescription:
+        "Pindai penyimpanan percakapan untuk entri yang kehilangan data riwayat lokalnya.",
+      targetToggleLabel: "Lingkungan Target",
+      targetApp: "Aplikasi (Antigravity 2.0)",
+      targetIde: "IDE (Antigravity IDE)",
+      targetCli: "CLI (agy)",
+      scanning: "Memindai percakapan...",
+      scanningAria: "Memindai catatan percakapan dan berkas penyimpanan lokal",
+      totalLabel: "Total terdaftar",
+      validLabel: "Utuh",
+      invalidLabel: "Rusak",
+      noInvalidChats:
+        "Semua percakapan terdaftar memiliki data lokal yang valid. Tidak perlu pembersihan.",
+      zeroStateSubtext:
+        "Riwayat percakapan Anda telah tersinkronisasi penuh pada lingkungan ini.",
+      hasInvalidChats:
+        "Ditemukan {{count}} entri percakapan rusak tanpa data riwayat lokal.",
+      warning:
+        "Mulai ulang Antigravity setelah pembersihan untuk memperbarui daftar percakapan.",
+      cancel: "Batal",
+      confirm: "Pangkas Percakapan Rusak",
+      pruning: "Memangkas...",
+      successTitle: "Percakapan rusak dibersihkan",
+      successDescription:
+        "Berhasil memangkas {{count}} entri percakapan usang.",
+      failedTitle: "Gagal membersihkan percakapan",
+      failedDescription:
+        "Penyimpanan percakapan tidak dapat diperbarui. Pastikan Antigravity sedang tidak aktif lalu coba lagi.",
+      notFoundTitle: "Basis data percakapan tidak ditemukan",
+      notFoundDescription:
+        "Tidak ada basis data percakapan yang terdeteksi untuk lingkungan yang dipilih.",
+      errorTitle: "Basis data sedang sibuk",
+      errorDescription:
+        "Basis data percakapan sedang digunakan oleh proses lain. Harap tunggu beberapa saat dan coba lagi.",
+      retry: "Coba Pindai Lagi",
+      projectGroupsTitle: "Proyek Terdampak",
+      noWorkspaceGroup: "Global / Tanpa Workspace",
+      untitledConversation: "Percakapan Tanpa Judul",
+      brokenCountBadge: "{{count}} rusak",
+      showChats: "Tampilkan percakapan",
+      hideChats: "Sembunyikan percakapan",
+      toggleProjectAria: "Beralih tampilan daftar percakapan untuk {{project}}",
+    },
     version: "Versi",
     platform: "Platform",
     license: "Lisensi",
