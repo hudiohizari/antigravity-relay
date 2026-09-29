@@ -35,7 +35,9 @@ Supervise and control Antigravity sessions from mobile or desktop browsers over 
 
 Resident in your macOS Menu Bar / Windows System Tray for fast rotation.
 
-![System Tray Quick Switcher](images/tray-preview.png)
+|               macOS Menu Bar               |                   Windows System Tray                   |
+| :----------------------------------------: | :-----------------------------------------------------: |
+| ![macOS Menu Bar](images/tray-preview.png) | ![Windows System Tray](images/tray-windows-preview.png) |
 
 - **Global & Target Rotation**: Switch all targets at once or rotate specific targets independently.
 - **At-a-Glance Quota**: View target status and pool limits directly from the tray.
