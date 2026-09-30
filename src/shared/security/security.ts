@@ -29,7 +29,8 @@ import {
   SafeStorageMasterKeyProvider,
 } from "@/shared/security/key-providers/safe-storage-provider";
 
-const SERVICE_NAME = "AntigravityRelay";
+const SERVICE_NAME = "AntigravitySwitcher";
+const LEGACY_SERVICE_NAME = "AntigravityRelay";
 const V2_KEYTAR_ACCOUNT_NAME = "MasterKeyV2";
 const LEGACY_KEYTAR_ACCOUNT_NAME = "MasterKey";
 
@@ -88,10 +89,20 @@ function createMasterKeyManager(): MasterKeyManager {
         V2_KEYTAR_ACCOUNT_NAME,
         loadKeytar,
       ),
+      new KeytarMasterKeyProvider(
+        LEGACY_SERVICE_NAME,
+        V2_KEYTAR_ACCOUNT_NAME,
+        loadKeytar,
+      ),
       new FileMasterKeyProvider(fileKeyPath),
       new LegacySafeStorageProvider(legacyKeyPath, safeStorage),
       new LegacyKeytarMasterKeyProvider(
         SERVICE_NAME,
+        LEGACY_KEYTAR_ACCOUNT_NAME,
+        loadKeytar,
+      ),
+      new LegacyKeytarMasterKeyProvider(
+        LEGACY_SERVICE_NAME,
         LEGACY_KEYTAR_ACCOUNT_NAME,
         loadKeytar,
       ),

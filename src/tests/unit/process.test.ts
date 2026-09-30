@@ -143,7 +143,9 @@ vi.mock("@/shared/platform/paths", () => ({
       (name.includes("antigravity") || commandLine.includes("antigravity")) &&
       !isIde &&
       !name.includes("relay") &&
-      !commandLine.includes("relay")
+      !commandLine.includes("relay") &&
+      !name.includes("switcher") &&
+      !commandLine.includes("switcher")
     );
   }),
   isWsl: vi.fn(() => false),
@@ -480,7 +482,7 @@ describe("Process Handler", () => {
       expect(result).toBe(false);
     });
 
-    it("should return false when only relay process is found", async () => {
+    it("should return false when only switcher or legacy relay process is found", async () => {
       Object.defineProperty(process, "platform", {
         value: "darwin",
         configurable: true,
@@ -493,13 +495,24 @@ describe("Process Handler", () => {
       mockFindProcess.mockResolvedValue([
         {
           pid: 12348,
+          name: "Antigravity Switcher",
+          cmd: "/Applications/Antigravity Switcher.app/Contents/MacOS/Antigravity Switcher",
+        },
+      ]);
+
+      const resultSwitcher = await isProcessRunning();
+      expect(resultSwitcher).toBe(false);
+
+      mockFindProcess.mockResolvedValue([
+        {
+          pid: 12349,
           name: "Antigravity Relay",
           cmd: "/Applications/Antigravity Relay.app/Contents/MacOS/Antigravity Relay",
         },
       ]);
 
-      const result = await isProcessRunning();
-      expect(result).toBe(false);
+      const resultRelay = await isProcessRunning();
+      expect(resultRelay).toBe(false);
     });
 
     it("should return false when no processes are found", async () => {

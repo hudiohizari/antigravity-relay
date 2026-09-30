@@ -1,15 +1,15 @@
-import { app } from 'electron';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import { logger } from '@/shared/logging/logger';
-import { AppConfig } from '@/modules/config/types';
+import { app } from "electron";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { logger } from "@/shared/logging/logger";
+import { AppConfig } from "@/modules/config/types";
 
-export const AUTO_START_ARG = '--autostart';
-const LINUX_AUTOSTART_FILENAME = 'antigravity-relay.desktop';
+export const AUTO_START_ARG = "--autostart";
+const LINUX_AUTOSTART_FILENAME = "antigravity-switcher.desktop";
 
 function getLinuxAutoStartPath() {
-  const dir = path.join(os.homedir(), '.config', 'autostart');
+  const dir = path.join(os.homedir(), ".config", "autostart");
   return path.join(dir, LINUX_AUTOSTART_FILENAME);
 }
 
@@ -18,12 +18,12 @@ export function isAutoStartLaunch(argv = process.argv) {
     return true;
   }
 
-  if (process.platform === 'win32' || process.platform === 'darwin') {
+  if (process.platform === "win32" || process.platform === "darwin") {
     try {
       const settings = app.getLoginItemSettings();
       return settings.wasOpenedAtLogin;
     } catch (error) {
-      logger.error('AutoStart: Failed to read login item settings', error);
+      logger.error("AutoStart: Failed to read login item settings", error);
     }
   }
 
@@ -46,7 +46,7 @@ function syncWindowsOrMacAutoStart(enabled: boolean) {
     }
     logger.info(`AutoStart: Login item set to ${enabled}`);
   } catch (error) {
-    logger.error('AutoStart: Failed to update login item settings', error);
+    logger.error("AutoStart: Failed to update login item settings", error);
   }
 }
 
@@ -58,9 +58,12 @@ function cleanupLinuxAutoStartEntries(currentPath: string) {
 
   const legacyNames = [
     `${app.getName()}.desktop`,
-    `${app.getName().replace(/\s+/g, '')}.desktop`,
-    'Antigravity Relay.desktop',
-    'AntigravityRelay.desktop',
+    `${app.getName().replace(/\s+/g, "")}.desktop`,
+    "antigravity-relay.desktop",
+    "Antigravity Relay.desktop",
+    "AntigravityRelay.desktop",
+    "Antigravity Switcher.desktop",
+    "AntigravitySwitcher.desktop",
   ];
 
   for (const name of legacyNames) {
@@ -73,7 +76,10 @@ function cleanupLinuxAutoStartEntries(currentPath: string) {
         fs.unlinkSync(candidate);
         logger.info(`AutoStart: Removed legacy autostart entry ${candidate}`);
       } catch (error) {
-        logger.warn('AutoStart: Failed to remove legacy autostart entry', error);
+        logger.warn(
+          "AutoStart: Failed to remove legacy autostart entry",
+          error,
+        );
       }
     }
   }
@@ -85,7 +91,7 @@ function syncLinuxAutoStart(enabled: boolean) {
   if (!enabled) {
     if (fs.existsSync(autoStartPath)) {
       fs.unlinkSync(autoStartPath);
-      logger.info('AutoStart: Removed Linux autostart entry');
+      logger.info("AutoStart: Removed Linux autostart entry");
     }
     cleanupLinuxAutoStartEntries(autoStartPath);
     return;
@@ -98,29 +104,29 @@ function syncLinuxAutoStart(enabled: boolean) {
 
   const execPath = process.execPath.replace(/"/g, '\\"');
   const content = [
-    '[Desktop Entry]',
-    'Type=Application',
+    "[Desktop Entry]",
+    "Type=Application",
     `Name=${app.getName()}`,
     `Exec="${execPath}" ${AUTO_START_ARG}`,
-    'X-GNOME-Autostart-enabled=true',
-    'Hidden=false',
-    'NoDisplay=false',
-  ].join('\n');
+    "X-GNOME-Autostart-enabled=true",
+    "Hidden=false",
+    "NoDisplay=false",
+  ].join("\n");
 
   cleanupLinuxAutoStartEntries(autoStartPath);
-  fs.writeFileSync(autoStartPath, content, 'utf-8');
-  logger.info('AutoStart: Created Linux autostart entry');
+  fs.writeFileSync(autoStartPath, content, "utf-8");
+  logger.info("AutoStart: Created Linux autostart entry");
 }
 
 export function syncAutoStart(config: AppConfig) {
   const enabled = Boolean(config.auto_startup);
 
-  if (process.platform === 'win32' || process.platform === 'darwin') {
+  if (process.platform === "win32" || process.platform === "darwin") {
     syncWindowsOrMacAutoStart(enabled);
     return;
   }
 
-  if (process.platform === 'linux') {
+  if (process.platform === "linux") {
     syncLinuxAutoStart(enabled);
   }
 }

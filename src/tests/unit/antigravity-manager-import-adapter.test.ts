@@ -233,6 +233,20 @@ describe("AntigravityManagerImportAdapter", () => {
       expect(keys).toHaveLength(1);
       expect(keys[0].equals(testKey)).toBe(true);
     });
+
+    it("falls back to Switcher MasterKeyManager decryption keys", async () => {
+      const adapter = new AntigravityManagerImportAdapter({
+        databasePath: "/test/db.sqlite",
+        masterKeyPaths: ["/test/nonexistent.mk"],
+        existsSync: () => false,
+        keytar: { getPassword: async () => null },
+        getSwitcherDecryptionKeys: () => [{ key: testKey, source: "safeStorage" }],
+      });
+
+      const keys = await adapter.resolveMasterKeys();
+      expect(keys).toHaveLength(1);
+      expect(keys[0].equals(testKey)).toBe(true);
+    });
   });
 
   describe("Database Connection & PRAGMA Guards", () => {

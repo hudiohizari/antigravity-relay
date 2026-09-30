@@ -313,7 +313,7 @@ export function initTray(
 
   configureTrayIcon(icon, process.platform);
   tray = new Tray(icon);
-  tray.setToolTip("Antigravity Relay");
+  tray.setToolTip("Antigravity Switcher");
 
   tray.on("double-click", () => {
     if (globalMainWindow) {
@@ -500,9 +500,9 @@ export function updateTrayMenu(
     }
   }
 
-  tray.setToolTip(
-    account ? `Antigravity Relay (${account.email})` : "Antigravity Relay",
-  );
+  const emailText = account?.email ? ` (${account.email})` : "";
+  const fullTooltip = `Antigravity Switcher${emailText}`;
+  tray.setToolTip(fullTooltip.slice(0, 120));
 
   const handleTraySwitch = async (target: AntigravityAppTarget | "all") => {
     if (target !== "all" && !isAntigravityTargetInstalled(target)) {

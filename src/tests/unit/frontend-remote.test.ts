@@ -374,7 +374,7 @@ describe("Remote Tethering Frontend Architecture & Components", () => {
 
       it("embeds cross-tab synchronization listener in standalone revocation page", () => {
         const html = generateRevokedHtml();
-        expect(html).toContain('new BroadcastChannel("antigravity-relay")');
+        expect(html).toContain('new BroadcastChannel("antigravity-switcher")');
         expect(html).toContain('ev.data.type === "SESSION_RESTORED"');
         expect(html).toContain('ev.key === "ag_relay_restored_at"');
       });

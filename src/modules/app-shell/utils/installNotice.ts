@@ -115,12 +115,61 @@ function getPathApi(platform: string) {
   return path;
 }
 
-function normalizeWindowsInstallDirName(appName: string) {
-  return appName
+function normalizeWindowsInstallDirNames(appName: string): string[] {
+  const normalizedUnderscore = appName
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .toLowerCase();
+
+  const normalizedHyphen = appName
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+
+  const names = [normalizedUnderscore];
+  if (normalizedHyphen !== normalizedUnderscore) {
+    names.push(normalizedHyphen);
+  }
+
+  if (
+    normalizedUnderscore.includes("switcher") ||
+    normalizedHyphen.includes("switcher")
+  ) {
+    if (!names.includes("antigravity_switcher")) {
+      names.push("antigravity_switcher");
+    }
+    if (!names.includes("antigravity-switcher")) {
+      names.push("antigravity-switcher");
+    }
+  }
+
+  return names;
+}
+
+function normalizeWindowsInstallDirName(appName: string) {
+  return normalizeWindowsInstallDirNames(appName)[0];
+}
+
+export function getExpectedInstallRoots({
+  platform,
+  localAppData,
+  appName,
+}: {
+  platform: string;
+  localAppData?: string | null;
+  appName: string;
+}): string[] {
+  if (platform !== "win32" || !localAppData) {
+    return [];
+  }
+
+  const pathApi = getPathApi(platform);
+  const dirNames = normalizeWindowsInstallDirNames(appName);
+  return dirNames.map((dirName) =>
+    pathApi.resolve(pathApi.join(localAppData, dirName)),
+  );
 }
 
 export function getExpectedInstallRoot({
@@ -132,17 +181,8 @@ export function getExpectedInstallRoot({
   localAppData?: string | null;
   appName: string;
 }) {
-  if (platform !== "win32") {
-    return null;
-  }
-
-  if (!localAppData) {
-    return null;
-  }
-
-  const pathApi = getPathApi(platform);
-  const installDirName = normalizeWindowsInstallDirName(appName);
-  return pathApi.resolve(pathApi.join(localAppData, installDirName));
+  const roots = getExpectedInstallRoots({ platform, localAppData, appName });
+  return roots.length > 0 ? roots[0] : null;
 }
 
 export function isRunningFromExpectedInstallDir({
@@ -162,19 +202,19 @@ export function isRunningFromExpectedInstallDir({
     return true;
   }
 
-  const expectedRoot = getExpectedInstallRoot({
+  const expectedRoots = getExpectedInstallRoots({
     platform,
     localAppData,
     appName,
   });
-  if (!expectedRoot) {
+  if (expectedRoots.length === 0) {
     return true;
   }
 
   const pathApi = getPathApi(platform);
-  const normalizedExecPath = pathApi.resolve(execPath);
+  const normalizedExecPath = pathApi.resolve(execPath).toLowerCase();
 
-  return normalizedExecPath
-    .toLowerCase()
-    .startsWith(expectedRoot.toLowerCase() + pathApi.sep);
+  return expectedRoots.some((expectedRoot) =>
+    normalizedExecPath.startsWith(expectedRoot.toLowerCase() + pathApi.sep),
+  );
 }

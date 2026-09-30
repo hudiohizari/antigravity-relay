@@ -63,6 +63,7 @@ export interface AntigravityManagerImportAdapterOptions {
   safeStorageDecrypt?: (buffer: Buffer) => Buffer | string | null;
   keytar?: KeytarAdapter | null;
   keytarLoader?: () => Promise<KeytarAdapter | null> | (KeytarAdapter | null);
+  getSwitcherDecryptionKeys?: () => Array<{ key: Buffer; source?: string }>;
   getRelayDecryptionKeys?: () => Array<{ key: Buffer; source?: string }>;
   readFile?: (filePath: string) => Buffer;
   existsSync?: (filePath: string) => boolean;
@@ -250,7 +251,9 @@ export class AntigravityManagerImportAdapter {
     this.keytar = options.keytar;
     this.keytarLoader = options.keytarLoader;
     this.getRelayDecryptionKeysFn =
-      options.getRelayDecryptionKeys ?? getDecryptionKeys;
+      options.getSwitcherDecryptionKeys ??
+      options.getRelayDecryptionKeys ??
+      getDecryptionKeys;
     this.readFileFn = options.readFile ?? fs.readFileSync;
     this.existsSyncFn = options.existsSync ?? fs.existsSync;
     this.statSyncFn = options.statSync ?? fs.statSync;

@@ -30,6 +30,8 @@ export function tryDecryptWithChromiumOscrypt(
   }
 
   const services = [
+    "Antigravity Switcher Safe Storage",
+    "Antigravity Switcher Dev Safe Storage",
     "Antigravity Relay Safe Storage",
     "Antigravity Relay Dev Safe Storage",
     "Chromium Safe Storage",

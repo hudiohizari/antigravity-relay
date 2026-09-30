@@ -478,7 +478,7 @@ describe("Path Utilities", () => {
     const idePath = "D:\\Apps\\Antigravity IDE\\Antigravity IDE.exe";
     const managerConfigPath = p.join(
       os.homedir(),
-      ".antigravity-relay",
+      ".antigravity-switcher",
       "gui_config.json",
     );
     let serializedConfig = JSON.stringify({
@@ -526,7 +526,7 @@ describe("Path Utilities", () => {
     );
     const relayConfigPath = p.join(
       os.homedir(),
-      ".antigravity-relay",
+      ".antigravity-switcher",
       "gui_config.json",
     );
 
@@ -568,7 +568,7 @@ describe("Path Utilities", () => {
     );
     const relayConfigPath = p.join(
       os.homedir(),
-      ".antigravity-relay",
+      ".antigravity-switcher",
       "gui_config.json",
     );
 
@@ -1475,7 +1475,19 @@ describe("getAgyCliTokenPaths", () => {
       ),
     ).toBe(false);
 
-    // Genuine Antigravity Relay app must NOT match "cli"
+    // Genuine Antigravity Switcher app (and legacy Relay app) must NOT match "cli"
+    const genuineSwitcherApp = paths.isTargetAntigravityProcessCandidate(
+      {
+        name: "Antigravity Switcher",
+        commandLine:
+          "/Applications/Antigravity Switcher.app/Contents/MacOS/Antigravity Switcher",
+        executablePath:
+          "/Applications/Antigravity Switcher.app/Contents/MacOS/Antigravity Switcher",
+      },
+      "cli",
+    );
+    expect(genuineSwitcherApp).toBe(false);
+
     const genuineRelayApp = paths.isTargetAntigravityProcessCandidate(
       {
         name: "Antigravity Relay",
@@ -1524,7 +1536,7 @@ describe("getAgyCliTokenPaths", () => {
     const cliPath = "/usr/local/bin/custom-agy";
     const agentConfigPath = p.join(
       os.homedir(),
-      ".antigravity-relay",
+      ".antigravity-switcher",
       "gui_config.json",
     );
 
@@ -1556,7 +1568,7 @@ describe("getAgyCliTokenPaths", () => {
     const defaultLocalPath = p.join(os.homedir(), ".local", "bin", "agy");
     const agentConfigPath = p.join(
       os.homedir(),
-      ".antigravity-relay",
+      ".antigravity-switcher",
       "gui_config.json",
     );
 

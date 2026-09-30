@@ -170,7 +170,7 @@ describe("legacy master-key providers", () => {
         if (match) {
           probedServices.push(match[1]);
         }
-        if (cmd.includes('"Antigravity Relay Safe Storage"')) {
+        if (cmd.includes('"Antigravity Switcher Safe Storage"')) {
           return `${password}\n`;
         }
         throw new Error("Item not found");
@@ -179,7 +179,7 @@ describe("legacy master-key providers", () => {
     try {
       const decrypted = tryDecryptWithChromiumOscrypt(encryptedPayload);
       expect(decrypted?.toString("hex")).toBe(rawKeyHex);
-      expect(probedServices).toEqual(["Antigravity Relay Safe Storage"]);
+      expect(probedServices).toEqual(["Antigravity Switcher Safe Storage"]);
     } finally {
       execSyncSpy.mockRestore();
     }
@@ -220,7 +220,7 @@ describe("legacy master-key providers", () => {
         if (match) {
           probedServices.push(match[1]);
         }
-        if (cmd.includes('"Antigravity Relay Dev Safe Storage"')) {
+        if (cmd.includes('"Antigravity Switcher Dev Safe Storage"')) {
           return `${password}\n`;
         }
         throw new Error("Item not found");
@@ -230,8 +230,8 @@ describe("legacy master-key providers", () => {
       const decrypted = tryDecryptWithChromiumOscrypt(encryptedPayload);
       expect(decrypted?.toString("hex")).toBe(rawKeyHex);
       expect(probedServices).toEqual([
-        "Antigravity Relay Safe Storage",
-        "Antigravity Relay Dev Safe Storage",
+        "Antigravity Switcher Safe Storage",
+        "Antigravity Switcher Dev Safe Storage",
       ]);
     } finally {
       execSyncSpy.mockRestore();
@@ -283,6 +283,8 @@ describe("legacy master-key providers", () => {
       const decrypted = tryDecryptWithChromiumOscrypt(encryptedPayload);
       expect(decrypted?.toString("hex")).toBe(rawKeyHex);
       expect(probedServices).toEqual([
+        "Antigravity Switcher Safe Storage",
+        "Antigravity Switcher Dev Safe Storage",
         "Antigravity Relay Safe Storage",
         "Antigravity Relay Dev Safe Storage",
         "Chromium Safe Storage",

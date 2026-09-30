@@ -31,7 +31,11 @@ import {
   isUpstreamCsrfError,
 } from "@/modules/relay/relay-server";
 import { PortDiscoveryService } from "@/modules/relay/port-discovery";
-import { MockUpstreamServer, TEST_TLS_KEY, TEST_TLS_CERT } from "../helpers/mock-upstream";
+import {
+  MockUpstreamServer,
+  TEST_TLS_KEY,
+  TEST_TLS_CERT,
+} from "../helpers/mock-upstream";
 import { AuthRateLimiter } from "@/modules/relay/relay-auth";
 
 describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
@@ -183,11 +187,11 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
 
     it("generatePairingHtml and generateRevokedHtml render with both languages and error blocks", () => {
       const pairingEn = generatePairingHtml("Test Error", "en");
-      expect(pairingEn).toContain("Pairing Required");
+      expect(pairingEn).toContain("Remote Pairing");
       expect(pairingEn).toContain("Test Error");
 
       const pairingId = generatePairingHtml(undefined, "id");
-      expect(pairingId).toContain("Pemasangan Diperlukan");
+      expect(pairingId).toContain("Pemasangan Perangkat Diperlukan");
       expect(pairingId).not.toContain("Test Error");
 
       const revokedEn = generateRevokedHtml("Revoke Err", "en");
@@ -221,8 +225,8 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
 
       const manifestStr = getManifestJson();
       const manifest = JSON.parse(manifestStr);
-      expect(manifest.name).toBe("Antigravity Relay");
-      expect(manifest.short_name).toBe("Antigravity");
+      expect(manifest.name).toBe("Antigravity Switcher - Remote Relay");
+      expect(manifest.short_name).toBe("Switcher Remote");
       expect(manifest.icons.length).toBeGreaterThan(0);
     });
   });
@@ -343,7 +347,7 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       const html = await res.text();
       expect(html).toContain('head class="theme-dark"');
       expect(html).toContain('<meta name="apple-mobile-web-app-capable"');
-      expect(html).toContain('id="antigravity-relay-autoreload"');
+      expect(html).toContain('id="antigravity-switcher-autoreload"');
     });
 
     it("injects autoreload script before </head> when no <body> exists", async () => {
@@ -354,7 +358,7 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       const res = await fetch(`http://127.0.0.1:${relayPort}/`);
       expect(res.status).toBe(200);
       const html = await res.text();
-      expect(html).toContain('id="antigravity-relay-autoreload"');
+      expect(html).toContain('id="antigravity-switcher-autoreload"');
       expect(html).toContain("</head>");
     });
 
@@ -365,7 +369,7 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(html).toContain("<div>Plain Fragment</div>");
-      expect(html).toContain('id="antigravity-relay-autoreload"');
+      expect(html).toContain('id="antigravity-switcher-autoreload"');
     });
   });
 
@@ -612,7 +616,8 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
     it("prunes retired pairing keys beyond TTL limit", () => {
       const serverAny = relayServer as any;
       const oldKey = "stale-retired-key-1";
-      const expiredTimestamp = Date.now() - (RelayServer.RETIRED_KEY_TTL_MS + 60000);
+      const expiredTimestamp =
+        Date.now() - (RelayServer.RETIRED_KEY_TTL_MS + 60000);
       serverAny.retiredPairingKeys.set(oldKey, expiredTimestamp);
       serverAny.retiredKeyRecords.set(oldKey, {
         retiredAt: expiredTimestamp,
@@ -654,7 +659,7 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
         "application/manifest+json",
       );
       const json = (await res.json()) as any;
-      expect(json.name).toBe("Antigravity Relay");
+      expect(json.name).toBe("Antigravity Switcher - Remote Relay");
     });
 
     it("revokes active WebSocket connection with SESSION_REVOKED frame on device revocation", async () => {
@@ -1272,10 +1277,15 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
     });
 
     it("aborts csrf probe on timeout in refreshCsrfToken", async () => {
-      const hangServer = https.createServer({ key: TEST_TLS_KEY, cert: TEST_TLS_CERT }, (_req, _res) => {
-        // Deliberately never respond
-      });
-      await new Promise<void>((resolve) => hangServer.listen(0, "127.0.0.1", resolve));
+      const hangServer = https.createServer(
+        { key: TEST_TLS_KEY, cert: TEST_TLS_CERT },
+        (_req, _res) => {
+          // Deliberately never respond
+        },
+      );
+      await new Promise<void>((resolve) =>
+        hangServer.listen(0, "127.0.0.1", resolve),
+      );
       const hangPort = (hangServer.address() as any).port;
 
       const origTimeout = (RelayServer as any).CSRF_PROBE_TIMEOUT_MS;
@@ -1297,12 +1307,14 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
 
     it("handles pruneRetiredPairingKeys while loop break condition when next value is undefined", () => {
       const serverAny = relayServer as any;
-      const mapSpy = vi.spyOn(serverAny.retiredPairingKeys, "keys").mockReturnValue({
-        next: () => ({ value: undefined, done: true }),
-        [Symbol.iterator]: function () {
-          return this;
-        },
-      } as any);
+      const mapSpy = vi
+        .spyOn(serverAny.retiredPairingKeys, "keys")
+        .mockReturnValue({
+          next: () => ({ value: undefined, done: true }),
+          [Symbol.iterator]: function () {
+            return this;
+          },
+        } as any);
       Object.defineProperty(serverAny.retiredPairingKeys, "size", {
         value: 2000,
         configurable: true,
@@ -1339,10 +1351,12 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       const retiredKey = "retired-key-direct-branch";
       serverAny.retiredPairingKeys.set(retiredKey, Date.now());
       let hasCall = 0;
-      const spy = vi.spyOn(serverAny.retiredPairingKeys, "has").mockImplementation(() => {
-        hasCall++;
-        return hasCall === 2;
-      });
+      const spy = vi
+        .spyOn(serverAny.retiredPairingKeys, "has")
+        .mockImplementation(() => {
+          hasCall++;
+          return hasCall === 2;
+        });
       const result = relayServer.consumePairingKey(retiredKey);
       expect(result.success).toBe(false);
       expect(result.reason).toBe("consumed");
@@ -1380,7 +1394,11 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       };
       const connectingPair = {
         clientWs: fakeConnectingWs as any,
-        upstreamWs: { readyState: WebSocket.CONNECTING, close: vi.fn(), terminate: vi.fn() } as any,
+        upstreamWs: {
+          readyState: WebSocket.CONNECTING,
+          close: vi.fn(),
+          terminate: vi.fn(),
+        } as any,
         sessionId: "connecting-ws-session-edge",
         deviceId: devId,
       };
@@ -1393,7 +1411,10 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       expect(revoked).toBe(true);
       expect(fakeClientWs.send).toHaveBeenCalled();
       expect(fakeClientWs.close).toHaveBeenCalledWith(4401, "Session revoked");
-      expect(fakeUpstreamWs.close).toHaveBeenCalledWith(4401, "Session revoked");
+      expect(fakeUpstreamWs.close).toHaveBeenCalledWith(
+        4401,
+        "Session revoked",
+      );
       expect(fakeConnectingWs.send).toHaveBeenCalled();
       expect(serverAny.activeWsConnections.has(pair)).toBe(false);
       expect(serverAny.activeWsConnections.has(connectingPair)).toBe(false);
@@ -1502,7 +1523,9 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
         headers: { "content-type": "application/octet-stream" },
       });
       expect(resInvalid.statusCode).toBe(400);
-      expect(JSON.parse(resInvalid.body).error).toBe("Missing required field: sessionId");
+      expect(JSON.parse(resInvalid.body).error).toBe(
+        "Missing required field: sessionId",
+      );
     });
 
     it("handles accept-language header when provided as an array in proxy handler", async () => {
@@ -1548,15 +1571,15 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       });
       expect(res.statusCode).toBe(200);
 
-      const sessionAfter = noPairServer.getSessionManager().getSession(existing.sessionId);
+      const sessionAfter = noPairServer
+        .getSessionManager()
+        .getSession(existing.sessionId);
       expect(sessionAfter?.deviceId).toBeDefined();
 
       await noPairServer.stop();
       noPairServer.dispose();
       dummyDiscovery.dispose();
     });
-
-
 
     it("handles rate-limit errors in fetch catch block with AutoSwitchService", async () => {
       const app = relayServer.getApp()!;
@@ -1569,7 +1592,9 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       const rateLimitErr = new Error("429 resource_exhausted: quota exceeded");
       (rateLimitErr as any).statusCode = 429;
 
-      const origDispatch = serverAny.upstreamDispatcher.dispatch.bind(serverAny.upstreamDispatcher);
+      const origDispatch = serverAny.upstreamDispatcher.dispatch.bind(
+        serverAny.upstreamDispatcher,
+      );
 
       // 1. AutoSwitch succeeds with next account -> 503 Retry-After 3
       serverAny.upstreamDispatcher.dispatch = (_opts: any, handler: any) => {
@@ -1577,11 +1602,13 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
         return true;
       };
 
-      const switchSpy = vi.spyOn(AutoSwitchService, "triggerRateLimitSwitch").mockResolvedValue({
-        switched: true,
-        nextAccount: { email: "next-user@gmail.com" } as any,
-        noAccountLeft: false,
-      });
+      const switchSpy = vi
+        .spyOn(AutoSwitchService, "triggerRateLimitSwitch")
+        .mockResolvedValue({
+          switched: true,
+          nextAccount: { email: "next-user@gmail.com" } as any,
+          noAccountLeft: false,
+        });
 
       const res1 = await app.inject({
         method: "POST",
@@ -1620,10 +1647,12 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
         return true;
       };
       let restartCheckCount = 0;
-      const restartSpy = vi.spyOn(portDiscovery, "isRestarting").mockImplementation(() => {
-        restartCheckCount++;
-        return restartCheckCount > 2;
-      });
+      const restartSpy = vi
+        .spyOn(portDiscovery, "isRestarting")
+        .mockImplementation(() => {
+          restartCheckCount++;
+          return restartCheckCount > 2;
+        });
 
       const res3 = await app.inject({
         method: "POST",
@@ -1658,7 +1687,10 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
 
     it("suppresses wss close and app close errors in stop()", async () => {
       const dummyDiscovery = new PortDiscoveryService();
-      const server = new RelayServer({ portDiscovery: dummyDiscovery, config: { port: 0 } });
+      const server = new RelayServer({
+        portDiscovery: dummyDiscovery,
+        config: { port: 0 },
+      });
       await server.start();
       const serverAny = server as any;
       serverAny.wss = {
@@ -1689,7 +1721,9 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
           throw new Error("socket.send broke");
         },
       };
-      relayServer.getSessionManager().bindSocket(session.sessionId, failingSocket as any);
+      relayServer
+        .getSessionManager()
+        .bindSocket(session.sessionId, failingSocket as any);
 
       expect(() =>
         relayServer.broadcastToClients({
@@ -1745,7 +1779,11 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       for (let i = 0; i < 6; i++) {
         pairServer.getRateLimiter().recordFailure(rlKey1);
       }
-      const ws1 = { readyState: WebSocket.OPEN, close: vi.fn(), on: vi.fn() } as any;
+      const ws1 = {
+        readyState: WebSocket.OPEN,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as any;
       const req1 = {
         url: "/connect-websocket?pair=foo",
         headers: { "user-agent": "test", cookie: `ag_device_id=${dev1}` },
@@ -1757,7 +1795,11 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       // 2. Revoked device, invalid pairing key
       const dev2 = "dev-ws-rev-invalid";
       pairServer.getSessionManager().revokeDevice(dev2);
-      const ws2 = { readyState: WebSocket.OPEN, close: vi.fn(), on: vi.fn() } as any;
+      const ws2 = {
+        readyState: WebSocket.OPEN,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as any;
       const req2 = {
         url: "/connect-websocket?pair=wrong-key",
         headers: { "user-agent": "test", cookie: `ag_device_id=${dev2}` },
@@ -1769,7 +1811,11 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       // 3. Revoked device, no pairing key
       const dev3 = "dev-ws-rev-none";
       pairServer.getSessionManager().revokeDevice(dev3);
-      const ws3 = { readyState: WebSocket.OPEN, close: vi.fn(), on: vi.fn() } as any;
+      const ws3 = {
+        readyState: WebSocket.OPEN,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as any;
       const req3 = {
         url: "/connect-websocket",
         headers: { "user-agent": "test", cookie: `ag_device_id=${dev3}` },
@@ -1782,7 +1828,11 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       const dev4 = "dev-ws-rev-valid";
       pairServer.getSessionManager().revokeDevice(dev4);
       const validKey = pairServer.getPairingKey();
-      const ws4 = { readyState: WebSocket.OPEN, close: vi.fn(), on: vi.fn() } as any;
+      const ws4 = {
+        readyState: WebSocket.OPEN,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as any;
       const req4 = {
         url: `/connect-websocket?pair=${validKey}`,
         headers: { "user-agent": "test", cookie: `ag_device_id=${dev4}` },
@@ -1797,7 +1847,11 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       for (let i = 0; i < 6; i++) {
         pairServer.getRateLimiter().recordFailure(rlKey5);
       }
-      const ws5 = { readyState: WebSocket.OPEN, close: vi.fn(), on: vi.fn() } as any;
+      const ws5 = {
+        readyState: WebSocket.OPEN,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as any;
       const req5 = {
         url: "/connect-websocket?pair=any-key",
         headers: { "user-agent": "test", cookie: `ag_device_id=${dev5}` },
@@ -1808,27 +1862,46 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
 
       // 6. Fresh connection invalid pairing key records failure
       const dev6 = "dev-fresh-ws-bad-key";
-      const ws6 = { readyState: WebSocket.OPEN, close: vi.fn(), on: vi.fn() } as any;
+      const ws6 = {
+        readyState: WebSocket.OPEN,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as any;
       const req6 = {
         url: "/connect-websocket?pair=bad-key-123",
         headers: { "user-agent": "test", cookie: `ag_device_id=${dev6}` },
         socket: { remoteAddress: "127.0.0.1" },
       } as any;
       serverAny.bridgeWebSocket(ws6, req6, upstreamPort);
-      expect(ws6.close).toHaveBeenCalledWith(4401, "Unauthorized: Pairing key required");
+      expect(ws6.close).toHaveBeenCalledWith(
+        4401,
+        "Unauthorized: Pairing key required",
+      );
 
       // 7. Non-pairing mode where session creation failed
-      const noPairServer = new RelayServer({ config: { requirePairing: false }, portDiscovery: dummyDiscovery });
-      const origCreate = noPairServer.getSessionManager().createSession.bind(noPairServer.getSessionManager());
+      const noPairServer = new RelayServer({
+        config: { requirePairing: false },
+        portDiscovery: dummyDiscovery,
+      });
+      const origCreate = noPairServer
+        .getSessionManager()
+        .createSession.bind(noPairServer.getSessionManager());
       (noPairServer.getSessionManager() as any).createSession = () => undefined;
-      const ws7 = { readyState: WebSocket.OPEN, close: vi.fn(), on: vi.fn() } as any;
+      const ws7 = {
+        readyState: WebSocket.OPEN,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as any;
       const req7 = {
         url: "/connect-websocket",
         headers: { "user-agent": "test" },
         socket: { remoteAddress: "127.0.0.1" },
       } as any;
       (noPairServer as any).bridgeWebSocket(ws7, req7, upstreamPort);
-      expect(ws7.close).toHaveBeenCalledWith(1008, "Session initialization failed");
+      expect(ws7.close).toHaveBeenCalledWith(
+        1008,
+        "Session initialization failed",
+      );
       (noPairServer.getSessionManager() as any).createSession = origCreate;
       noPairServer.dispose();
 
@@ -1837,21 +1910,34 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
         clientIp: "127.0.0.1",
         token: "ws-attach-token",
       });
-      const ws8 = { readyState: WebSocket.OPEN, close: vi.fn(), on: vi.fn() } as any;
+      const ws8 = {
+        readyState: WebSocket.OPEN,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as any;
       const req8 = {
         url: "/connect-websocket?token=ws-attach-token",
-        headers: { "user-agent": "test", cookie: "ag_device_id=dev_upgraded_ws" },
+        headers: {
+          "user-agent": "test",
+          cookie: "ag_device_id=dev_upgraded_ws",
+        },
         socket: { remoteAddress: "127.0.0.1" },
       } as any;
       serverAny.bridgeWebSocket(ws8, req8, upstreamPort);
-      expect(pairServer.getSessionManager().getSession(session.sessionId)?.deviceId).toBe("dev_upgraded_ws");
+      expect(
+        pairServer.getSessionManager().getSession(session.sessionId)?.deviceId,
+      ).toBe("dev_upgraded_ws");
 
       // 9. Forward headers with array values
       const session9 = pairServer.getSessionManager().createSession({
         clientIp: "127.0.0.1",
         deviceId: "dev_ws_array_hdr",
       });
-      const ws9 = { readyState: WebSocket.OPEN, close: vi.fn(), on: vi.fn() } as any;
+      const ws9 = {
+        readyState: WebSocket.OPEN,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as any;
       const req9 = {
         url: "/connect-websocket",
         headers: {
@@ -1905,7 +1991,9 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       expect(pair).toBeDefined();
 
       // 1. Queue message while upstreamWs is still CONNECTING
-      expect(() => clientOnMessage(Buffer.from("queued msg"), false)).not.toThrow();
+      expect(() =>
+        clientOnMessage(Buffer.from("queued msg"), false),
+      ).not.toThrow();
 
       // 2. Upstream open fires and flushes pendingMessages; upstreamWs.send throws -> caught at line 3563
       pair.upstreamWs.send = vi.fn().mockImplementation(() => {
@@ -1914,11 +2002,22 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       pair.upstreamWs.emit("open");
 
       // 3. Mark upstreamWs as OPEN; client sends message; upstreamWs.send throws -> caught at line 3575
-      Object.defineProperty(pair.upstreamWs, "readyState", { value: WebSocket.OPEN, configurable: true });
-      expect(() => clientOnMessage(Buffer.from("direct msg"), false)).not.toThrow();
+      Object.defineProperty(pair.upstreamWs, "readyState", {
+        value: WebSocket.OPEN,
+        configurable: true,
+      });
+      expect(() =>
+        clientOnMessage(Buffer.from("direct msg"), false),
+      ).not.toThrow();
 
       // 4. Trigger upstreamWs message when clientWs send throws
-      expect(() => pair.upstreamWs.emit("message", Buffer.from("upstream test msg"), false)).not.toThrow();
+      expect(() =>
+        pair.upstreamWs.emit(
+          "message",
+          Buffer.from("upstream test msg"),
+          false,
+        ),
+      ).not.toThrow();
     });
 
     it("buffers streaming mutation body when under 10MB limit and forwards content-length", async () => {
@@ -1927,7 +2026,10 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
         clientIp: "127.0.0.1",
         deviceId: "dev_stream_mutation",
       });
-      const streamPayload = Readable.from([Buffer.from("part1-"), Buffer.from("part2")]);
+      const streamPayload = Readable.from([
+        Buffer.from("part1-"),
+        Buffer.from("part2"),
+      ]);
       const res = await app.inject({
         method: "POST",
         url: "/api/chat",
@@ -1982,9 +2084,9 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
         clientIp: "127.0.0.1",
         deviceId: "dev_429_crash",
       });
-      const switchSpy = vi.spyOn(AutoSwitchService, "triggerRateLimitSwitch").mockRejectedValueOnce(
-        new Error("switch crash"),
-      );
+      const switchSpy = vi
+        .spyOn(AutoSwitchService, "triggerRateLimitSwitch")
+        .mockRejectedValueOnce(new Error("switch crash"));
 
       const res = await app.inject({
         method: "GET",
@@ -2004,7 +2106,9 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
         disconnect: vi.fn(),
         dispose: vi.fn(),
         send: vi.fn(),
-        getStatus: vi.fn().mockReturnValue({ isConnected: false, isBuffering: false }),
+        getStatus: vi
+          .fn()
+          .mockReturnValue({ isConnected: false, isBuffering: false }),
         isBuffering: vi.fn().mockReturnValue(false),
         onBufferingAlert: vi.fn().mockReturnValue(() => {}),
         onSwapResumed: vi.fn().mockReturnValue(() => {}),
@@ -2029,7 +2133,10 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
 
     it("setupWebSocketUpgradeHandler returns early if app or server is missing", () => {
       const dummyDiscovery = new PortDiscoveryService();
-      const server = new RelayServer({ portDiscovery: dummyDiscovery, config: { port: 0 } });
+      const server = new RelayServer({
+        portDiscovery: dummyDiscovery,
+        config: { port: 0 },
+      });
       const serverAny = server as any;
       serverAny.app = null;
       expect(() => serverAny.setupWebSocketUpgradeHandler()).not.toThrow();
@@ -2042,7 +2149,9 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
     it("reconnects custom upstream bridge in handlePortChanged", () => {
       const serverAny = relayServer as any;
       serverAny.hasCustomUpstreamBridge = true;
-      const reconnectSpy = vi.spyOn(serverAny.upstreamBridge, "reconnectAndFlush").mockResolvedValue(undefined as any);
+      const reconnectSpy = vi
+        .spyOn(serverAny.upstreamBridge, "reconnectAndFlush")
+        .mockResolvedValue(undefined as any);
 
       serverAny.handlePortChanged(upstreamPort, 58999);
       expect(reconnectSpy).toHaveBeenCalled();
@@ -2054,7 +2163,9 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
       const serverAny = relayServer as any;
       const broadcastSpy = vi.spyOn(relayServer, "broadcastToClients");
 
-      serverAny.upstreamBridge.messageListeners.forEach((fn: any) => fn("plain string token"));
+      serverAny.upstreamBridge.messageListeners.forEach((fn: any) =>
+        fn("plain string token"),
+      );
       expect(broadcastSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "AGENT_OUTPUT",
@@ -2089,9 +2200,16 @@ describe("RelayServer Exhaustive Edge Cases & 100% Coverage Suite", () => {
         destroy: vi.fn(),
       };
       expect(() =>
-        mockAny.server.emit("upgrade", { url: undefined, headers: {} }, fakeSocket, Buffer.alloc(0)),
+        mockAny.server.emit(
+          "upgrade",
+          { url: undefined, headers: {} },
+          fakeSocket,
+          Buffer.alloc(0),
+        ),
       ).not.toThrow();
-      expect(fakeSocket.write).toHaveBeenCalledWith(expect.stringContaining("404 Not Found"));
+      expect(fakeSocket.write).toHaveBeenCalledWith(
+        expect.stringContaining("404 Not Found"),
+      );
       expect(fakeSocket.destroy).toHaveBeenCalled();
     });
   });

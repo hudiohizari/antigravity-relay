@@ -466,7 +466,10 @@ export function isTargetAntigravityProcessCandidate(
   if (
     nameLower.includes("relay") ||
     cmdLower.includes("relay") ||
-    cmdLower.includes("antigravity-relay")
+    cmdLower.includes("antigravity-relay") ||
+    nameLower.includes("switcher") ||
+    cmdLower.includes("switcher") ||
+    cmdLower.includes("antigravity-switcher")
   ) {
     return false;
   }
@@ -493,6 +496,8 @@ export function isTargetAntigravityProcessCandidate(
     !isIde &&
     !nameLower.includes("manager") &&
     !cmdLower.includes("manager") &&
+    !nameLower.includes("switcher") &&
+    !cmdLower.includes("switcher") &&
     !nameLower.includes("tools") &&
     !cmdLower.includes("tools")
   );
@@ -1200,10 +1205,108 @@ export function getAppDataDir(
   }
 }
 
+export const MIGRATION_SENTINEL_FILENAME = ".migration_complete";
+
+/**
+ * Synchronously migrates user storage directory from ~/.antigravity-relay to ~/.antigravity-switcher.
+ * Copies all files recursively including SQLite WAL/SHM files and marks with .migration_complete.
+ */
+export function ensureStorageMigrated(options?: PathResolutionOptions): void {
+  const pathApi = getCurrentPlatformPathApi(options);
+  const home = os.homedir();
+  const targetDir = pathApi.join(home, ".antigravity-switcher");
+  const legacyDir = pathApi.join(home, ".antigravity-relay");
+  const sentinelPath = pathApi.join(targetDir, MIGRATION_SENTINEL_FILENAME);
+  const accountsFile = pathApi.join(targetDir, "antigravity_accounts.json");
+
+  if (fs.existsSync(sentinelPath) || fs.existsSync(accountsFile)) {
+    return;
+  }
+
+  if (fs.existsSync(legacyDir)) {
+    try {
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      fs.cpSync(legacyDir, targetDir, {
+        recursive: true,
+        errorOnExist: false,
+        preserveTimestamps: true,
+      });
+
+      fs.writeFileSync(sentinelPath, new Date().toISOString(), "utf8");
+      console.info("[telemetry] legacy_storage_migrated", {
+        event: "legacy_storage_migrated",
+        status: "success",
+        source: legacyDir,
+        target: targetDir,
+      });
+    } catch (err) {
+      console.warn("ensureStorageMigrated: Warning during legacy directory migration:", err);
+    }
+    return;
+  }
+
+  try {
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    fs.writeFileSync(sentinelPath, new Date().toISOString(), "utf8");
+  } catch (err) {
+    console.warn("ensureStorageMigrated: Warning creating initial storage directory:", err);
+  }
+}
+
+/**
+ * Synchronously migrates master-key material from legacy Electron userData dir to new userData dir.
+ */
+export function ensureUserDataKeyMaterialMigrated(
+  appDataPath: string,
+  newUserDataPath: string,
+): void {
+  try {
+    const legacyUserDataPath = path.join(appDataPath, "Antigravity Relay");
+    if (!fs.existsSync(legacyUserDataPath)) {
+      return;
+    }
+
+    if (!fs.existsSync(newUserDataPath)) {
+      fs.mkdirSync(newUserDataPath, { recursive: true });
+    }
+
+    const keyFiles = [
+      "master-key.v2.safe",
+      "master-key.v2.file",
+      ".mk",
+    ];
+
+    let migratedCount = 0;
+    for (const keyFile of keyFiles) {
+      const srcFile = path.join(legacyUserDataPath, keyFile);
+      const destFile = path.join(newUserDataPath, keyFile);
+      if (fs.existsSync(srcFile) && !fs.existsSync(destFile)) {
+        fs.copyFileSync(srcFile, destFile);
+        migratedCount++;
+      }
+    }
+
+    if (migratedCount > 0) {
+      console.info("[telemetry] legacy_user_data_migrated", {
+        event: "legacy_user_data_migrated",
+        status: "success",
+        count: migratedCount,
+      });
+    }
+  } catch (err) {
+    console.warn("ensureUserDataKeyMaterialMigrated: Warning during userData key migration:", err);
+  }
+}
+
 export function getAgentDir(options?: PathResolutionOptions): string {
   return getCurrentPlatformPathApi(options).join(
     os.homedir(),
-    ".antigravity-relay",
+    ".antigravity-switcher",
   );
 }
 

@@ -304,9 +304,9 @@ export function getIcon512Buffer(forceReload = false): Buffer | null {
 export function getManifestJson(): string {
   return JSON.stringify(
     {
-      name: "Antigravity Relay",
-      short_name: "Antigravity",
-      description: "Antigravity Remote Web Relay",
+      name: "Antigravity Switcher - Remote Relay",
+      short_name: "Switcher Remote",
+      description: "Antigravity Switcher Remote Web Relay",
       start_url: "/",
       scope: "/",
       display: "standalone",
@@ -388,7 +388,7 @@ export function generateAutoReloadScript(
   upstreamPort: number | null,
   upstreamEpoch: number,
 ): string {
-  return `<script id="antigravity-relay-autoreload">
+  return `<script id="antigravity-switcher-autoreload">
 (function() {
   if (window.__antigravityRelayAutoReloadInjected) return;
   window.__antigravityRelayAutoReloadInjected = true;
@@ -410,7 +410,7 @@ export function generateAutoReloadScript(
   var initialEpoch = ${upstreamEpoch};
   var reloading = false;
   var reloadingStartedAt = 0;
-  var RELAY_CHANNEL = "antigravity-relay";
+  var RELAY_CHANNEL = "antigravity-switcher";
 
   function hardNavigateWithCacheBuster() {
     reloading = false;
@@ -1311,16 +1311,16 @@ export function generatePairingHtml(
 
   const title =
     lang === "id"
-      ? "Antigravity Relay - Pemasangan Diperlukan"
-      : "Antigravity Relay - Pairing Required";
+      ? "Antigravity Switcher - Pemasangan Jarak Jauh"
+      : "Antigravity Switcher - Remote Pairing";
   const heading =
     lang === "id"
       ? "Pemasangan Perangkat Diperlukan"
       : "Device Pairing Required";
   const desc =
     lang === "id"
-      ? "Untuk mengakses Antigravity Relay, masukkan kunci pemasangan dari dashboard desktop Anda."
-      : "To access Antigravity Relay, enter the pairing key from your desktop dashboard.";
+      ? "Untuk mengakses Remote Relay Antigravity Switcher, masukkan kunci pemasangan dari dashboard desktop Anda."
+      : "To access Remote Relay in Antigravity Switcher, enter the pairing key from your desktop dashboard.";
   const label = lang === "id" ? "Kunci Pemasangan" : "Pairing Key";
   const placeholder =
     lang === "id" ? "Masukkan kunci pemasangan..." : "Enter pairing key...";
@@ -1444,8 +1444,8 @@ export function generateRevokedHtml(
 
   const title =
     lang === "id"
-      ? "Sesi Dicabut - Antigravity Relay"
-      : "Session Revoked - Antigravity Relay";
+      ? "Sesi Dicabut - Antigravity Switcher"
+      : "Session Revoked - Antigravity Switcher";
   const badgeText =
     lang === "id" ? "Terputus oleh Host" : "Disconnected by Host";
   const heading =
@@ -1663,7 +1663,7 @@ export function generateRevokedHtml(
       // Sibling tab sync
       if (typeof window.BroadcastChannel !== "undefined") {
         try {
-          var bc = new BroadcastChannel("antigravity-relay");
+          var bc = new BroadcastChannel("antigravity-switcher");
           bc.onmessage = function(ev) {
             if (ev && ev.data && (ev.data.type === "SESSION_RESTORED" || ev.data.type === "AUTH_RESTORED")) {
               window.location.reload();
@@ -2636,7 +2636,7 @@ export class RelayServer {
 
           return reply.status(401).send({
             error: "unauthorized",
-            message: "Pairing key required to access Antigravity Relay",
+            message: "Pairing key required to access Remote Relay",
           });
         }
 
@@ -2927,7 +2927,7 @@ export class RelayServer {
               );
             }
 
-            if (!rawHtml.includes('id="antigravity-relay-autoreload"')) {
+            if (!rawHtml.includes('id="antigravity-switcher-autoreload"')) {
               const injectedScript = generateAutoReloadScript(
                 port,
                 this.upstreamEpoch,

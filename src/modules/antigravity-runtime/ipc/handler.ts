@@ -411,10 +411,16 @@ async function hasClosableTargetProcess(
     const commandLine = candidate.commandLine;
     const isAgyBinary = isAgyProcessCandidate(candidate);
 
+    const isSelfCandidate =
+      commandLine.includes("Antigravity Relay") ||
+      commandLine.includes("antigravity-relay") ||
+      commandLine.includes("Antigravity Switcher") ||
+      commandLine.includes("antigravity-switcher") ||
+      candidate.name.toLowerCase().includes("switcher");
+
     if (
       !(resolvedTarget === "cli" && isAgyBinary) &&
-      (commandLine.includes("Antigravity Relay") ||
-        commandLine.includes("antigravity-relay"))
+      isSelfCandidate
     ) {
       return false;
     }
@@ -438,10 +444,16 @@ async function findClosableTargetProcesses(
     if (processInfo.pid === process.pid) {
       return false;
     }
+    const isSelfCandidate =
+      commandLine.includes("Antigravity Relay") ||
+      commandLine.includes("antigravity-relay") ||
+      commandLine.includes("Antigravity Switcher") ||
+      commandLine.includes("antigravity-switcher") ||
+      candidate.name.toLowerCase().includes("switcher");
+
     if (
       !(resolvedTarget === "cli" && isAgyBinary) &&
-      (commandLine.includes("Antigravity Relay") ||
-        commandLine.includes("antigravity-relay"))
+      isSelfCandidate
     ) {
       return false;
     }
@@ -479,14 +491,17 @@ export async function isProcessRunning(
       const processName = candidate.name.toLowerCase();
       const commandLine = candidate.commandLine.toLowerCase();
 
-      // Skip relay process for non-CLI targets (or when candidate is target candidate)
-      const isRelayCandidate =
+      // Skip relay or switcher process for non-CLI targets (or when candidate is target candidate)
+      const isSelfCandidate =
         processName.includes("relay") ||
         commandLine.includes("relay") ||
-        commandLine.includes("antigravity-relay");
+        commandLine.includes("antigravity-relay") ||
+        processName.includes("switcher") ||
+        commandLine.includes("switcher") ||
+        commandLine.includes("antigravity-switcher");
 
       if (
-        isRelayCandidate &&
+        isSelfCandidate &&
         resolvedTarget !== "cli" &&
         !isTargetAntigravityProcessCandidate(candidate, target)
       ) {

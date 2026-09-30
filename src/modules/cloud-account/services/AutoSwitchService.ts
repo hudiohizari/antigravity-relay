@@ -112,7 +112,7 @@ export class AutoSwitchService {
 
     try {
       new Notification({
-        title: "Antigravity Relay: All Accounts Rate-Limited",
+        title: "Antigravity Switcher: All Accounts Rate-Limited",
         body:
           customBody ??
           "All Google Antigravity accounts are rate-limited or depleted. Please wait for quota reset or add another account.",
@@ -492,7 +492,7 @@ export class AutoSwitchService {
 
         try {
           new Notification({
-            title: "Antigravity Relay: Auto-Switch",
+            title: "Antigravity Switcher: Auto-Switch",
             body: `Switched account to ${nextAccount.email} (5h Quota: ${quotaPct}%) due to rate limit.`,
           }).show();
         } catch (err) {
@@ -663,7 +663,7 @@ export class AutoSwitchService {
 
         try {
           new Notification({
-            title: "Antigravity Relay: Auto-Switch",
+            title: "Antigravity Switcher: Auto-Switch",
             body: `Switched account to ${nextAccount.email} (5h Quota: ${quotaPct}%) due to quota limit. Reopen IDE and type "continue" if needed!`,
           }).show();
         } catch (err) {

@@ -183,8 +183,8 @@ describe("RelayServer Reverse Proxy Mirror", () => {
         );
         expect(res.headers.get("cache-control")).toBe("public, max-age=86400");
         const json = await res.json();
-        expect(json.name).toBe("Antigravity Relay");
-        expect(json.short_name).toBe("Antigravity");
+        expect(json.name).toBe("Antigravity Switcher - Remote Relay");
+        expect(json.short_name).toBe("Switcher Remote");
         expect(json.start_url).toBe("/");
         expect(json.display).toBe("standalone");
         expect(json.background_color).toBe("#090d16");
@@ -542,7 +542,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
       expect(proxiedHtml).toContain(
         `window.__APP_CONFIG__ = {csrfToken: "${mockUpstream.getCsrfToken()}"};`,
       );
-      expect(proxiedHtml).toContain('id="antigravity-relay-autoreload"');
+      expect(proxiedHtml).toContain('id="antigravity-switcher-autoreload"');
       expect(proxiedHtml).toContain("initialPort");
     });
 
@@ -1447,7 +1447,7 @@ describe("RelayServer Reverse Proxy Mirror", () => {
   describe("Auto-Reload Script Injection & Client State Synchronization", () => {
     it("generates auto reload script containing port and epoch", () => {
       const script = generateAutoReloadScript(54518, 3);
-      expect(script).toContain('id="antigravity-relay-autoreload"');
+      expect(script).toContain('id="antigravity-switcher-autoreload"');
       expect(script).toContain("initialPort = 54518");
       expect(script).toContain("initialEpoch = 3");
       expect(script).toContain("/health");
@@ -2535,7 +2535,9 @@ describe("RelayServer Reverse Proxy Mirror", () => {
 
       const token = await p2;
       expect(token).toBe(mockUpstream.getCsrfToken());
-      expect(relayServer.getActiveCsrfToken()).toBe(mockUpstream.getCsrfToken());
+      expect(relayServer.getActiveCsrfToken()).toBe(
+        mockUpstream.getCsrfToken(),
+      );
 
       // Simulate restart while probe is in flight; must reset state and not return stale probe
       const p3 = relayServer.refreshCsrfToken(dummyDeadPort);

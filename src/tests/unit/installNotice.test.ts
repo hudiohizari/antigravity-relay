@@ -10,9 +10,9 @@ describe("install notice policy", () => {
       getExpectedInstallRoot({
         platform: "win32",
         localAppData: "C:\\Users\\Alice\\AppData\\Local",
-        appName: "Antigravity Relay",
+        appName: "Antigravity Switcher",
       }),
-    ).toBe("C:\\Users\\Alice\\AppData\\Local\\antigravity_relay");
+    ).toBe("C:\\Users\\Alice\\AppData\\Local\\antigravity_switcher");
   });
 
   it("treats packaged Windows apps outside the per-user install root as unmanaged", () => {
@@ -21,9 +21,9 @@ describe("install notice policy", () => {
         platform: "win32",
         isPackaged: true,
         localAppData: "C:\\Users\\Alice\\AppData\\Local",
-        appName: "Antigravity Relay",
+        appName: "Antigravity Switcher",
         execPath:
-          "C:\\Users\\Alice\\AppData\\Local\\antigravity_relay\\app-1.3.0\\antigravity-relay.exe",
+          "C:\\Users\\Alice\\AppData\\Local\\antigravity_switcher\\app-1.3.0\\antigravity-switcher.exe",
       }),
     ).toBe(true);
 
@@ -32,10 +32,32 @@ describe("install notice policy", () => {
         platform: "win32",
         isPackaged: true,
         localAppData: "C:\\Users\\Alice\\AppData\\Local",
-        appName: "Antigravity Relay",
-        execPath: "C:\\Program Files\\Antigravity Relay\\antigravity-relay.exe",
+        appName: "Antigravity Switcher",
+        execPath: "C:\\Program Files\\Antigravity Switcher\\antigravity-switcher.exe",
       }),
     ).toBe(false);
+
+    expect(
+      isRunningFromExpectedInstallDir({
+        platform: "win32",
+        isPackaged: true,
+        localAppData: "C:\\Users\\Alice\\AppData\\Local",
+        appName: "Antigravity Switcher",
+        execPath:
+          "C:\\Users\\Alice\\AppData\\Local\\antigravity-switcher\\app-1.3.0\\antigravity-switcher.exe",
+      }),
+    ).toBe(true);
+
+    expect(
+      isRunningFromExpectedInstallDir({
+        platform: "win32",
+        isPackaged: true,
+        localAppData: "C:\\Users\\Alice\\AppData\\Local",
+        appName: "Antigravity Switcher",
+        execPath:
+          "C:\\Users\\Alice\\AppData\\Local\\antigravity_switcher\\app-1.3.0\\antigravity-switcher.exe",
+      }),
+    ).toBe(true);
   });
 
   it("resolves and returns notice text for all supported languages including tr and id", async () => {
