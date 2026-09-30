@@ -1,7 +1,7 @@
 import en from "./en";
 
 const fr = {
-  appName: "Antigravity Relay",
+  appName: "Antigravity Switcher",
   common: {
     loading: "Chargement...",
     error: "Erreur",
@@ -111,7 +111,7 @@ const fr = {
     antigravityProjectIdMissing:
       "Il manque un ID de projet Antigravity a ce compte. Cela peut arriver si le compte ne s est jamais connecte a l app Antigravity. Connectez-vous une fois dans Antigravity, puis revenez dans cet outil et reessayez.",
     antigravityDatabasePermissionDenied:
-      "Le stockage de base de donnees Antigravity n est pas accessible en ecriture. Verifiez le dossier de donnees utilisateur Antigravity configure ou redemarrez Antigravity Relay apres avoir ouvert Antigravity une fois.",
+      "Le stockage de base de donnees Antigravity n est pas accessible en ecriture. Verifiez le dossier de donnees utilisateur Antigravity configure ou redemarrez Antigravity Switcher apres avoir ouvert Antigravity une fois.",
     cloudAccountLoginExpired:
       "Les informations de connexion de ce compte cloud ont expire. Veuillez vous reconnecter.",
     rootBoundary: {
@@ -134,7 +134,7 @@ const fr = {
   },
   nav: {
     accounts: "Comptes",
-    relay: "Relais & À distance",
+    relay: "Relais à distance",
     context: "Contexte de chat",
     settings: "Parametres",
   },
@@ -313,7 +313,7 @@ const fr = {
       "Impossible de joindre le serveur relais. Veuillez vérifier votre connexion réseau.",
     syncingSiblingTabs:
       "Appareil réassocié avec succès. Synchronisation des onglets ouverts...",
-    fallbackTitle: "Session révoquée - Antigravity Relay",
+    fallbackTitle: "Session révoquée - Antigravity Switcher",
     fallbackNotice:
       "Session révoquée : L'accès a été révoqué par l'hôte desktop. Veuillez saisir une clé d'appairage valide pour rétablir votre connexion.",
   },
@@ -380,7 +380,7 @@ const fr = {
     appearance: {
       title: "Apparence",
       description:
-        "Personnalisez l apparence d Antigravity Relay sur votre appareil.",
+        "Personnalisez l apparence d Antigravity Switcher sur votre appareil.",
     },
     darkMode: "Mode sombre",
     darkModeDescription:

@@ -1,8 +1,8 @@
 {
-  "name": "antigravity-relay",
-  "productName": "Antigravity Relay",
+  "name": "antigravity-switcher",
+  "productName": "Antigravity Switcher",
   "version": "0.3.0",
-  "description": "Antigravity Relay - Remote Control & Session Buffer for Antigravity",
+  "description": "Antigravity Switcher - Power-User Account Switcher, Quota Failover, and Continuity Suite for Google Antigravity",
   "main": ".vite/build/main.js",
   "private": true,
   "engines": {
@@ -22,7 +22,14 @@
   },
   "keywords": [
     "antigravity",
-    "relay",
+    "antigravity-switcher",
+    "account-switcher",
+    "quota-failover",
+    "gemini-quota",
+    "auto-resume",
+    "context-telemetry",
+    "broken-chat-cleaner",
+    "tray-switcher",
     "remote",
     "tunnel",
     "electron"

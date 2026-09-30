@@ -1,5 +1,5 @@
 const ru = {
-  appName: "Antigravity Relay",
+  appName: "Antigravity Switcher",
   common: {
     loading: "Загрузка...",
     error: "Ошибка",
@@ -103,7 +103,7 @@ const ru = {
     antigravityProjectIdMissing:
       "У этого аккаунта отсутствует Antigravity project ID. Это может произойти, если аккаунт раньше не входил в приложение Antigravity. Войдите один раз в приложении Antigravity, затем вернитесь в этот инструмент и повторите переключение.",
     antigravityDatabasePermissionDenied:
-      "Хранилище базы данных Antigravity недоступно для записи. Проверьте настроенный каталог Antigravity user-data или перезапустите Antigravity Relay после однократного открытия Antigravity.",
+      "Хранилище базы данных Antigravity недоступно для записи. Проверьте настроенный каталог Antigravity user-data или перезапустите Antigravity Switcher после однократного открытия Antigravity.",
     cloudAccountLoginExpired:
       "Данные входа для этого облачного аккаунта устарели. Пожалуйста, войдите снова.",
     rootBoundary: {
@@ -126,7 +126,7 @@ const ru = {
   },
   nav: {
     accounts: "Аккаунты",
-    relay: "Relay и удаленный доступ",
+    relay: "Удаленный Relay",
     context: "Контекст чата",
     settings: "Настройки",
   },
@@ -302,7 +302,7 @@ const ru = {
       "Не удалось связаться с relay-сервером. Проверьте сетевое подключение.",
     syncingSiblingTabs:
       "Устройство успешно сопряжено заново. Синхронизация открытых вкладок...",
-    fallbackTitle: "Сессия отозвана - Antigravity Relay",
+    fallbackTitle: "Сессия отозвана - Antigravity Switcher",
     fallbackNotice:
       "Сессия отозвана: доступ был отозван desktop-хостом. Введите действительный ключ сопряжения для восстановления соединения.",
   },
@@ -365,7 +365,7 @@ const ru = {
     models: "Модели",
     appearance: {
       title: "Внешний вид",
-      description: "Настройте внешний вид Antigravity Relay.",
+      description: "Настройте внешний вид Antigravity Switcher.",
     },
     darkMode: "Темная тема",
     darkModeDescription: "Включить темную тему для комфортной работы ночью.",

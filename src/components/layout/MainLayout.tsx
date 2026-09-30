@@ -97,7 +97,7 @@ export const MainLayout: React.FC = () => {
             <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap">
               <img
                 src={appIcon}
-                alt="Antigravity Relay"
+                alt="Antigravity Switcher"
                 className="h-6 w-6 shrink-0 rounded object-contain shadow-sm"
               />
               <div
@@ -113,11 +113,11 @@ export const MainLayout: React.FC = () => {
             </div>
             <div
               className={cn(
-                "text-muted-foreground mt-1 overflow-hidden text-xs whitespace-nowrap transition-all duration-300",
+                "text-muted-foreground mt-1 overflow-hidden text-xs font-semibold tracking-wider uppercase whitespace-nowrap transition-all duration-300",
                 isCollapsed ? "h-0 opacity-0" : "h-auto opacity-100",
               )}
             >
-              Relay
+              Switcher
             </div>
           </div>
 

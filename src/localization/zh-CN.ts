@@ -1,5 +1,5 @@
 const zhCn = {
-  appName: "Antigravity Relay",
+  appName: "Antigravity Switcher",
   common: {
     loading: "加载中...",
     error: "错误",
@@ -100,7 +100,7 @@ const zhCn = {
     antigravityProjectIdMissing:
       "该账号缺少 Antigravity 项目 ID。可能是该账号没有登录过 Antigravity 应用导致，请先在 Antigravity 应用中登录一次，再回到本工具重试切换。",
     antigravityDatabasePermissionDenied:
-      "Antigravity 数据库存储目录不可写。请检查配置的 Antigravity user-data 目录，或先打开一次 Antigravity 后重启 Antigravity 管理器。",
+      "Antigravity 数据库存储目录不可写。请检查配置的 Antigravity user-data 目录，或先打开一次 Antigravity 后重启 Antigravity Switcher。",
     cloudAccountLoginExpired: "该邮箱的登录信息已过期，请重新登录。",
     rootBoundary: {
       title: "应用程序遇到错误",
@@ -121,7 +121,7 @@ const zhCn = {
   },
   nav: {
     accounts: "账号",
-    relay: "中继与远程",
+    relay: "远程中继",
     context: "对话上下文",
     settings: "设置",
   },
@@ -280,7 +280,7 @@ const zhCn = {
     rateLimitedError: "配对尝试次数过多。请稍后再试。",
     networkError: "无法连接到中继服务器。请检查您的网络连接。",
     syncingSiblingTabs: "设备重新配对成功。正在同步已打开的标签页...",
-    fallbackTitle: "会话已撤回 - Antigravity Relay",
+    fallbackTitle: "会话已撤回 - Antigravity Switcher",
     fallbackNotice:
       "会话已撤回: 访问权限已被桌面主机撤回。请输入有效的配对密钥以重新建立连接。",
   },
@@ -335,7 +335,7 @@ const zhCn = {
     models: "模型",
     appearance: {
       title: "外观",
-      description: "自定义 Antigravity 管理器在您设备上的显示方式。",
+      description: "自定义 Antigravity Switcher 在您设备上的显示方式。",
     },
     darkMode: "深色模式",
     darkModeDescription: "启用深色模式以获得更好的夜间观看体验。",

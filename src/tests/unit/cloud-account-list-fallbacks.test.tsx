@@ -87,12 +87,12 @@ describe("CloudAccountListFallbacks", () => {
 
     fireEvent.click(repoBtn);
     expect(mockOpenExternal).toHaveBeenCalledWith(
-      "https://github.com/hudiohizari/antigravity-relay",
+      "https://github.com/hudiohizari/antigravity-switcher",
     );
 
     fireEvent.click(issuesBtn);
     expect(mockOpenExternal).toHaveBeenCalledWith(
-      "https://github.com/hudiohizari/antigravity-relay/issues",
+      "https://github.com/hudiohizari/antigravity-switcher/issues",
     );
   });
 
@@ -120,7 +120,7 @@ describe("CloudAccountListFallbacks", () => {
     fireEvent.click(repoBtn);
 
     expect(windowOpenSpy).toHaveBeenCalledWith(
-      "https://github.com/hudiohizari/antigravity-relay",
+      "https://github.com/hudiohizari/antigravity-switcher",
       "_blank",
       "noreferrer",
     );

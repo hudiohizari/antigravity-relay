@@ -1,5 +1,5 @@
 const vi = {
-  appName: "Antigravity Relay",
+  appName: "Antigravity Switcher",
   common: {
     loading: "Đang tải...",
     error: "Lỗi",
@@ -104,7 +104,7 @@ const vi = {
     antigravityProjectIdMissing:
       "Tài khoản này thiếu Antigravity project ID. Điều này có thể xảy ra nếu tài khoản chưa từng đăng nhập vào ứng dụng Antigravity. Hãy đăng nhập một lần trong ứng dụng Antigravity, rồi quay lại công cụ này và thử chuyển lại.",
     antigravityDatabasePermissionDenied:
-      "Không thể ghi vào nơi lưu trữ cơ sở dữ liệu Antigravity. Hãy kiểm tra thư mục Antigravity user-data đã cấu hình hoặc khởi động lại Antigravity Relay sau khi mở Antigravity một lần.",
+      "Không thể ghi vào nơi lưu trữ cơ sở dữ liệu Antigravity. Hãy kiểm tra thư mục Antigravity user-data đã cấu hình hoặc khởi động lại Antigravity Switcher sau khi mở Antigravity một lần.",
     cloudAccountLoginExpired:
       "Thông tin đăng nhập cho tài khoản cloud này đã hết hạn. Hãy đăng nhập lại.",
     rootBoundary: {
@@ -127,7 +127,7 @@ const vi = {
   },
   nav: {
     accounts: "Tài khoản",
-    relay: "Relay & Từ xa",
+    relay: "Relay từ xa",
     context: "Ngữ cảnh trò chuyện",
     settings: "Cài đặt",
   },
@@ -302,7 +302,7 @@ const vi = {
       "Không thể kết nối đến máy chủ relay. Vui lòng kiểm tra kết nối mạng của bạn.",
     syncingSiblingTabs:
       "Đã ghép nối lại thiết bị thành công. Đang đồng bộ hóa các tab đang mở...",
-    fallbackTitle: "Phiên đã bị thu hồi - Antigravity Relay",
+    fallbackTitle: "Phiên đã bị thu hồi - Antigravity Switcher",
     fallbackNotice:
       "Phiên đã bị thu hồi: Quyền truy cập đã bị máy chủ desktop thu hồi. Vui lòng nhập khóa ghép nối hợp lệ để thiết lập lại kết nối.",
   },
@@ -366,7 +366,7 @@ const vi = {
     appearance: {
       title: "Giao diện",
       description:
-        "Tùy chỉnh giao diện Antigravity Relay trên thiết bị của bạn.",
+        "Tùy chỉnh giao diện Antigravity Switcher trên thiết bị của bạn.",
     },
     darkMode: "Chế độ tối",
     darkModeDescription: "Bật chế độ tối để dễ nhìn hơn vào ban đêm.",

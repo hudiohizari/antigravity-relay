@@ -23,9 +23,9 @@ import {
 } from "@/shared/utils/errorMessages";
 
 const GITHUB_REPOSITORY_URL =
-  "https://github.com/hudiohizari/antigravity-relay";
+  "https://github.com/hudiohizari/antigravity-switcher";
 const GITHUB_ISSUES_URL =
-  "https://github.com/hudiohizari/antigravity-relay/issues";
+  "https://github.com/hudiohizari/antigravity-switcher/issues";
 
 interface CloudAccountLoadErrorProps {
   error?: unknown;

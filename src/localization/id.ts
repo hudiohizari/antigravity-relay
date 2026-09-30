@@ -1,5 +1,5 @@
 const id = {
-  appName: "Antigravity Relay",
+  appName: "Antigravity Switcher",
   common: {
     loading: "Memuat...",
     error: "Kesalahan",
@@ -106,7 +106,7 @@ const id = {
     antigravityProjectIdMissing:
       "Akun ini tidak memiliki ID proyek Antigravity. Hal ini dapat terjadi jika akun belum pernah masuk ke aplikasi Antigravity sebelumnya. Silakan masuk sekali di aplikasi Antigravity, lalu kembali ke alat ini dan coba beralih lagi.",
     antigravityDatabasePermissionDenied:
-      "Penyimpanan database Antigravity tidak dapat ditulisi. Periksa direktori user-data Antigravity yang dikonfigurasi atau mulai ulang Antigravity Relay setelah membuka Antigravity sekali.",
+      "Penyimpanan database Antigravity tidak dapat ditulisi. Periksa direktori user-data Antigravity yang dikonfigurasi atau mulai ulang Antigravity Switcher setelah membuka Antigravity sekali.",
     cloudAccountLoginExpired:
       "Informasi login untuk akun cloud ini telah kedaluwarsa. Silakan masuk kembali.",
     rootBoundary: {
@@ -129,7 +129,7 @@ const id = {
   },
   nav: {
     accounts: "Akun",
-    relay: "Relay & Remote",
+    relay: "Remote Relay",
     context: "Konteks Chat",
     settings: "Pengaturan",
   },
@@ -306,7 +306,7 @@ const id = {
       "Tidak dapat menjangkau server relay. Silakan periksa koneksi jaringan Anda.",
     syncingSiblingTabs:
       "Perangkat berhasil dihubungkan ulang. Menyelaraskan tab yang terbuka...",
-    fallbackTitle: "Sesi Dicabut - Antigravity Relay",
+    fallbackTitle: "Sesi Dicabut - Antigravity Switcher",
     fallbackNotice:
       "Sesi Dicabut: Akses telah dicabut oleh host desktop. Silakan masukkan kunci pairing yang valid untuk menyambung kembali.",
   },
@@ -368,7 +368,8 @@ const id = {
     models: "Model",
     appearance: {
       title: "Tampilan",
-      description: "Sesuaikan tampilan Antigravity Relay pada perangkat Anda.",
+      description:
+        "Sesuaikan tampilan Antigravity Switcher pada perangkat Anda.",
     },
     darkMode: "Mode Gelap",
     darkModeDescription:

@@ -1,5 +1,5 @@
 const tr = {
-  appName: "Antigravity Relay",
+  appName: "Antigravity Switcher",
   common: {
     loading: "Yükleniyor...",
     error: "Hata",
@@ -103,7 +103,7 @@ const tr = {
     antigravityProjectIdMissing:
       "Bu hesapta Antigravity proje kimliği eksik. Bu durum, hesap daha önce Antigravity uygulamasında oturum açmadıysa oluşabilir. Lütfen Antigravity uygulamasında bir kez oturum açın, ardından bu araca dönüp değiştirmeyi tekrar deneyin.",
     antigravityDatabasePermissionDenied:
-      "Antigravity veritabanı depolama alanı yazılabilir değil. Yapılandırılmış Antigravity user-data dizinini kontrol edin veya Antigravity uygulamasını bir kez açtıktan sonra Antigravity Relayı yeniden başlatın.",
+      "Antigravity veritabanı depolama alanı yazılabilir değil. Yapılandırılmış Antigravity user-data dizinini kontrol edin veya Antigravity uygulamasını bir kez açtıktan sonra Antigravity Switcherı yeniden başlatın.",
     cloudAccountLoginExpired:
       "Bu bulut hesabının giriş bilgileri süresi dolmuş. Lütfen tekrar giriş yapın.",
     rootBoundary: {
@@ -125,7 +125,7 @@ const tr = {
   },
   nav: {
     accounts: "Hesaplar",
-    relay: "Relay ve Uzaktan Erişim",
+    relay: "Uzaktan Relay",
     context: "Sohbet Bağlamı",
     settings: "Ayarlar",
   },
@@ -300,7 +300,7 @@ const tr = {
       "Relay sunucusuna ulaşılamıyor. Lütfen ağ bağlantınızı kontrol edin.",
     syncingSiblingTabs:
       "Cihaz başarıyla yeniden eşleştirildi. Açık sekmeler senkronize ediliyor...",
-    fallbackTitle: "Oturum İptal Edildi - Antigravity Relay",
+    fallbackTitle: "Oturum İptal Edildi - Antigravity Switcher",
     fallbackNotice:
       "Oturum İptal Edildi: Erişim masaüstü ana bilgisayarı tarafından iptal edildi. Bağlantınızı yeniden kurmak için lütfen geçerli bir eşleştirme anahtarı girin.",
   },
@@ -364,7 +364,7 @@ const tr = {
     appearance: {
       title: "Görünüm",
       description:
-        "Antigravity Relay'ın cihazınızda nasıl görüneceğini özelleştirin.",
+        "Antigravity Switcher'ın cihazınızda nasıl görüneceğini özelleştirin.",
     },
     darkMode: "Karanlık Mod",
     darkModeDescription:

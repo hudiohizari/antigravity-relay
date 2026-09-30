@@ -1,17 +1,17 @@
-import http from 'http';
-import { logger } from '@/shared/logging/logger';
-import { ipcContext } from '@/ipc/context';
-import { escapeHtml } from '@/shared/utils/url';
+import http from "http";
+import { logger } from "@/shared/logging/logger";
+import { ipcContext } from "@/ipc/context";
+import { escapeHtml } from "@/shared/utils/url";
 
 const OAUTH_LOOPBACK_HOST = '127.0.0.1';
 
 function sendAuthorizationDeliveryFailure(res: http.ServerResponse): void {
-  res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.writeHead(503, { "Content-Type": "text/html; charset=utf-8" });
   res.end(`
     <html>
       <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
         <h1>Login Failed</h1>
-        <p>Antigravity Relay is not ready to receive the authorization result. Return to the app and try again.</p>
+        <p>Antigravity Switcher is not ready to receive the authorization result. Return to the app and try again.</p>
       </body>
     </html>
   `);
@@ -23,7 +23,7 @@ export class AuthServer {
 
   static async start() {
     if (this.server) {
-      logger.warn('AuthServer: Server already running');
+      logger.warn("AuthServer: Server already running");
       return;
     }
 
@@ -34,7 +34,7 @@ export class AuthServer {
       try {
         await new Promise<void>((resolve, reject) => {
           const testServer = http.createServer();
-          testServer.once('error', reject);
+          testServer.once("error", reject);
           testServer.listen(port, OAUTH_LOOPBACK_HOST, () => {
             testServer.close(() => resolve());
           });
@@ -47,29 +47,36 @@ export class AuthServer {
     }
 
     if (!boundPort) {
-      logger.error('AuthServer: No available ports found for OAuth callback server');
+      logger.error(
+        "AuthServer: No available ports found for OAuth callback server",
+      );
       return;
     }
 
     if (boundPort !== 8888) {
-      logger.warn(`AuthServer: Using fallback port ${boundPort} (default 8888 is in use)`);
+      logger.warn(
+        `AuthServer: Using fallback port ${boundPort} (default 8888 is in use)`,
+      );
     }
 
     this.PORT = boundPort;
 
     try {
       this.server = http.createServer((req, res) => {
-        if (req.method !== 'GET') {
-          res.writeHead(405, { Allow: 'GET' });
-          res.end('Method Not Allowed');
+        if (req.method !== "GET") {
+          res.writeHead(405, { Allow: "GET" });
+          res.end("Method Not Allowed");
           return;
         }
 
-        const url = new URL(req.url || '', `http://${OAUTH_LOOPBACK_HOST}:${this.PORT}`);
+        const url = new URL(
+          req.url || "",
+          `http://${OAUTH_LOOPBACK_HOST}:${this.PORT}`,
+        );
 
-        if (url.pathname === '/oauth-callback') {
-          const code = url.searchParams.get('code');
-          const error = url.searchParams.get('error');
+        if (url.pathname === "/oauth-callback") {
+          const code = url.searchParams.get("code");
+          const error = url.searchParams.get("error");
 
           if (code) {
             const escapedCode = escapeHtml(code);
@@ -78,28 +85,37 @@ export class AuthServer {
             );
 
             const mainWindow = ipcContext.mainWindow;
-            if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
-              logger.error('AuthServer: No live renderer is available for the authorization code');
+            if (
+              !mainWindow ||
+              mainWindow.isDestroyed() ||
+              mainWindow.webContents.isDestroyed()
+            ) {
+              logger.error(
+                "AuthServer: No live renderer is available for the authorization code",
+              );
               sendAuthorizationDeliveryFailure(res);
               return;
             }
 
             try {
-              logger.info('AuthServer: Sending code to renderer via IPC');
-              mainWindow.webContents.send('GOOGLE_AUTH_CODE', code);
-              logger.info('AuthServer: Code sent successfully');
+              logger.info("AuthServer: Sending code to renderer via IPC");
+              mainWindow.webContents.send("GOOGLE_AUTH_CODE", code);
+              logger.info("AuthServer: Code sent successfully");
             } catch (error) {
-              logger.error('AuthServer: Failed to deliver authorization code to renderer', error);
+              logger.error(
+                "AuthServer: Failed to deliver authorization code to renderer",
+                error,
+              );
               sendAuthorizationDeliveryFailure(res);
               return;
             }
 
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
             res.end(`
             <html>
               <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
                 <h1>Login Successful</h1>
-                <p>You can close this window and return to Antigravity Relay.</p>
+                <p>You can close this window and return to Antigravity Switcher.</p>
                 <script>
                   setTimeout(() => window.close(), 3000);
                 </script>
@@ -109,7 +125,7 @@ export class AuthServer {
           } else if (error) {
             const escapedError = escapeHtml(error);
             logger.error(`AuthServer: OAuth error: ${escapedError}`);
-            res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
             res.end(`
             <html>
               <body>
@@ -120,23 +136,25 @@ export class AuthServer {
           `);
           } else {
             res.writeHead(400);
-            res.end('Missing code parameter');
+            res.end("Missing code parameter");
           }
         } else {
           res.writeHead(404);
-          res.end('Not Found');
+          res.end("Not Found");
         }
       });
 
-      this.server.on('error', (err) => {
-        logger.error('AuthServer: Server error', err);
+      this.server.on("error", (err) => {
+        logger.error("AuthServer: Server error", err);
       });
 
       this.server.listen(this.PORT, OAUTH_LOOPBACK_HOST, () => {
-        logger.info(`AuthServer: Listening on http://${OAUTH_LOOPBACK_HOST}:${this.PORT}`);
+        logger.info(
+          `AuthServer: Listening on http://${OAUTH_LOOPBACK_HOST}:${this.PORT}`,
+        );
       });
     } catch (e) {
-      logger.error('AuthServer: Failed to create or start server', e);
+      logger.error("AuthServer: Failed to create or start server", e);
       if (this.server) {
         this.server.close();
         this.server = null;
@@ -158,12 +176,12 @@ export class AuthServer {
     await new Promise<void>((resolve) => {
       server.close((error) => {
         if (error) {
-          logger.warn('AuthServer: Failed to close cleanly', error);
+          logger.warn("AuthServer: Failed to close cleanly", error);
         }
         resolve();
       });
       server.closeAllConnections();
     });
-    logger.info('AuthServer: Stopped');
+    logger.info("AuthServer: Stopped");
   }
 }

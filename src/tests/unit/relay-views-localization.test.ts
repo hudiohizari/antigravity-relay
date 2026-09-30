@@ -75,11 +75,11 @@ describe("Relay Web Views Localization", () => {
       const html = generatePairingHtml();
       expect(html).toContain('<html lang="en">');
       expect(html).toContain(
-        "<title>Antigravity Relay - Pairing Required</title>",
+        "<title>Antigravity Switcher - Remote Pairing</title>",
       );
       expect(html).toContain("<h1>Device Pairing Required</h1>");
       expect(html).toContain(
-        "<p>To access Antigravity Relay, enter the pairing key from your desktop dashboard.</p>",
+        "<p>To access Remote Relay in Antigravity Switcher, enter the pairing key from your desktop dashboard.</p>",
       );
       expect(html).toContain('<label for="pair">Pairing Key</label>');
       expect(html).toContain('placeholder="Enter pairing key..."');
@@ -90,11 +90,11 @@ describe("Relay Web Views Localization", () => {
       const html = generatePairingHtml(undefined, "id");
       expect(html).toContain('<html lang="id">');
       expect(html).toContain(
-        "<title>Antigravity Relay - Pemasangan Diperlukan</title>",
+        "<title>Antigravity Switcher - Pemasangan Jarak Jauh</title>",
       );
       expect(html).toContain("<h1>Pemasangan Perangkat Diperlukan</h1>");
       expect(html).toContain(
-        "<p>Untuk mengakses Antigravity Relay, masukkan kunci pemasangan dari dashboard desktop Anda.</p>",
+        "<p>Untuk mengakses Remote Relay Antigravity Switcher, masukkan kunci pemasangan dari dashboard desktop Anda.</p>",
       );
       expect(html).toContain('<label for="pair">Kunci Pemasangan</label>');
       expect(html).toContain('placeholder="Masukkan kunci pemasangan..."');
@@ -115,7 +115,7 @@ describe("Relay Web Views Localization", () => {
       const html = generateRevokedHtml();
       expect(html).toContain('<html lang="en">');
       expect(html).toContain(
-        "<title>Session Revoked - Antigravity Relay</title>",
+        "<title>Session Revoked - Antigravity Switcher</title>",
       );
       expect(html).toContain("Disconnected by Host");
       expect(html).toContain(
@@ -133,7 +133,9 @@ describe("Relay Web Views Localization", () => {
     it("renders localized Indonesian revoked page", () => {
       const html = generateRevokedHtml(undefined, "id");
       expect(html).toContain('<html lang="id">');
-      expect(html).toContain("<title>Sesi Dicabut - Antigravity Relay</title>");
+      expect(html).toContain(
+        "<title>Sesi Dicabut - Antigravity Switcher</title>",
+      );
       expect(html).toContain("Terputus oleh Host");
       expect(html).toContain(
         '<h1 id="revoked-heading">Akses Dicabut oleh Host</h1>',

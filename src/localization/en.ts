@@ -1,5 +1,5 @@
 const en = {
-  appName: "Antigravity Relay",
+  appName: "Antigravity Switcher",
   common: {
     loading: "Loading...",
     error: "Error",
@@ -103,7 +103,7 @@ const en = {
     antigravityProjectIdMissing:
       "This account is missing an Antigravity project ID. This may happen if the account has not signed in to the Antigravity app before. Please sign in once in the Antigravity app, then return to this tool and try switching again.",
     antigravityDatabasePermissionDenied:
-      "Antigravity database storage is not writable. Check the configured Antigravity user-data directory or restart Antigravity Relay after opening Antigravity once.",
+      "Antigravity database storage is not writable. Check the configured Antigravity user-data directory or restart Antigravity Switcher after opening Antigravity once.",
     cloudAccountLoginExpired:
       "The login information for this cloud account has expired. Please log in again.",
     rootBoundary: {
@@ -125,7 +125,7 @@ const en = {
   },
   nav: {
     accounts: "Accounts",
-    relay: "Relay & Remote",
+    relay: "Remote Relay",
     context: "Chat Context",
     settings: "Settings",
   },
@@ -300,7 +300,7 @@ const en = {
       "Unable to reach the relay server. Please check your network connection.",
     syncingSiblingTabs:
       "Device re-paired successfully. Synchronizing open tabs...",
-    fallbackTitle: "Session Revoked - Antigravity Relay",
+    fallbackTitle: "Session Revoked - Antigravity Switcher",
     fallbackNotice:
       "Session Revoked: Access was revoked by the desktop host. Please enter a valid pairing key to re-establish your connection.",
   },
@@ -363,7 +363,7 @@ const en = {
     models: "Models",
     appearance: {
       title: "Appearance",
-      description: "Customize how Antigravity Relay looks on your device.",
+      description: "Customize how Antigravity Switcher looks on your device.",
     },
     darkMode: "Dark Mode",
     darkModeDescription: "Enable dark mode for better viewing at night.",
