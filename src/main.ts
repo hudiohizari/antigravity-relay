@@ -8,6 +8,10 @@ import { ipcMain } from "electron/main";
 import { ipcContext } from "@/ipc/context";
 import { IPC_CHANNELS } from "./shared/constants";
 import { isTrustedExternalUrl } from "./shared/utils/url";
+import {
+  ensureStorageMigrated,
+  ensureUserDataKeyMaterialMigrated,
+} from "./shared/platform/paths";
 import { logger } from "./shared/logging/logger";
 import {
   getExpectedInstallRoot,
@@ -16,6 +20,7 @@ import {
   resolveInstallNoticeLanguage,
 } from "./modules/app-shell/utils/installNotice";
 import { applyStartupGpuSwitches } from "@/modules/app-shell/utils/startupGpuSwitches";
+import { resolveWindowIconPath } from "@/modules/app-shell/utils/windowIcon";
 import { CloudAccountRepo } from "@/modules/cloud-account/persistence/cloudHandler";
 import { initDatabase } from "@/modules/account/public";
 import { CloudMonitorService } from "@/modules/cloud-account/services/CloudMonitorService";
@@ -60,10 +65,20 @@ import { registerPerformanceRecorderIpc } from "@/modules/app-shell/performance-
 import { configurePerformanceRecorderCommandLine } from "@/modules/app-shell/performance-recorder/main-recorder";
 import { waitForViteDevServer } from "@/modules/app-shell/utils/wait-for-vite-dev-server";
 
+// Ensure legacy storage (~/.antigravity-relay) is migrated to ~/.antigravity-switcher
+// synchronously before file logging or any database connections open.
+ensureStorageMigrated();
+
 // Turn on rotating file output as early as possible, before any module-level
 // logging below runs, so the shipped app keeps logging to disk as before.
 // Importing the logger module itself must stay free of filesystem side effects.
 logger.enableFileLogging();
+
+logger.info("[telemetry] app_rebrand_initialized", {
+  event: "app_rebrand_initialized",
+  app_name: "Antigravity Switcher",
+  version: app.getVersion(),
+});
 
 const packetLogPath = path.join(app.getPath("userData"), "orpc_packets.log");
 
@@ -348,11 +363,16 @@ ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL_URL, async (_event, url: unknown) => {
 
 registerPerformanceRecorderIpc();
 
-app.setName("Antigravity Relay");
+app.setName("Antigravity Switcher");
 
 if (process.platform === "win32") {
-  app.setAppUserModelId("com.antigravity.relay");
+  app.setAppUserModelId("com.antigravity.switcher");
 }
+
+ensureUserDataKeyMaterialMigrated(
+  app.getPath("appData"),
+  app.getPath("userData"),
+);
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -401,17 +421,19 @@ function createWindow({ startHidden }: { startHidden: boolean }) {
 
   logger.info("createWindow: start");
   const preload = path.join(__dirname, "preload.js");
-  const windowIcon =
-    inDevelopment && process.platform === "win32"
-      ? path.join(process.cwd(), "images/icon.ico")
-      : inDevelopment
-        ? path.join(process.cwd(), "src/assets/icon.png")
-        : path.join(__dirname, "../assets/icon.png");
+  const windowIcon = resolveWindowIconPath({
+    inDevelopment,
+    platform: process.platform,
+    cwd: process.cwd(),
+    resourcesPath: process.resourcesPath,
+    fallbackDirname: __dirname,
+  });
   logger.info(`createWindow: preload path: ${preload}`);
   logger.info(`createWindow: window icon path: ${windowIcon}`);
 
   logger.info("createWindow: attempting to create BrowserWindow");
   const mainWindow = new BrowserWindow({
+    title: "Antigravity Switcher",
     width: 1200,
     height: 800,
     show: !startHidden,

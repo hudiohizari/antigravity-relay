@@ -381,7 +381,7 @@ describe("Executable Path Detection & Platform Heuristics", () => {
     it("returns already_set status when detected path matches configured path", async () => {
       const agentConfigPath = path.join(
         os.homedir(),
-        ".antigravity-relay",
+        ".antigravity-switcher",
         "gui_config.json",
       );
       const configuredBinary = "/usr/bin/antigravity";
@@ -433,7 +433,7 @@ describe("Executable Path Detection & Platform Heuristics", () => {
     it("respects bypassConfig: false and returns config source", async () => {
       const agentConfigPath = path.join(
         os.homedir(),
-        ".antigravity-relay",
+        ".antigravity-switcher",
         "gui_config.json",
       );
       const configuredBinary = "/opt/custom/antigravity";

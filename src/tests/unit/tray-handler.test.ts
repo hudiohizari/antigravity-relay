@@ -298,7 +298,7 @@ describe("Tray Handler Functionality", () => {
       handlerModule.updateTrayMenu(account, "en");
 
       expect(mocks.traySetToolTip).toHaveBeenCalledWith(
-        "Antigravity Relay (active@domain.com)",
+        "Antigravity Switcher (active@domain.com)",
       );
     });
 
@@ -885,7 +885,7 @@ describe("Tray Handler Functionality", () => {
       );
       expect(tpl.some((item) => item.label === "Quota: --")).toBe(false);
       expect(mocks.traySetToolTip).toHaveBeenCalledWith(
-        "Antigravity Relay (active.developer@example.com)",
+        "Antigravity Switcher (active.developer@example.com)",
       );
     });
 
@@ -902,7 +902,7 @@ describe("Tray Handler Functionality", () => {
 
       expect(tpl[0].label).toBe("Current: No Account");
       expect(tpl.some((item) => item.label === "Quota: --")).toBe(true);
-      expect(mocks.traySetToolTip).toHaveBeenCalledWith("Antigravity Relay");
+      expect(mocks.traySetToolTip).toHaveBeenCalledWith("Antigravity Switcher");
     });
 
     it("falls back cleanly on database error or lock without throwing", async () => {

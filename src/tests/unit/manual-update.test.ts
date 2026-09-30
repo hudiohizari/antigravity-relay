@@ -14,7 +14,7 @@ describe('manual update policy', () => {
       platform: 'darwin',
       release: {
         tag_name: 'v1.3.0',
-        name: 'Antigravity Relay 1.3.0',
+        name: 'Antigravity Switcher 1.3.0',
         html_url: 'https://github.com/hudiohizari/antigravity-relay/releases/tag/v1.3.0',
         draft: false,
         prerelease: false,
@@ -24,7 +24,7 @@ describe('manual update policy', () => {
     expect(update).toEqual({
       version: '1.3.0',
       tagName: 'v1.3.0',
-      releaseName: 'Antigravity Relay 1.3.0',
+      releaseName: 'Antigravity Switcher 1.3.0',
       releaseUrl: 'https://github.com/hudiohizari/antigravity-relay/releases/tag/v1.3.0',
       platform: 'darwin',
     });
@@ -36,7 +36,7 @@ describe('manual update policy', () => {
       platform: 'win32',
       release: {
         tag_name: 'v1.3.0',
-        name: 'Antigravity Relay 1.3.0',
+        name: 'Antigravity Switcher 1.3.0',
         html_url: 'https://github.com/hudiohizari/antigravity-relay/releases/tag/v1.3.0',
         draft: false,
         prerelease: false,
@@ -53,7 +53,7 @@ describe('manual update policy', () => {
       platform: 'linux',
       release: {
         tag_name: '1.2.3',
-        name: 'Antigravity Relay 1.2.3',
+        name: 'Antigravity Switcher 1.2.3',
         html_url: 'https://github.com/hudiohizari/antigravity-relay/releases/tag/1.2.3',
         draft: false,
         prerelease: false,
@@ -65,7 +65,7 @@ describe('manual update policy', () => {
 
   it('ignores draft, prerelease, and invalid SemVer releases', () => {
     const baseRelease = {
-      name: 'Antigravity Relay',
+      name: 'Antigravity Switcher',
       html_url: 'https://github.com/hudiohizari/antigravity-relay/releases/latest',
     };
 

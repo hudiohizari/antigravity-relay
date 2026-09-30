@@ -7,13 +7,13 @@ describe('electron updater notification policy', () => {
       state: 'available',
       platform: 'win32',
       version: '0.19.0',
-      releaseName: 'Antigravity Relay 0.19.0',
+      releaseName: 'Antigravity Switcher 0.19.0',
     });
 
     expect(notification).toEqual({
       version: '0.19.0',
       tagName: 'v0.19.0',
-      releaseName: 'Antigravity Relay 0.19.0',
+      releaseName: 'Antigravity Switcher 0.19.0',
       releaseUrl: 'https://github.com/hudiohizari/antigravity-relay/releases/tag/v0.19.0',
       platform: 'win32',
       source: 'electron-updater',

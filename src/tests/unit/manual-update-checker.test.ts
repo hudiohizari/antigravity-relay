@@ -89,7 +89,7 @@ describe('manual update checker', () => {
       createResponse({
         draft: false,
         html_url: 'https://github.com/hudiohizari/antigravity-relay/releases/tag/v1.3.0',
-        name: 'Antigravity Relay 1.3.0',
+        name: 'Antigravity Switcher 1.3.0',
         prerelease: false,
         tag_name: 'v1.3.0',
       }),

@@ -53,15 +53,15 @@ describe("audit-build-artifacts", () => {
     it("passes when all Windows artifacts, ASAR, unpacked native modules, and checksums are valid", async () => {
       const rootDir = await mkdtemp(path.join(tmpdir(), "audit-win32-pass-"));
       const makeDir = path.join(rootDir, "out/make/squirrel.windows/x64");
-      const packDir = path.join(rootDir, "out/Antigravity Relay-win32-x64");
+      const packDir = path.join(rootDir, "out/Antigravity Switcher-win32-x64");
 
       const exePath = path.join(
         makeDir,
-        "Antigravity.Relay-0.0.1-win32-x64-setup.exe",
+        "Antigravity.Switcher-0.0.1-win32-x64-setup.exe",
       );
       const nupkgPath = path.join(
         makeDir,
-        "antigravity_relay-0.0.1-full.nupkg",
+        "antigravity_switcher-0.0.1-full.nupkg",
       );
       const releasesPath = path.join(makeDir, "RELEASES");
       const ymlPath = path.join(makeDir, "latest.yml");
@@ -72,12 +72,12 @@ describe("audit-build-artifacts", () => {
       const nupkgHash = writeBinaryFile(nupkgPath, 12 * 1024 * 1024, "y");
       writeTextFile(
         releasesPath,
-        "hash antigravity_relay-0.0.1-full.nupkg 123\n",
+        "hash antigravity_switcher-0.0.1-full.nupkg 123\n",
       );
       writeTextFile(ymlPath, "version: 0.0.1\n");
       writeTextFile(
         checksumPath,
-        `${exeHash}  Antigravity.Relay-0.0.1-win32-x64-setup.exe\n${nupkgHash}  antigravity_relay-0.0.1-full.nupkg\n`,
+        `${exeHash}  Antigravity.Switcher-0.0.1-win32-x64-setup.exe\n${nupkgHash}  antigravity_switcher-0.0.1-full.nupkg\n`,
       );
 
       // Packaged app.asar and unpacked modules
@@ -116,10 +116,10 @@ describe("audit-build-artifacts", () => {
         path.join(tmpdir(), "audit-win32-missing-exe-"),
       );
       const makeDir = path.join(rootDir, "out/make/squirrel.windows/x64");
-      const packDir = path.join(rootDir, "out/Antigravity Relay-win32-x64");
+      const packDir = path.join(rootDir, "out/Antigravity Switcher-win32-x64");
 
       writeBinaryFile(
-        path.join(makeDir, "antigravity_relay-0.0.1-full.nupkg"),
+        path.join(makeDir, "antigravity_switcher-0.0.1-full.nupkg"),
         12 * 1024 * 1024,
       );
       writeTextFile(path.join(makeDir, "RELEASES"), "content\n");
@@ -167,10 +167,10 @@ describe("audit-build-artifacts", () => {
     it("passes for valid macOS DMG, ZIP, latest-mac.yml and checksums", async () => {
       const rootDir = await mkdtemp(path.join(tmpdir(), "audit-darwin-pass-"));
       const makeDir = path.join(rootDir, "out/make");
-      const packDir = path.join(rootDir, "out/Antigravity Relay-darwin-arm64");
+      const packDir = path.join(rootDir, "out/Antigravity Switcher-darwin-arm64");
 
-      const dmgPath = path.join(makeDir, "Antigravity.Relay_0.0.1_arm64.dmg");
-      const zipPath = path.join(makeDir, "Antigravity.Relay_0.0.1_arm64.zip");
+      const dmgPath = path.join(makeDir, "Antigravity.Switcher_0.0.1_arm64.dmg");
+      const zipPath = path.join(makeDir, "Antigravity.Switcher_0.0.1_arm64.zip");
       const ymlPath = path.join(makeDir, "latest-mac.yml");
       const checksumPath = path.join(makeDir, "sha256sums-mac-arm64.txt");
 
@@ -179,26 +179,26 @@ describe("audit-build-artifacts", () => {
       writeTextFile(ymlPath, "version: 0.0.1\n");
       writeTextFile(
         checksumPath,
-        `${dmgHash}  Antigravity.Relay_0.0.1_arm64.dmg\n${zipHash}  Antigravity.Relay_0.0.1_arm64.zip\n`,
+        `${dmgHash}  Antigravity.Switcher_0.0.1_arm64.dmg\n${zipHash}  Antigravity.Switcher_0.0.1_arm64.zip\n`,
       );
 
       // Packaged app on macOS
       const asarPath = path.join(
         packDir,
-        "Antigravity Relay.app/Contents/Resources/app.asar",
+        "Antigravity Switcher.app/Contents/Resources/app.asar",
       );
       writeBinaryFile(asarPath, 5 * 1024 * 1024, "a");
       writeTextFile(
         path.join(
           packDir,
-          "Antigravity Relay.app/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/package.json",
+          "Antigravity Switcher.app/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/package.json",
         ),
         "{}",
       );
       writeTextFile(
         path.join(
           packDir,
-          "Antigravity Relay.app/Contents/Resources/app.asar.unpacked/node_modules/keytar/package.json",
+          "Antigravity Switcher.app/Contents/Resources/app.asar.unpacked/node_modules/keytar/package.json",
         ),
         "{}",
       );
@@ -220,10 +220,10 @@ describe("audit-build-artifacts", () => {
         path.join(tmpdir(), "audit-darwin-under-size-"),
       );
       const makeDir = path.join(rootDir, "out/make");
-      const packDir = path.join(rootDir, "out/Antigravity Relay-darwin-arm64");
+      const packDir = path.join(rootDir, "out/Antigravity Switcher-darwin-arm64");
 
-      const dmgPath = path.join(makeDir, "Antigravity.Relay_0.0.1_arm64.dmg");
-      const zipPath = path.join(makeDir, "Antigravity.Relay_0.0.1_arm64.zip");
+      const dmgPath = path.join(makeDir, "Antigravity.Switcher_0.0.1_arm64.dmg");
+      const zipPath = path.join(makeDir, "Antigravity.Switcher_0.0.1_arm64.zip");
       const ymlPath = path.join(makeDir, "latest-mac.yml");
       const checksumPath = path.join(makeDir, "sha256sums-mac-arm64.txt");
 
@@ -235,20 +235,20 @@ describe("audit-build-artifacts", () => {
 
       const asarPath = path.join(
         packDir,
-        "Antigravity Relay.app/Contents/Resources/app.asar",
+        "Antigravity Switcher.app/Contents/Resources/app.asar",
       );
       writeBinaryFile(asarPath, 5 * 1024 * 1024);
       writeTextFile(
         path.join(
           packDir,
-          "Antigravity Relay.app/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/pkg",
+          "Antigravity Switcher.app/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/pkg",
         ),
         "{}",
       );
       writeTextFile(
         path.join(
           packDir,
-          "Antigravity Relay.app/Contents/Resources/app.asar.unpacked/node_modules/keytar/pkg",
+          "Antigravity Switcher.app/Contents/Resources/app.asar.unpacked/node_modules/keytar/pkg",
         ),
         "{}",
       );
@@ -276,12 +276,12 @@ describe("audit-build-artifacts", () => {
         path.join(tmpdir(), "audit-linux-hash-mismatch-"),
       );
       const makeDir = path.join(rootDir, "out/make");
-      const packDir = path.join(rootDir, "out/Antigravity Relay-linux-x64");
+      const packDir = path.join(rootDir, "out/Antigravity Switcher-linux-x64");
 
-      const debPath = path.join(makeDir, "antigravity-relay_0.0.1_amd64.deb");
+      const debPath = path.join(makeDir, "antigravity-switcher_0.0.1_amd64.deb");
       const rpmPath = path.join(
         makeDir,
-        "antigravity-relay-0.0.1-1.x86_64.rpm",
+        "antigravity-switcher-0.0.1-1.x86_64.rpm",
       );
       const ymlPath = path.join(makeDir, "latest-linux.yml");
       const checksumPath = path.join(makeDir, "sha256sums-linux-amd64.txt");
@@ -293,7 +293,7 @@ describe("audit-build-artifacts", () => {
       // Intentional corrupt hash in manifest
       writeTextFile(
         checksumPath,
-        `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  antigravity-relay_0.0.1_amd64.deb\n`,
+        `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  antigravity-switcher_0.0.1_amd64.deb\n`,
       );
 
       writeBinaryFile(path.join(packDir, "resources/app.asar"), 1024);
@@ -324,7 +324,7 @@ describe("audit-build-artifacts", () => {
       expect(
         result.errors.some((err: string) =>
           err.includes(
-            "Checksum mismatch for antigravity-relay_0.0.1_amd64.deb",
+            "Checksum mismatch for antigravity-switcher_0.0.1_amd64.deb",
           ),
         ),
       ).toBe(true);
@@ -337,12 +337,12 @@ describe("audit-build-artifacts", () => {
         path.join(tmpdir(), "audit-missing-native-"),
       );
       const makeDir = path.join(rootDir, "out/make");
-      const packDir = path.join(rootDir, "out/Antigravity Relay-linux-x64");
+      const packDir = path.join(rootDir, "out/Antigravity Switcher-linux-x64");
 
-      const debPath = path.join(makeDir, "antigravity-relay_0.0.1_amd64.deb");
+      const debPath = path.join(makeDir, "antigravity-switcher_0.0.1_amd64.deb");
       const rpmPath = path.join(
         makeDir,
-        "antigravity-relay-0.0.1-1.x86_64.rpm",
+        "antigravity-switcher-0.0.1-1.x86_64.rpm",
       );
       const debHash = writeBinaryFile(debPath, 15 * 1024 * 1024, "d");
       const rpmHash = writeBinaryFile(rpmPath, 15 * 1024 * 1024, "r");
@@ -350,7 +350,7 @@ describe("audit-build-artifacts", () => {
       writeTextFile(path.join(makeDir, "latest-linux.yml"), "version: 0.0.1\n");
       writeTextFile(
         path.join(makeDir, "sha256sums-linux-amd64.txt"),
-        `${debHash}  antigravity-relay_0.0.1_amd64.deb\n${rpmHash}  antigravity-relay-0.0.1-1.x86_64.rpm\n`,
+        `${debHash}  antigravity-switcher_0.0.1_amd64.deb\n${rpmHash}  antigravity-switcher-0.0.1-1.x86_64.rpm\n`,
       );
 
       writeBinaryFile(path.join(packDir, "resources/app.asar"), 1024);
@@ -382,12 +382,12 @@ describe("audit-build-artifacts", () => {
     it("fails when .env or source-map files leak into the packaged app directory", async () => {
       const rootDir = await mkdtemp(path.join(tmpdir(), "audit-leak-check-"));
       const makeDir = path.join(rootDir, "out/make");
-      const packDir = path.join(rootDir, "out/Antigravity Relay-linux-x64");
+      const packDir = path.join(rootDir, "out/Antigravity Switcher-linux-x64");
 
-      const debPath = path.join(makeDir, "antigravity-relay_0.0.1_amd64.deb");
+      const debPath = path.join(makeDir, "antigravity-switcher_0.0.1_amd64.deb");
       const rpmPath = path.join(
         makeDir,
-        "antigravity-relay-0.0.1-1.x86_64.rpm",
+        "antigravity-switcher-0.0.1-1.x86_64.rpm",
       );
       const debHash = writeBinaryFile(debPath, 15 * 1024 * 1024, "d");
       const rpmHash = writeBinaryFile(rpmPath, 15 * 1024 * 1024, "r");
@@ -395,7 +395,7 @@ describe("audit-build-artifacts", () => {
       writeTextFile(path.join(makeDir, "latest-linux.yml"), "version: 0.0.1\n");
       writeTextFile(
         path.join(makeDir, "sha256sums-linux-amd64.txt"),
-        `${debHash}  antigravity-relay_0.0.1_amd64.deb\n${rpmHash}  antigravity-relay-0.0.1-1.x86_64.rpm\n`,
+        `${debHash}  antigravity-switcher_0.0.1_amd64.deb\n${rpmHash}  antigravity-switcher-0.0.1-1.x86_64.rpm\n`,
       );
 
       writeBinaryFile(path.join(packDir, "resources/app.asar"), 1024);

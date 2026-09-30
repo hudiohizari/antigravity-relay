@@ -88,8 +88,8 @@ const config: ForgeConfig = {
     asar: {
       unpack: "**/{better-sqlite3,keytar,ps-list}/**/*",
     },
-    name: "Antigravity Relay",
-    executableName: "antigravity-relay",
+    name: "Antigravity Switcher",
+    executableName: "antigravity-switcher",
     icon: "images/icon",
     extraResource: ["src/assets"],
     ignore: packageIgnorePatterns,
@@ -138,9 +138,13 @@ const config: ForgeConfig = {
     postPackage: async (_forgeConfig, packageResult) => {
       if (packageResult.platform === "darwin") {
         for (const outputPath of packageResult.outputPaths) {
+          const appName =
+            typeof _forgeConfig?.packagerConfig?.name === "string"
+              ? _forgeConfig.packagerConfig.name
+              : "Antigravity Switcher";
           const appPath = outputPath.endsWith(".app")
             ? outputPath
-            : path.join(outputPath, "Antigravity Relay.app");
+            : path.join(outputPath, `${appName}.app`);
           if (fs.existsSync(appPath)) {
             try {
               execSync(`codesign --force --deep --sign - "${appPath}"`);
@@ -444,6 +448,9 @@ const config: ForgeConfig = {
   makers: [
     new MakerSquirrel({
       setupIcon: "images/icon.ico",
+      ...({
+        appUserModelId: "com.squirrel.antigravity-switcher.AntigravitySwitcher",
+      } as Record<string, unknown>),
     }),
     new MakerDMG(
       {
@@ -454,8 +461,16 @@ const config: ForgeConfig = {
       ["darwin"],
     ),
     new MakerZIP({}, ["darwin"]),
-    new MakerRpm({}),
-    new MakerDeb({}),
+    new MakerRpm({
+      options: {
+        icon: "images/icon.png",
+      },
+    }),
+    new MakerDeb({
+      options: {
+        icon: "images/icon.png",
+      },
+    }),
   ],
   publishers: [
     {
