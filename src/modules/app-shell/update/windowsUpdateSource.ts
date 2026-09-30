@@ -1,5 +1,5 @@
 const WINDOWS_UPDATE_BASE_URL =
-  "https://raw.githubusercontent.com/hudiohizari/antigravity-relay/release-updates";
+  "https://raw.githubusercontent.com/hudiohizari/antigravity-switcher/release-updates";
 
 export function getWindowsUpdateBaseUrl({
   platform = process.platform,

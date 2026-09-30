@@ -478,7 +478,7 @@ const config: ForgeConfig = {
       config: {
         repository: {
           owner: "hudiohizari",
-          name: "antigravity-relay",
+          name: "antigravity-switcher",
         },
         draft: true,
         prerelease: false,

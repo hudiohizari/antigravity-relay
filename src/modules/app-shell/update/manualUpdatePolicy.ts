@@ -9,8 +9,11 @@ import type {
 
 const MANUAL_UPDATE_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 const RELEASE_TAG_URL_PREFIX =
-  "https://github.com/hudiohizari/antigravity-relay/releases/tag/";
-const RELEASE_TAG_PATH_PREFIX = "/hudiohizari/antigravity-relay/releases/tag/";
+  "https://github.com/hudiohizari/antigravity-switcher/releases/tag/";
+const RELEASE_TAG_PATH_PREFIXES = [
+  "/hudiohizari/antigravity-switcher/releases/tag/",
+  "/hudiohizari/antigravity-relay/releases/tag/",
+];
 
 interface BuildManualUpdateInfoInput {
   currentVersion: string;
@@ -95,15 +98,19 @@ export function buildGitHubReleaseFromLatestRedirect(
 ): GitHubRelease | null {
   try {
     const parsedUrl = new URL(url);
-    if (
-      parsedUrl.hostname !== "github.com" ||
-      !parsedUrl.pathname.startsWith(RELEASE_TAG_PATH_PREFIX)
-    ) {
+    if (parsedUrl.hostname !== "github.com") {
+      return null;
+    }
+
+    const matchedPrefix = RELEASE_TAG_PATH_PREFIXES.find((prefix) =>
+      parsedUrl.pathname.startsWith(prefix),
+    );
+    if (!matchedPrefix) {
       return null;
     }
 
     const tagName = decodeURIComponent(
-      parsedUrl.pathname.slice(RELEASE_TAG_PATH_PREFIX.length),
+      parsedUrl.pathname.slice(matchedPrefix.length),
     );
     if (!semver.clean(tagName)) {
       return null;

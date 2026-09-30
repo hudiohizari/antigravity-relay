@@ -38,13 +38,16 @@ type UpdateActionResult =
 const GITHUB_UPDATE_FEED = {
   provider: "github" as const,
   owner: "hudiohizari",
-  repo: "antigravity-relay",
+  repo: "antigravity-switcher",
 };
 const LOCAL_UPDATE_FEED_URL = (
-  process.env.AGR_UPDATE_FEED_URL || process.env.AGM_UPDATE_FEED_URL
+  process.env.AGS_UPDATE_FEED_URL ||
+  process.env.AGR_UPDATE_FEED_URL ||
+  process.env.AGM_UPDATE_FEED_URL
 )?.trim();
 const ALLOW_UNMANAGED_UPDATE_INSTALL =
-  (process.env.AGR_UPDATE_ALLOW_UNMANAGED ||
+  (process.env.AGS_UPDATE_ALLOW_UNMANAGED ||
+    process.env.AGR_UPDATE_ALLOW_UNMANAGED ||
     process.env.AGM_UPDATE_ALLOW_UNMANAGED) === "1";
 
 function getUpdateFeed() {

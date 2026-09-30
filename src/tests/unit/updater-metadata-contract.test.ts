@@ -9,7 +9,7 @@ describe("updater-metadata-contract", () => {
       const releaseTag = "v0.1.0";
       const version = releaseTag.replace(/^v/, "");
       const pubDate = new Date().toISOString();
-      const releaseUrl = `https://github.com/hudiohizari/antigravity-relay/releases/tag/${releaseTag}`;
+      const releaseUrl = `https://github.com/hudiohizari/antigravity-switcher/releases/tag/${releaseTag}`;
 
       const payload = {
         version,
@@ -142,7 +142,7 @@ describe("updater-metadata-contract", () => {
 
   describe("5-tier update cascade policy hierarchy contract", () => {
     it("verifies that Tier 1 updater.json asset endpoint bypasses GitHub API rate limit risks", () => {
-      const repository = "hudiohizari/antigravity-relay";
+      const repository = "hudiohizari/antigravity-switcher";
       const tier1UpdaterJsonUrl = `https://github.com/${repository}/releases/latest/download/updater.json`;
       const tier2GitHubApiUrl = `https://api.github.com/repos/${repository}/releases/latest`;
       const tier3LatestRedirectUrl = `https://github.com/${repository}/releases/latest`;

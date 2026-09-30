@@ -35,6 +35,8 @@ export function isTrustedGitHubUrl(url: string): boolean {
     }
     const pathname = parsedUrl.pathname.replace(/\/+$/, "");
     return (
+      pathname === "/hudiohizari/antigravity-switcher" ||
+      pathname.startsWith("/hudiohizari/antigravity-switcher/") ||
       pathname === "/hudiohizari/antigravity-relay" ||
       pathname.startsWith("/hudiohizari/antigravity-relay/")
     );

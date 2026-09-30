@@ -9,6 +9,14 @@ import {
 describe("isTrustedGitHubUrl", () => {
   it("accepts repository root with and without trailing slash", () => {
     expect(
+      isTrustedGitHubUrl("https://github.com/hudiohizari/antigravity-switcher"),
+    ).toBe(true);
+    expect(
+      isTrustedGitHubUrl(
+        "https://github.com/hudiohizari/antigravity-switcher/",
+      ),
+    ).toBe(true);
+    expect(
       isTrustedGitHubUrl("https://github.com/hudiohizari/antigravity-relay"),
     ).toBe(true);
     expect(
@@ -96,20 +104,14 @@ describe("isTrustedExternalUrl", () => {
 
   it("allows Cloudflare tunnel and documentation domains", () => {
     expect(
-      isTrustedExternalUrl(
-        "https://sample-tunnel.trycloudflare.com",
-      ),
+      isTrustedExternalUrl("https://sample-tunnel.trycloudflare.com"),
     ).toBe(true);
     expect(
       isTrustedExternalUrl(
         "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
       ),
     ).toBe(true);
-    expect(
-      isTrustedExternalUrl(
-        "https://cloudflare.com",
-      ),
-    ).toBe(true);
+    expect(isTrustedExternalUrl("https://cloudflare.com")).toBe(true);
   });
 
   it("rejects untrusted domains and dangerous schemes", () => {

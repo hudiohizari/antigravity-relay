@@ -137,8 +137,8 @@ Antigravity Switcher is designed to solve the most pressing Google Antigravity p
 ### Installation
 
 ```bash
-git clone https://github.com/hudiohizari/antigravity-relay.git
-cd antigravity-relay
+git clone https://github.com/hudiohizari/antigravity-switcher.git
+cd antigravity-switcher
 pnpm install
 ```
 

@@ -5,7 +5,7 @@ import type {
 } from "./types";
 
 const RELEASE_TAG_URL_PREFIX =
-  "https://github.com/hudiohizari/antigravity-relay/releases/tag/";
+  "https://github.com/hudiohizari/antigravity-switcher/releases/tag/";
 
 interface BuildElectronUpdaterNotificationInput {
   state: UpdateNotificationState;

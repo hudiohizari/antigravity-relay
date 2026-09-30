@@ -30,6 +30,11 @@ describe("prepareWindowsUpdateFeed", () => {
       expect(parsed.releaseTag).toBe("v1.2.3");
       expect(parsed.repository).toBe("owner/repo");
     });
+
+    it("defaults repository to hudiohizari/antigravity-switcher when omitted", () => {
+      const parsed = parseArgs([]);
+      expect(parsed.repository).toBe("hudiohizari/antigravity-switcher");
+    });
   });
 
   describe("feed generation", () => {

@@ -40,7 +40,7 @@ function hasPathSegment(filePath, segment) {
 export function parseArgs(argv) {
   const result = {
     releaseTag: process.env.RELEASE_TAG,
-    repository: process.env.GITHUB_REPOSITORY || 'hudiohizari/antigravity-relay',
+    repository: process.env.GITHUB_REPOSITORY || 'hudiohizari/antigravity-switcher',
     sourceDir: 'release-assets',
     outputDir: 'windows-update-feed',
   };
@@ -156,7 +156,7 @@ function rewriteReleasePackageUrls({ content, packages, releaseAssetBaseUrl }) {
 
 export function prepareWindowsUpdateFeed({
   releaseTag = process.env.RELEASE_TAG,
-  repository = process.env.GITHUB_REPOSITORY || 'hudiohizari/antigravity-relay',
+  repository = process.env.GITHUB_REPOSITORY || 'hudiohizari/antigravity-switcher',
   sourceDir = 'release-assets',
   outputDir = 'windows-update-feed',
 } = {}) {
