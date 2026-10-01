@@ -63,7 +63,7 @@ export const KNOWN_MODEL_CEILINGS: ModelCeilingDefinition[] = [
     id: "gemini-3.8-flash-high",
     displayName: "Gemini 3.8 Flash (High)",
     pattern: /(?:gemini-(?:3\.8|3\.5)-flash-high)/i,
-    maxTokens: 1_000_000,
+    maxTokens: 256_000,
     isAuthoritative: true,
   },
   // Gemini 3.8 Flash
@@ -72,7 +72,7 @@ export const KNOWN_MODEL_CEILINGS: ModelCeilingDefinition[] = [
     displayName: "Gemini 3.8 Flash",
     pattern:
       /(?:gemini-(?:3\.8|3\.5|3\.1|3|2\.5|2\.0)-flash|gemini-flash|MODEL_PLACEHOLDER_M318)/i,
-    maxTokens: 1_000_000,
+    maxTokens: 256_000,
     isAuthoritative: true,
   },
   // Gemini 3.1 Pro
@@ -132,8 +132,20 @@ export function resolveModelContextWindow(rawModel?: string): ModelCeilingInfo {
  * - < 70.0%: normal
  * - 70.0% - 89.9%: high_pressure
  * - >= 90.0%: critical_risk
+ *
+ * Can be invoked with:
+ * - ratio percentage directly: calculatePressureState(ratioPct)
+ * - used tokens and max tokens: calculatePressureState(usedTokens, maxTokens)
  */
-export function calculatePressureState(ratioPct: number): ContextPressureState {
+export function calculatePressureState(
+  ratioPctOrUsed: number,
+  maxTokens?: number,
+): ContextPressureState {
+  const ratioPct =
+    maxTokens !== undefined && maxTokens > 0
+      ? Number(((ratioPctOrUsed / maxTokens) * 100).toFixed(1))
+      : ratioPctOrUsed;
+
   if (ratioPct >= 90.0) {
     return "critical_risk";
   }

@@ -14,7 +14,7 @@ import type {
 
 function resolveConcurrentModelName(maxTokens: number): string {
   if (maxTokens >= 2_000_000) return "Gemini 3.1 Pro";
-  if (maxTokens >= 1_000_000) return "Gemini 3.8 Flash";
+  if (maxTokens >= 256_000) return "Gemini 3.8 Flash";
   if (maxTokens >= 200_000) return "Claude Sonnet";
   return "Antigravity Model";
 }

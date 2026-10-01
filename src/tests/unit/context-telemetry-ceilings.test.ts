@@ -65,22 +65,22 @@ describe("modelCeilings (Context Ceiling Mapping & Pressure Bounds)", () => {
       expect(m34.isAuthoritative).toBe(true);
     });
 
-    it("maps Gemini 3.8 Flash (High) to exact displayName and 1,000,000 tokens", () => {
+    it("maps Gemini 3.8 Flash (High) to exact displayName and 256,000 tokens (AC-03)", () => {
       const flashHigh = resolveModelContextWindow("gemini-3.8-flash-high");
       expect(flashHigh.displayName).toBe("Gemini 3.8 Flash (High)");
-      expect(flashHigh.maxTokens).toBe(1_000_000);
+      expect(flashHigh.maxTokens).toBe(256_000);
       expect(flashHigh.isAuthoritative).toBe(true);
     });
 
-    it("maps Gemini 3.8 Flash and M318 wire placeholder to exact displayName and 1,000,000 tokens", () => {
+    it("maps Gemini 3.8 Flash and M318 wire placeholder to exact displayName and 256,000 tokens (AC-03)", () => {
       const flash = resolveModelContextWindow("gemini-3.8-flash");
       expect(flash.displayName).toBe("Gemini 3.8 Flash");
-      expect(flash.maxTokens).toBe(1_000_000);
+      expect(flash.maxTokens).toBe(256_000);
       expect(flash.isAuthoritative).toBe(true);
 
       const m318 = resolveModelContextWindow("MODEL_PLACEHOLDER_M318");
       expect(m318.displayName).toBe("Gemini 3.8 Flash");
-      expect(m318.maxTokens).toBe(1_000_000);
+      expect(m318.maxTokens).toBe(256_000);
       expect(m318.isAuthoritative).toBe(true);
     });
 
@@ -151,6 +151,35 @@ describe("modelCeilings (Context Ceiling Mapping & Pressure Bounds)", () => {
       expect(calculatePressureState(95.0)).toBe("critical_risk");
       expect(calculatePressureState(100.0)).toBe("critical_risk");
       expect(calculatePressureState(115.0)).toBe("critical_risk");
+    });
+
+    it("evaluates context pressure accurately against Antigravity 256,000 compaction ceiling (AC-04)", () => {
+      const usedTokens = 230_000;
+      const trueCeiling = 256_000;
+      const oldCeiling = 1_000_000;
+
+      // Ratio against true Antigravity ceiling evaluates to ~89.8% (89.84375%)
+      const ratio = Number(((usedTokens / trueCeiling) * 100).toFixed(1));
+      expect(ratio).toBe(89.8);
+      // High pressure warning, NOT normal
+      expect(calculatePressureState(ratio)).toBe("high_pressure");
+
+      // Critical compaction threshold: 230,400+ tokens on 256,000 window evaluates to >= 90.0%
+      const criticalTokens = 230_400;
+      const criticalRatio = Number(((criticalTokens / trueCeiling) * 100).toFixed(1));
+      expect(criticalRatio).toBe(90.0);
+      expect(calculatePressureState(criticalRatio)).toBe("critical_risk");
+
+      // Direct 2-arg calculation: calculatePressureState(usedTokens, maxTokens)
+      expect(calculatePressureState(criticalTokens, trueCeiling)).toBe("critical_risk");
+      expect(calculatePressureState(231_000, trueCeiling)).toBe("critical_risk");
+      expect(calculatePressureState(usedTokens, trueCeiling)).toBe("high_pressure");
+
+      // System does NOT report 'normal' or evaluate against 1,000,000 API brochure ceiling
+      const misleadingRatioOld = Number(((usedTokens / oldCeiling) * 100).toFixed(1));
+      expect(misleadingRatioOld).toBe(23.0);
+      expect(calculatePressureState(misleadingRatioOld)).toBe("normal");
+      expect(calculatePressureState(usedTokens, oldCeiling)).toBe("normal");
     });
   });
 
