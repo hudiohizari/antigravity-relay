@@ -13,22 +13,27 @@ export interface ParsedTokenMetrics {
 
 /**
  * Reads a protobuf varint from buffer starting at offset.
+ * Standard protobuf varints have at most 10 bytes (for 64-bit integers / negative numbers).
+ * Accumulates result within JavaScript safe integer range (shift < 53).
+ * Drains all continuation bytes up to 10 bytes (shift < 70) to prevent stream desync.
  * Returns [value, nextOffset].
  */
-function readVarint(buf: Uint8Array, offset: number): [number, number] {
+export function readVarint(buf: Uint8Array, offset: number): [number, number] {
   let result = 0;
   let shift = 0;
   let pos = offset;
 
   while (pos < buf.length) {
     const byte = buf[pos++];
-    result += (byte & 0x7f) * Math.pow(2, shift);
+    if (shift < 53) {
+      result += (byte & 0x7f) * Math.pow(2, shift);
+    }
     if ((byte & 0x80) === 0) {
       return [result, pos];
     }
     shift += 7;
-    if (shift > 49) {
-      // Beyond safe integer bounds or malformed
+    if (shift >= 70) {
+      // Protobuf varints are at most 10 bytes (70 bits). Malformed varint sequence cap.
       break;
     }
   }

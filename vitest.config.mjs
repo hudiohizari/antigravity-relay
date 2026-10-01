@@ -14,7 +14,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'happy-dom',
-    include: ['src/tests/unit/**/*.test.{ts,tsx}'],
+    include: ['src/tests/unit/**/*.test.{ts,tsx}', 'src/**/*.spec.{ts,tsx}'],
     setupFiles: ['./src/tests/support/no-app-launch.setup.ts'],
   },
 });

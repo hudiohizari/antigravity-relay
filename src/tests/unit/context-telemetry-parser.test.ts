@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseGenMetadataProtobuf,
   parseStepMetadataProtobuf,
+  readVarint,
 } from "@/modules/context-telemetry/protobuf/genMetadataParser";
 
 /**
@@ -283,5 +284,141 @@ describe("genMetadataParser (Pure Protobuf Decoding)", () => {
     expect(metrics.usedTokens).toBe(150_000);
     expect(metrics.cachedTokens).toBe(100_000);
     expect(metrics.freshInputTokens).toBe(50_000);
+  });
+
+  describe("readVarint 64-Bit Stream Drainage (AC-01)", () => {
+    it("drains full 10 bytes for 64-bit negative varints without leaving leftover bytes", () => {
+      // 10-byte varint representation of -1 in protobuf
+      const negativeOneVarint = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+      ];
+      const buf = new Uint8Array(negativeOneVarint);
+      const [, nextOffset] = readVarint(buf, 0);
+
+      expect(nextOffset).toBe(10);
+      expect(nextOffset - 0).toBe(10);
+    });
+
+    it("ensures subsequent field tags after 10-byte varints start at correct boundary with valid wire types", () => {
+      // 10-byte varint (-1) followed by Field 10 wireType 2 tag
+      const negativeOneVarint = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+      ];
+      const trailingTag = encodeTag(10, 2); // (10 << 3) | 2 = 82 = 0x52
+      const stream = new Uint8Array([...negativeOneVarint, ...trailingTag]);
+
+      const [, varintEnd] = readVarint(stream, 0);
+      expect(varintEnd).toBe(10);
+
+      const [tagKey, afterTag] = readVarint(stream, varintEnd);
+      const fieldNum = Math.floor(tagKey / 8);
+      const wireType = tagKey & 0x07;
+
+      expect(fieldNum).toBe(10);
+      expect(wireType).toBe(2); // Valid wireType = 2, strictly NOT invalid wireType 7
+      expect(afterTag).toBe(11);
+    });
+
+    it("caps malformed runaway varint sequences at 10 bytes to prevent infinite loops", () => {
+      // 12 bytes with continuation bit (0x80) set indefinitely
+      const runawayBytes = new Uint8Array([
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+      ]);
+      const [, nextOffset] = readVarint(runawayBytes, 0);
+
+      // Capped at 10 bytes (shift >= 70)
+      expect(nextOffset).toBe(10);
+    });
+  });
+
+  describe("Authentic max_context_tokens Extraction Following 64-Bit Varints (AC-02)", () => {
+    it("extracts max_context_tokens = 256000 when preceded by 10-byte 64-bit varint fields in ChatStartMetadata", () => {
+      // 10-byte varint for -1
+      const negativeOneVarint = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+      ];
+
+      // Intermediate 64-bit varint field (Field 3, wireType = 0)
+      const field3VarintField = [
+        ...encodeTag(3, 0),
+        ...negativeOneVarint,
+      ];
+
+      // Field 10 (ContextWindowMetadata): contains Field 4 (max_context_tokens = 256_000)
+      const contextWindowBytes = encodeVarintField(4, 256_000);
+      const field10Bytes = encodeLengthDelimited(10, contextWindowBytes);
+
+      // Field 9 (ChatStartMetadata): contains intermediate Field 3 (10-byte varint) followed by Field 10
+      const field9Bytes = encodeLengthDelimited(9, [
+        ...field3VarintField,
+        ...field10Bytes,
+      ]);
+
+      // Field 4 (TokenAccounting): cached 80,000 + fresh 40,000 = 120,000
+      const tokenAccountingBytes = [
+        ...encodeVarintField(2, 40_000),
+        ...encodeVarintField(5, 80_000),
+      ];
+      const field4Bytes = encodeLengthDelimited(4, tokenAccountingBytes);
+
+      // Field 1: contains Field 4 and Field 9
+      const field1Bytes = [
+        ...field4Bytes,
+        ...field9Bytes,
+      ];
+
+      // Top message
+      const topBytes = new Uint8Array(encodeLengthDelimited(1, field1Bytes));
+
+      const metrics = parseGenMetadataProtobuf(topBytes);
+
+      expect(metrics.maxContextTokens).toBe(256_000);
+      expect(metrics.usedTokens).toBe(120_000);
+      expect(metrics.cachedTokens).toBe(80_000);
+      expect(metrics.freshInputTokens).toBe(40_000);
+      expect(metrics.isEstimated).toBe(false);
+    });
+
+    it("resiliently extracts maxContextTokens when 10-byte varints appear at multiple nesting depths", () => {
+      const negativeOneVarint = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+      ];
+
+      // Intermediate varint inside Field 10 before Field 4
+      const nestedVarintField = [
+        ...encodeTag(2, 0),
+        ...negativeOneVarint,
+      ];
+      const contextWindowBytes = [
+        ...nestedVarintField,
+        ...encodeVarintField(4, 256_000),
+      ];
+      const field10Bytes = encodeLengthDelimited(10, contextWindowBytes);
+
+      // Intermediate varint inside Field 9 before Field 10
+      const field9Bytes = encodeLengthDelimited(9, [
+        ...encodeTag(7, 0),
+        ...negativeOneVarint,
+        ...field10Bytes,
+      ]);
+
+      // Intermediate varint inside Field 1 before Field 9
+      const field1Bytes = [
+        ...encodeTag(15, 0),
+        ...negativeOneVarint,
+        ...encodeLengthDelimited(4, [
+          ...encodeVarintField(2, 10_000),
+          ...encodeVarintField(5, 50_000),
+        ]),
+        ...field9Bytes,
+      ];
+
+      const topBytes = new Uint8Array(encodeLengthDelimited(1, field1Bytes));
+      const metrics = parseGenMetadataProtobuf(topBytes);
+
+      expect(metrics.maxContextTokens).toBe(256_000);
+      expect(metrics.usedTokens).toBe(60_000);
+      expect(metrics.isEstimated).toBe(false);
+    });
   });
 });
