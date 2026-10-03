@@ -3,6 +3,7 @@
   "productName": "Antigravity Switcher",
   "version": "0.4.1",
   "description": "Antigravity Switcher - Power-User Account Switcher, Quota Failover, and Continuity Suite for Google Antigravity",
+  "homepage": "https://antigravity-switcher.hizari.my.id/",
   "main": ".vite/build/main.js",
   "private": true,
   "engines": {
